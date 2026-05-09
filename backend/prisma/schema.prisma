@@ -1,0 +1,437 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("ASSESSIQ_DB_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  SUPER_ADMIN
+  COMPANY_ADMIN
+  RECRUITER
+  VIEWER
+  CANDIDATE
+}
+
+enum TenantPlan {
+  BASIC
+  PRO
+  ENTERPRISE
+}
+
+enum TestStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum QuestionType {
+  MCQ_SINGLE
+  MCQ_MULTI
+  TRUE_FALSE
+  ESSAY
+  SHORT_ANSWER
+  CODE
+  FILE_UPLOAD
+  AUDIO_RECORDING
+  RANKING
+  NUMERICAL
+}
+
+enum DifficultyLevel {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum InvitationStatus {
+  PENDING
+  SENT
+  OPENED
+  STARTED
+  COMPLETED
+  EXPIRED
+  CANCELLED
+}
+
+enum SessionStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  SUBMITTED
+  TIMED_OUT
+  TERMINATED
+}
+
+enum GradingStatus {
+  PENDING
+  AUTO_GRADED
+  AI_GRADED
+  HUMAN_GRADED
+  SKIPPED
+}
+
+// ─── Tenants ──────────────────────────────────────────────────────────────────
+
+model Tenant {
+  id          String     @id @default(cuid())
+  name        String
+  slug        String     @unique
+  domain      String?    @unique
+  logoUrl     String?
+  primaryColor String?   @default("#6366f1")
+  plan        TenantPlan @default(BASIC)
+  isActive    Boolean    @default(true)
+  settings    Json?      // email config, smtp, etc.
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  users       User[]
+  tests       Test[]
+  questionBanks QuestionBank[]
+  candidates  Candidate[]
+
+  @@map("tenants")
+}
+
+// ─── Users ────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String
+  passwordHash String
+  firstName    String
+  lastName     String
+  role         UserRole @default(RECRUITER)
+  isActive     Boolean  @default(true)
+  avatarUrl    String?
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  refreshTokens RefreshToken[]
+  createdTests  Test[]         @relation("TestCreator")
+  sentInvitations Invitation[] @relation("InvitationSender")
+
+  @@unique([email, tenantId])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  revokedAt DateTime?
+
+  @@map("refresh_tokens")
+}
+
+// ─── Question Banks ───────────────────────────────────────────────────────────
+
+model QuestionBank {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenantId  String
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  questions Question[]
+
+  @@map("question_banks")
+}
+
+// ─── Questions ────────────────────────────────────────────────────────────────
+
+model Question {
+  id             String          @id @default(cuid())
+  type           QuestionType
+  title          String
+  body           String       @db.Text
+  explanation    String?      @db.Text
+  difficulty     DifficultyLevel @default(MEDIUM)
+  points         Float           @default(1)
+  timeLimit      Int?            // seconds, null = inherit from test
+  tags           Json            @default("[]")
+  domain         String?
+  isArchived     Boolean         @default(false)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  bankId         String
+  bank           QuestionBank    @relation(fields: [bankId], references: [id], onDelete: Cascade)
+
+  options        QuestionOption[]
+  codeTestCases  CodeTestCase[]
+  testQuestions  TestQuestion[]
+  answers        Answer[]
+
+  @@map("questions")
+}
+
+model CodeTestCase {
+  id             String   @id @default(cuid())
+  input          String   @db.Text
+  expectedOutput String   @db.Text
+  isHidden       Boolean  @default(false)
+  points         Float    @default(1)
+  description    String?
+  order          Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  questionId     String
+  question       Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@map("code_test_cases")
+}
+
+model QuestionOption {
+  id         String   @id @default(cuid())
+  text       String
+  isCorrect  Boolean  @default(false)
+  order      Int      @default(0)
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@map("question_options")
+}
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
+model Test {
+  id               String     @id @default(cuid())
+  title            String
+  description      String?      @db.Text
+  instructions     String?      @db.Text
+  domain           String?
+  status           TestStatus @default(DRAFT)
+  duration         Int        // total minutes
+  passingScore     Float?     // percentage
+  shuffleQuestions Boolean    @default(false)
+  shuffleOptions   Boolean    @default(false)
+  showResults      Boolean    @default(false) // show results to candidate after submission
+  allowedAttempts  Int        @default(1)
+  proctoring       Boolean    @default(true)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  tenantId         String
+  tenant           Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdById      String
+  createdBy        User       @relation("TestCreator", fields: [createdById], references: [id])
+
+  sections         TestSection[]
+  testQuestions    TestQuestion[]
+  invitations      Invitation[]
+  sessions         Session[]
+
+  @@map("tests")
+}
+
+model TestSection {
+  id           String   @id @default(cuid())
+  title        String
+  description  String?
+  order        Int      @default(0)
+  timeLimit    Int?     // per-section time limit in seconds
+  createdAt    DateTime @default(now())
+
+  testId       String
+  test         Test     @relation(fields: [testId], references: [id], onDelete: Cascade)
+  testQuestions TestQuestion[]
+
+  @@map("test_sections")
+}
+
+model TestQuestion {
+  id         String   @id @default(cuid())
+  order      Int      @default(0)
+  points     Float?   // override question default points
+  isRequired Boolean  @default(true)
+
+  testId     String
+  test       Test     @relation(fields: [testId], references: [id], onDelete: Cascade)
+  sectionId  String?
+  section    TestSection? @relation(fields: [sectionId], references: [id])
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id])
+
+  @@unique([testId, questionId])
+  @@map("test_questions")
+}
+
+// ─── Candidates ───────────────────────────────────────────────────────────────
+
+model Candidate {
+  id          String   @id @default(cuid())
+  email       String
+  firstName   String
+  lastName    String
+  phone       String?
+  metadata    Json?    // extra fields like department, job_role, etc.
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  invitations Invitation[]
+  sessions    Session[]
+
+  @@unique([email, tenantId])
+  @@map("candidates")
+}
+
+// ─── Invitations ──────────────────────────────────────────────────────────────
+
+model Invitation {
+  id          String           @id @default(cuid())
+  token       String           @unique @default(cuid())
+  status      InvitationStatus @default(PENDING)
+  expiresAt   DateTime
+  openedAt    DateTime?
+  sentAt      DateTime?
+  message     String?          // optional custom message in invite email
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  testId      String
+  test        Test             @relation(fields: [testId], references: [id], onDelete: Cascade)
+  candidateId String
+  candidate   Candidate        @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  sentById    String
+  sentBy      User             @relation("InvitationSender", fields: [sentById], references: [id])
+
+  session     Session?
+
+  @@unique([testId, candidateId])
+  @@map("invitations")
+}
+
+// ─── Sessions ─────────────────────────────────────────────────────────────────
+
+model Session {
+  id             String        @id @default(cuid())
+  status         SessionStatus @default(NOT_STARTED)
+  startedAt      DateTime?
+  submittedAt    DateTime?
+  timeoutAt      DateTime?     // when the test will auto-expire
+  ipAddress      String?
+  userAgent      String?
+  deviceFingerprint String?
+  currentQuestion Int          @default(0)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  testId         String
+  test           Test          @relation(fields: [testId], references: [id], onDelete: Cascade)
+  candidateId    String
+  candidate      Candidate     @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  invitationId   String        @unique
+  invitation     Invitation    @relation(fields: [invitationId], references: [id])
+
+  answers            Answer[]
+  score              Score?
+  proctoringEvents   ProctoringEvent[]
+
+  @@map("sessions")
+}
+
+// ─── Answers ──────────────────────────────────────────────────────────────────
+
+model Answer {
+  id             String        @id @default(cuid())
+  responseText   String?      @db.Text // for essay / short answer
+  selectedOptions Json         @default("[]") // option IDs for MCQ
+  numericValue   Float?
+  fileUrl        String?
+  audioUrl       String?
+  codeSubmission String?      @db.MediumText
+  language       String?       // for code questions
+  codeTestResults Json?        // [{caseId, passed, actualOutput, time, memory, status}]
+  gradingStatus  GradingStatus @default(PENDING)
+  pointsEarned   Float?
+  feedback       String?       // AI or human feedback
+  gradedAt       DateTime?
+  timeSpent      Int?          // seconds spent on this question
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  sessionId      String
+  session        Session       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  questionId     String
+  question       Question      @relation(fields: [questionId], references: [id])
+
+  @@unique([sessionId, questionId])
+  @@map("answers")
+}
+
+// ─── Proctoring ───────────────────────────────────────────────────────────────
+
+enum ProctoringEventType {
+  TAB_SWITCH
+  WINDOW_BLUR
+  FULLSCREEN_EXIT
+  COPY_PASTE
+  RIGHT_CLICK
+  WEBCAM_BLOCKED
+  MULTIPLE_FACES
+  NO_FACE_DETECTED
+  NOISE_DETECTED
+  SCREENSHOT_TAKEN
+  DEVTOOLS_OPEN
+  PHONE_DETECTED
+  CUSTOM
+}
+
+enum ProctoringEventSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model ProctoringEvent {
+  id          String                  @id @default(cuid())
+  type        ProctoringEventType
+  severity    ProctoringEventSeverity @default(MEDIUM)
+  description String?
+  metadata    Json?                   // extra context: snapshot URL, keystrokes, etc.
+  occurredAt  DateTime                @default(now())
+
+  sessionId   String
+  session     Session                 @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("proctoring_events")
+}
+
+// ─── Scores ───────────────────────────────────────────────────────────────────
+
+model Score {
+  id              String   @id @default(cuid())
+  totalPoints     Float
+  earnedPoints    Float
+  percentage      Float
+  passed          Boolean?
+  percentile      Float?
+  sectionBreakdown Json?   // { sectionId: { earned, total } }
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  sessionId       String   @unique
+  session         Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("scores")
+}

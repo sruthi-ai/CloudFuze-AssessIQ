@@ -3,8 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql"
-  url      = env("ASSESSIQ_DB_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
@@ -357,7 +357,7 @@ model Answer {
   numericValue   Float?
   fileUrl        String?
   audioUrl       String?
-  codeSubmission String?      @db.MediumText
+  codeSubmission String?      @db.Text
   language       String?       // for code questions
   codeTestResults Json?        // [{caseId, passed, actualOutput, time, memory, status}]
   gradingStatus  GradingStatus @default(PENDING)

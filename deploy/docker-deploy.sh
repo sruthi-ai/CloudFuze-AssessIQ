@@ -57,8 +57,8 @@ info "Containers started."
 # ── Wait for frontend container to be healthy ─────────────────────────────────
 section "Health check"
 for i in $(seq 1 30); do
-    if curl -sf http://localhost:8080 &>/dev/null; then
-        info "App is up at http://localhost:8080"
+    if curl -sf http://localhost:8088 &>/dev/null; then
+        info "App is up at http://localhost:8088"
         break
     fi
     [[ $i -eq 30 ]] && die "App did not respond after 30s. Check logs: docker compose -f docker-compose.prod.yml logs"

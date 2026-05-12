@@ -23,6 +23,9 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
+# Prisma migration engine requires OpenSSL
+RUN apk add --no-cache openssl
+
 # Copy built output, prisma schema/migrations, and full node_modules
 # (full node_modules needed so `tsx` is available for the seed script)
 COPY --from=builder /app/dist ./dist

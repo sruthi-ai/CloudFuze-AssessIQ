@@ -1,8 +1,48 @@
 import { Resend } from 'resend'
 
-const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
-const FROM = process.env.FROM_EMAIL || 'noreply@assessiq.com'
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
+const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@assessiq.com'
+
+async function sendViaGraph(params: { from: string; to: string; subject: string; html: string }) {
+  const tenantId = process.env.AZURE_TENANT_ID
+  const clientId = process.env.AZURE_CLIENT_ID
+  const clientSecret = process.env.AZURE_CLIENT_SECRET
+  if (!tenantId || !clientId || !clientSecret) throw new Error('Azure credentials not configured')
+
+  const tokenRes = await fetch(
+    `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: clientId,
+        client_secret: clientSecret,
+        scope: 'https://graph.microsoft.com/.default',
+      }),
+    }
+  )
+  if (!tokenRes.ok) throw new Error(`Azure token error: ${await tokenRes.text()}`)
+  const { access_token } = await tokenRes.json() as { access_token: string }
+
+  const mailRes = await fetch(
+    `https://graph.microsoft.com/v1.0/users/${params.from}/sendMail`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${access_token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: {
+          subject: params.subject,
+          body: { contentType: 'HTML', content: params.html },
+          toRecipients: [{ emailAddress: { address: params.to } }],
+        },
+      }),
+    }
+  )
+  if (!mailRes.ok && mailRes.status !== 202) {
+    throw new Error(`Graph API send error: ${await mailRes.text()}`)
+  }
+}
 
 export async function sendInvitationEmail(params: {
   to: string
@@ -31,15 +71,20 @@ export async function sendInvitationEmail(params: {
     </div>
   `
 
-  if (!resend) {
-    console.log(`[EMAIL] Would send invite to ${params.to}: ${url}`)
+  const subject = `You're invited: ${params.testTitle} — ${params.companyName}`
+
+  if (process.env.AZURE_TENANT_ID && process.env.AZURE_CLIENT_ID && process.env.AZURE_CLIENT_SECRET) {
+    await sendViaGraph({ from: FROM_EMAIL, to: params.to, subject, html })
     return
   }
 
-  await resend.emails.send({
-    from: FROM,
-    to: params.to,
-    subject: `You're invited: ${params.testTitle} — ${params.companyName}`,
-    html,
-  })
+  if (process.env.RESEND_API_KEY) {
+    const resend = new Resend(process.env.RESEND_API_KEY)
+    await resend.emails.send({ from: FROM_EMAIL, to: params.to, subject, html })
+    return
+  }
+
+  console.log(`[EMAIL] Would send invite to ${params.to}: ${url}`)
 }
+
+export { sendViaGraph }

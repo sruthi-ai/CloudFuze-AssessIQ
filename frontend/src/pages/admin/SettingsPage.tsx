@@ -21,7 +21,7 @@ interface TenantSettings {
   primaryColor: string
   plan: string
   createdAt: string
-  emailProvider: 'resend' | 'smtp' | 'none'
+  emailProvider: 'resend' | 'smtp' | 'graph' | 'none'
   resendApiKeySet: boolean
   smtpHost: string | null
   smtpPort: number | null
@@ -49,7 +49,7 @@ export function SettingsPage() {
 
   // Email form
   const [emailForm, setEmailForm] = useState({
-    emailProvider: 'none' as 'resend' | 'smtp' | 'none',
+    emailProvider: 'none' as 'resend' | 'smtp' | 'graph' | 'none',
     resendApiKey: '',
     smtpHost: '',
     smtpPort: 587,
@@ -237,11 +237,12 @@ export function SettingsPage() {
               {/* Provider selector */}
               <div className="space-y-2">
                 <Label>Email Provider</Label>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {[
                     { value: 'none', label: 'None (log only)', desc: 'Invites logged to console' },
                     { value: 'resend', label: 'Resend', desc: 'Recommended — modern API' },
                     { value: 'smtp', label: 'Custom SMTP', desc: 'Any SMTP server' },
+                    { value: 'graph', label: 'Microsoft Graph', desc: 'Send via Microsoft 365' },
                   ].map(opt => (
                     <button
                       key={opt.value}
@@ -370,6 +371,23 @@ export function SettingsPage() {
                     />
                     <span className="text-sm">Use TLS/SSL (port 465)</span>
                   </label>
+                </div>
+              )}
+
+              {/* Microsoft Graph config */}
+              {emailForm.emailProvider === 'graph' && (
+                <div className="space-y-4 p-4 rounded-lg bg-gray-50 border">
+                  <div className="space-y-2">
+                    <Label>From Address (Microsoft 365 mailbox)</Label>
+                    <Input
+                      value={emailForm.smtpFrom}
+                      onChange={e => { setEmailForm(f => ({ ...f, smtpFrom: e.target.value })); setEmailDirty(true) }}
+                      placeholder="leo@fuzebot.io"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Must be a mailbox in your Microsoft 365 tenant. Azure credentials are configured via backend environment variables.
+                    </p>
+                  </div>
                 </div>
               )}
 

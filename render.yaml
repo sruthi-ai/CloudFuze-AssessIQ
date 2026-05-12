@@ -37,7 +37,13 @@ services:
       - key: RESEND_API_KEY
         sync: false
       - key: FROM_EMAIL
-        value: noreply@assessiq.com
+        value: leo@fuzebot.io
+      - key: AZURE_TENANT_ID
+        sync: false
+      - key: AZURE_CLIENT_ID
+        sync: false
+      - key: AZURE_CLIENT_SECRET
+        sync: false
       # Optional — Judge0 CE for code execution
       - key: JUDGE0_API_KEY
         sync: false

@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../db'
 import { sendError, sendSuccess } from '../utils/errors'
 import { requireRole } from '../middleware/authenticate'
+import { sendViaGraph } from '../utils/email'
 
 const settingsSchema = z.object({
   // Company profile
@@ -11,7 +12,7 @@ const settingsSchema = z.object({
   primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
 
   // Email settings stored in settings Json column
-  emailProvider: z.enum(['resend', 'smtp', 'none']).optional(),
+  emailProvider: z.enum(['resend', 'smtp', 'graph', 'none']).optional(),
   resendApiKey: z.string().optional().nullable(),
   smtpHost: z.string().optional().nullable(),
   smtpPort: z.number().int().min(1).max(65535).optional().nullable(),
@@ -154,6 +155,15 @@ export async function settingsRoutes(server: FastifyInstance) {
           to: recipient,
           subject: `Test email from ${tenant.name} AssessIQ`,
           html: `<p>This is a test email from <strong>${tenant.name}</strong> via AssessIQ. Your SMTP configuration is working correctly.</p>`,
+        })
+      } else if (provider === 'graph') {
+        const fromEmail = (settings.smtpFrom as string) || process.env.FROM_EMAIL
+        if (!fromEmail) return sendError(reply, 400, 'From address not configured')
+        await sendViaGraph({
+          from: fromEmail,
+          to: recipient,
+          subject: `Test email from ${tenant.name} AssessIQ`,
+          html: `<p>This is a test email from <strong>${tenant.name}</strong> via AssessIQ. Your Microsoft Graph email configuration is working correctly.</p>`,
         })
       }
 

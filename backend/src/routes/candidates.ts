@@ -140,6 +140,7 @@ export async function candidateRoutes(server: FastifyInstance) {
           token: invitation.token,
           expiresAt,
           message,
+          tenantSettings: (test.tenant.settings ?? undefined) as any,
         })
 
         return { email: c.email, status: 'invited', invitationId: invitation.id, token: invitation.token }

@@ -1,4 +1,5 @@
 import { Resend } from 'resend'
+import nodemailer from 'nodemailer'
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
 const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@assessiq.com'
@@ -44,6 +45,42 @@ async function sendViaGraph(params: { from: string; to: string; subject: string;
   }
 }
 
+async function sendViaSmtp(params: {
+  to: string
+  subject: string
+  html: string
+  smtpHost: string
+  smtpPort: number
+  smtpUser: string
+  smtpPass: string
+  smtpFrom: string
+  smtpSecure: boolean
+}) {
+  const transporter = nodemailer.createTransport({
+    host: params.smtpHost,
+    port: params.smtpPort,
+    secure: params.smtpSecure,
+    auth: { user: params.smtpUser, pass: params.smtpPass },
+  })
+  await transporter.sendMail({
+    from: params.smtpFrom || params.smtpUser,
+    to: params.to,
+    subject: params.subject,
+    html: params.html,
+  })
+}
+
+type TenantEmailSettings = {
+  emailProvider?: string
+  smtpHost?: string
+  smtpPort?: number
+  smtpUser?: string
+  smtpPass?: string
+  smtpFrom?: string
+  smtpSecure?: boolean
+  resendApiKey?: string
+}
+
 export async function sendInvitationEmail(params: {
   to: string
   candidateName: string
@@ -52,6 +89,7 @@ export async function sendInvitationEmail(params: {
   token: string
   expiresAt: Date
   message?: string
+  tenantSettings?: TenantEmailSettings
 }) {
   const url = `${FRONTEND_URL}/take/${params.token}`
   const expiry = params.expiresAt.toLocaleDateString('en-US', { dateStyle: 'long' })
@@ -73,18 +111,49 @@ export async function sendInvitationEmail(params: {
 
   const subject = `You're invited: ${params.testTitle} — ${params.companyName}`
 
+  // 1. Azure Graph (env vars)
   if (process.env.AZURE_TENANT_ID && process.env.AZURE_CLIENT_ID && process.env.AZURE_CLIENT_SECRET) {
     await sendViaGraph({ from: FROM_EMAIL, to: params.to, subject, html })
     return
   }
 
+  // 2. Resend (env var)
   if (process.env.RESEND_API_KEY) {
     const resend = new Resend(process.env.RESEND_API_KEY)
     await resend.emails.send({ from: FROM_EMAIL, to: params.to, subject, html })
     return
   }
 
-  console.log(`[EMAIL] Would send invite to ${params.to}: ${url}`)
+  // 3. Tenant SMTP settings from database
+  const s = params.tenantSettings
+  if (s?.emailProvider === 'smtp' && s.smtpHost && s.smtpUser && s.smtpPass) {
+    await sendViaSmtp({
+      to: params.to,
+      subject,
+      html,
+      smtpHost: s.smtpHost,
+      smtpPort: s.smtpPort ?? 587,
+      smtpUser: s.smtpUser,
+      smtpPass: s.smtpPass,
+      smtpFrom: s.smtpFrom || s.smtpUser,
+      smtpSecure: s.smtpSecure ?? false,
+    })
+    return
+  }
+
+  // 4. Tenant Resend key from database
+  if (s?.emailProvider === 'resend' && s.resendApiKey) {
+    const resend = new Resend(s.resendApiKey)
+    await resend.emails.send({
+      from: s.smtpFrom || FROM_EMAIL,
+      to: params.to,
+      subject,
+      html,
+    })
+    return
+  }
+
+  console.log(`[EMAIL] No provider configured — would send invite to ${params.to}: ${url}`)
 }
 
 export { sendViaGraph }

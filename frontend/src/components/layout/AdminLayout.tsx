@@ -46,7 +46,7 @@ export function AdminLayout() {
             <Brain className="h-5 w-5 text-white" />
           </div>
           <div className="min-w-0">
-            <p className="font-bold text-gray-900 leading-tight">AssessIQ</p>
+            <p className="font-bold text-gray-900 leading-tight">NeutaraAssessments</p>
             <p className="text-xs text-muted-foreground truncate">{tenant?.name}</p>
           </div>
           <button className="ml-auto lg:hidden" onClick={() => setSidebarOpen(false)}>
@@ -104,7 +104,7 @@ export function AdminLayout() {
             <div className="bg-primary rounded-md p-1">
               <Brain className="h-4 w-4 text-white" />
             </div>
-            <span className="font-bold text-gray-900">AssessIQ</span>
+            <span className="font-bold text-gray-900">NeutaraAssessments</span>
           </div>
         </header>
 

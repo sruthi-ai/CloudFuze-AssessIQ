@@ -231,7 +231,7 @@ export function SettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle>Email Provider</CardTitle>
-              <CardDescription>Configure how AssessIQ sends invitation emails to candidates</CardDescription>
+              <CardDescription>Configure how NeutaraAssessments sends invitation emails to candidates</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
               {/* Provider selector */}
@@ -296,7 +296,7 @@ export function SettingsPage() {
                     <Input
                       value={emailForm.smtpFrom}
                       onChange={e => { setEmailForm(f => ({ ...f, smtpFrom: e.target.value })); setEmailDirty(true) }}
-                      placeholder="AssessIQ <noreply@yourdomain.com>"
+                      placeholder="NeutaraAssessments <noreply@yourdomain.com>"
                     />
                     <p className="text-xs text-muted-foreground">Must be a verified sender domain in Resend</p>
                   </div>
@@ -359,7 +359,7 @@ export function SettingsPage() {
                     <Input
                       value={emailForm.smtpFrom}
                       onChange={e => { setEmailForm(f => ({ ...f, smtpFrom: e.target.value })); setEmailDirty(true) }}
-                      placeholder="AssessIQ <noreply@company.com>"
+                      placeholder="NeutaraAssessments <noreply@company.com>"
                     />
                   </div>
                   <label className="flex items-center gap-2 cursor-pointer">

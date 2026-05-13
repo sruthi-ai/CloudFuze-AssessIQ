@@ -12,7 +12,7 @@ export function SubmittedPage() {
       <div className="w-full max-w-md space-y-6 text-center">
         <div className="flex items-center justify-center gap-2 mb-4">
           <div className="bg-primary rounded-lg p-1.5"><Brain className="h-5 w-5 text-white" /></div>
-          <span className="font-semibold text-gray-700">AssessIQ</span>
+          <span className="font-semibold text-gray-700">NeutaraAssessments</span>
         </div>
 
         <Card>

@@ -39,7 +39,7 @@ export function RegisterPage() {
     try {
       const { data } = await api.post('/auth/register', values)
       login(data.data)
-      toast({ title: 'Welcome to AssessIQ!', description: `Your workspace "${values.companySlug}" is ready.` })
+      toast({ title: 'Welcome to NeutaraAssessments!', description: `Your workspace "${values.companySlug}" is ready.` })
       navigate('/admin/dashboard')
     } catch (err) {
       toast({ title: 'Registration failed', description: getErrorMessage(err), variant: 'destructive' })
@@ -55,13 +55,13 @@ export function RegisterPage() {
           <div className="bg-primary rounded-lg p-2">
             <Brain className="h-6 w-6 text-white" />
           </div>
-          <span className="text-2xl font-bold text-gray-900">AssessIQ</span>
+          <span className="text-2xl font-bold text-gray-900">NeutaraAssessments</span>
         </div>
 
         <Card>
           <CardHeader>
             <CardTitle className="text-2xl">Create your workspace</CardTitle>
-            <CardDescription>Set up your company on AssessIQ in seconds</CardDescription>
+            <CardDescription>Set up your company on NeutaraAssessments in seconds</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

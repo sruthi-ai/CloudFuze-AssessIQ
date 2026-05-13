@@ -48,7 +48,7 @@ export function LoginPage() {
           <div className="bg-primary rounded-lg p-2">
             <Brain className="h-6 w-6 text-white" />
           </div>
-          <span className="text-2xl font-bold text-gray-900">AssessIQ</span>
+          <span className="text-2xl font-bold text-gray-900">NeutaraAssessments</span>
         </div>
 
         <Card>
@@ -83,7 +83,7 @@ export function LoginPage() {
               </Button>
             </form>
             <p className="mt-4 text-center text-sm text-muted-foreground">
-              New to AssessIQ?{' '}
+              New to NeutaraAssessments?{' '}
               <Link to="/register" className="text-primary hover:underline font-medium">Create an account</Link>
             </p>
           </CardContent>

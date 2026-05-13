@@ -137,10 +137,10 @@ export async function settingsRoutes(server: FastifyInstance) {
         if (!apiKey) return sendError(reply, 400, 'Resend API key not configured')
         const resend = new Resend(apiKey)
         await resend.emails.send({
-          from: (settings.smtpFrom as string) || 'AssessIQ <noreply@assessiq.app>',
+          from: (settings.smtpFrom as string) || 'NeutaraAssessments <noreply@neutaraassessment.cftools.live>',
           to: recipient,
-          subject: `Test email from ${tenant.name} AssessIQ`,
-          html: `<p>This is a test email from <strong>${tenant.name}</strong> via AssessIQ. Your email configuration is working correctly.</p>`,
+          subject: `Test email from ${tenant.name} NeutaraAssessments`,
+          html: `<p>This is a test email from <strong>${tenant.name}</strong> via NeutaraAssessments. Your email configuration is working correctly.</p>`,
         })
       } else if (provider === 'smtp') {
         const nodemailer = await import('nodemailer')
@@ -153,8 +153,8 @@ export async function settingsRoutes(server: FastifyInstance) {
         await transporter.sendMail({
           from: (settings.smtpFrom as string) || settings.smtpUser as string,
           to: recipient,
-          subject: `Test email from ${tenant.name} AssessIQ`,
-          html: `<p>This is a test email from <strong>${tenant.name}</strong> via AssessIQ. Your SMTP configuration is working correctly.</p>`,
+          subject: `Test email from ${tenant.name} NeutaraAssessments`,
+          html: `<p>This is a test email from <strong>${tenant.name}</strong> via NeutaraAssessments. Your SMTP configuration is working correctly.</p>`,
         })
       } else if (provider === 'graph') {
         const fromEmail = (settings.smtpFrom as string) || process.env.FROM_EMAIL
@@ -162,8 +162,8 @@ export async function settingsRoutes(server: FastifyInstance) {
         await sendViaGraph({
           from: fromEmail,
           to: recipient,
-          subject: `Test email from ${tenant.name} AssessIQ`,
-          html: `<p>This is a test email from <strong>${tenant.name}</strong> via AssessIQ. Your Microsoft Graph email configuration is working correctly.</p>`,
+          subject: `Test email from ${tenant.name} NeutaraAssessments`,
+          html: `<p>This is a test email from <strong>${tenant.name}</strong> via NeutaraAssessments. Your Microsoft Graph email configuration is working correctly.</p>`,
         })
       }
 

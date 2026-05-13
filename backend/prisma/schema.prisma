@@ -280,6 +280,7 @@ model Candidate {
   firstName   String
   lastName    String
   phone       String?
+  isActive    Boolean  @default(true)
   metadata    Json?    // extra fields like department, job_role, etc.
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

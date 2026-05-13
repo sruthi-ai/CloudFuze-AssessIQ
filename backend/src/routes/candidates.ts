@@ -24,6 +24,11 @@ const inviteSchema = z.object({
   message: z.string().optional(),
 })
 
+const invitationInclude = {
+  include: { test: { select: { id: true, title: true } } },
+  orderBy: { createdAt: 'desc' as const },
+}
+
 export async function candidateRoutes(server: FastifyInstance) {
   const canEdit = requireRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'RECRUITER')
   const canView = requireRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'RECRUITER', 'VIEWER')
@@ -47,7 +52,10 @@ export async function candidateRoutes(server: FastifyInstance) {
     const [candidates, total] = await Promise.all([
       prisma.candidate.findMany({
         where,
-        include: { _count: { select: { invitations: true, sessions: true } } },
+        include: {
+          _count: { select: { invitations: true, sessions: true } },
+          invitations: invitationInclude,
+        },
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
@@ -86,12 +94,38 @@ export async function candidateRoutes(server: FastifyInstance) {
     const existing = await prisma.candidate.findUnique({
       where: { email_tenantId: { email: result.data.email, tenantId: request.user.tenantId } },
     })
-    if (existing) return sendSuccess(reply, existing) // idempotent
+    if (existing) return sendSuccess(reply, existing)
 
     const candidate = await prisma.candidate.create({
       data: { ...result.data, tenantId: request.user.tenantId, metadata: (result.data.metadata ?? null) as any },
     })
     return sendSuccess(reply, candidate, 201)
+  })
+
+  // DELETE /api/candidates/:id
+  server.delete('/:id', { preHandler: canEdit }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const candidate = await prisma.candidate.findFirst({
+      where: { id, tenantId: request.user.tenantId },
+    })
+    if (!candidate) return sendError(reply, 404, 'Candidate not found')
+    await prisma.candidate.delete({ where: { id } })
+    return sendSuccess(reply, { deleted: true })
+  })
+
+  // PATCH /api/candidates/:id — toggle suspend/activate
+  server.patch('/:id', { preHandler: canEdit }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const body = request.body as { isActive?: boolean }
+    const candidate = await prisma.candidate.findFirst({
+      where: { id, tenantId: request.user.tenantId },
+    })
+    if (!candidate) return sendError(reply, 404, 'Candidate not found')
+    const updated = await prisma.candidate.update({
+      where: { id },
+      data: { isActive: body.isActive ?? !candidate.isActive },
+    })
+    return sendSuccess(reply, updated)
   })
 
   // POST /api/candidates/invite — bulk invite
@@ -110,7 +144,6 @@ export async function candidateRoutes(server: FastifyInstance) {
     const expiresAt = new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000)
     const results = await Promise.allSettled(
       candidates.map(async c => {
-        // Upsert candidate
         let candidate = await prisma.candidate.findUnique({
           where: { email_tenantId: { email: c.email, tenantId: request.user.tenantId } },
         })
@@ -120,7 +153,6 @@ export async function candidateRoutes(server: FastifyInstance) {
           })
         }
 
-        // Check existing invitation
         const existing = await prisma.invitation.findUnique({
           where: { testId_candidateId: { testId, candidateId: candidate.id } },
         })
@@ -152,6 +184,53 @@ export async function candidateRoutes(server: FastifyInstance) {
     )
 
     return sendSuccess(reply, { summary })
+  })
+
+  // POST /api/candidates/invitations/:invitationId/resend
+  server.post('/invitations/:invitationId/resend', { preHandler: canEdit }, async (request, reply) => {
+    const { invitationId } = request.params as { invitationId: string }
+    const invitation = await prisma.invitation.findFirst({
+      where: { id: invitationId },
+      include: { candidate: true, test: { include: { tenant: true } } },
+    })
+    if (!invitation) return sendError(reply, 404, 'Invitation not found')
+    if (invitation.test.tenantId !== request.user.tenantId) return sendError(reply, 403, 'Forbidden')
+
+    await prisma.invitation.update({
+      where: { id: invitationId },
+      data: { sentAt: new Date(), status: 'SENT' },
+    })
+
+    await sendInvitationEmail({
+      to: invitation.candidate.email,
+      candidateName: `${invitation.candidate.firstName} ${invitation.candidate.lastName}`,
+      testTitle: invitation.test.title,
+      companyName: invitation.test.tenant.name,
+      token: invitation.token,
+      expiresAt: invitation.expiresAt,
+      message: invitation.message ?? undefined,
+      tenantSettings: (invitation.test.tenant.settings ?? undefined) as any,
+    })
+
+    return sendSuccess(reply, { resent: true })
+  })
+
+  // DELETE /api/candidates/invitations/:invitationId — cancel invitation
+  server.delete('/invitations/:invitationId', { preHandler: canEdit }, async (request, reply) => {
+    const { invitationId } = request.params as { invitationId: string }
+    const invitation = await prisma.invitation.findFirst({
+      where: { id: invitationId },
+      include: { test: true },
+    })
+    if (!invitation) return sendError(reply, 404, 'Invitation not found')
+    if (invitation.test.tenantId !== request.user.tenantId) return sendError(reply, 403, 'Forbidden')
+
+    await prisma.invitation.update({
+      where: { id: invitationId },
+      data: { status: 'CANCELLED' },
+    })
+
+    return sendSuccess(reply, { cancelled: true })
   })
 
   // GET /api/candidates/invitations/:testId — all invitations for a test

@@ -1,7 +1,7 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import {
   Brain, LayoutDashboard, ClipboardList, BookOpen,
-  Users, BarChart3, LogOut, ChevronRight, Menu, X, Settings, TrendingUp
+  Users, BarChart3, LogOut, Menu, X, Settings, TrendingUp, UserCog, MonitorPlay,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useAuthStore } from '@/stores/auth'
@@ -15,6 +15,8 @@ const navItems = [
   { to: '/admin/candidates', icon: Users, label: 'Candidates' },
   { to: '/admin/results', icon: BarChart3, label: 'Results' },
   { to: '/admin/analytics', icon: TrendingUp, label: 'Analytics' },
+  { to: '/admin/monitor', icon: MonitorPlay, label: 'Live Monitor' },
+  { to: '/admin/team', icon: UserCog, label: 'Team' },
   { to: '/admin/settings', icon: Settings, label: 'Settings' },
 ]
 

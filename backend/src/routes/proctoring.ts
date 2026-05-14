@@ -102,6 +102,40 @@ export async function proctoringRoutes(server: FastifyInstance) {
     return sendSuccess(reply, { count: created.length }, 201)
   })
 
+  // GET /api/proctoring/active — live monitor: all in-progress sessions for this tenant
+  server.get('/active', { preHandler: canView }, async (request, reply) => {
+    const sessions = await prisma.session.findMany({
+      where: {
+        status: 'IN_PROGRESS',
+        test: { tenantId: request.user.tenantId },
+      },
+      include: {
+        candidate: { select: { id: true, firstName: true, lastName: true, email: true } },
+        test: { select: { id: true, title: true } },
+        proctoringEvents: {
+          orderBy: { occurredAt: 'desc' },
+          take: 5,
+          select: { id: true, type: true, severity: true, occurredAt: true, description: true },
+        },
+        _count: { select: { proctoringEvents: true } },
+      },
+      orderBy: { startedAt: 'asc' },
+    })
+
+    const result = sessions.map(s => ({
+      sessionId: s.id,
+      startedAt: s.startedAt,
+      timeoutAt: s.timeoutAt,
+      candidate: s.candidate,
+      test: s.test,
+      recentEvents: s.proctoringEvents,
+      totalEvents: s._count.proctoringEvents,
+      riskScore: calculateRiskScore(s.proctoringEvents),
+    }))
+
+    return sendSuccess(reply, result)
+  })
+
   // GET /api/proctoring/:sessionId/events — admin view of all events for a session
   server.get('/:sessionId/events', { preHandler: canView }, async (request, reply) => {
     const { sessionId } = request.params as { sessionId: string }

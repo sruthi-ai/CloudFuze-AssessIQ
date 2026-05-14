@@ -51,6 +51,12 @@ export function TestPage() {
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
 
   const proctoring = inviteData?.test?.proctoring !== false
+  const brandColor = inviteData?.test?.tenant?.primaryColor ?? '#6366f1'
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--brand-primary', brandColor)
+    return () => { document.documentElement.style.removeProperty('--brand-primary') }
+  }, [brandColor])
 
   const {
     pushEvent, stopProctoring, requestFullscreen, flush,
@@ -203,7 +209,7 @@ export function TestPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Header */}
-      <header className="bg-white border-b sticky top-0 z-10">
+      <header className="bg-white border-b sticky top-0 z-10" style={{ borderTopColor: brandColor, borderTopWidth: 3, borderTopStyle: 'solid' }}>
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center gap-3">
           <div className="font-semibold text-gray-900 truncate flex-1">{inviteData?.test?.title ?? 'Assessment'}</div>
 
@@ -242,7 +248,8 @@ export function TestPage() {
           autoPlay
           muted
           playsInline
-          className="fixed bottom-4 right-4 w-32 h-24 rounded-lg border-2 border-white shadow-lg object-cover z-50 bg-gray-900"
+          className="fixed bottom-4 right-4 w-32 h-24 rounded-lg border-2 shadow-lg object-cover z-50 bg-gray-900"
+          style={{ borderColor: brandColor }}
         />
       )}
 

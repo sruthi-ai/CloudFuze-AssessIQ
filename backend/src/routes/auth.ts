@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { prisma } from '../db'
 import { sendError, sendSuccess } from '../utils/errors'
 import { authenticate } from '../middleware/authenticate'
+import { sendPasswordResetEmail } from '../utils/email'
 import type { JWTPayload } from '../types'
 
 const registerSchema = z.object({
@@ -189,6 +190,60 @@ export async function authRoutes(server: FastifyInstance) {
       })
     }
     return sendSuccess(reply, { message: 'Logged out' })
+  })
+
+  // POST /api/auth/forgot-password — send reset email
+  server.post('/forgot-password', async (request, reply) => {
+    const { email, tenantSlug } = request.body as { email: string; tenantSlug: string }
+    if (!email || !tenantSlug) return sendError(reply, 400, 'email and tenantSlug required')
+
+    const tenant = await prisma.tenant.findUnique({ where: { slug: tenantSlug }, select: { id: true, settings: true } })
+    if (!tenant) return sendSuccess(reply, { message: 'If that email exists, a reset link has been sent.' })
+
+    const user = await prisma.user.findUnique({ where: { email_tenantId: { email, tenantId: tenant.id } } })
+    // Always respond the same to prevent user enumeration
+    if (!user || !user.isActive) return sendSuccess(reply, { message: 'If that email exists, a reset link has been sent.' })
+
+    // Invalidate previous unused tokens
+    await prisma.passwordResetToken.updateMany({
+      where: { userId: user.id, usedAt: null },
+      data: { usedAt: new Date() },
+    })
+
+    const resetToken = await prisma.passwordResetToken.create({
+      data: { userId: user.id, expiresAt: new Date(Date.now() + 60 * 60 * 1000) },
+    })
+
+    await sendPasswordResetEmail({
+      to: user.email,
+      name: `${user.firstName} ${user.lastName}`,
+      token: resetToken.token,
+      tenantSettings: (tenant.settings ?? undefined) as any,
+    }).catch(err => server.log.error('Failed to send reset email:', err))
+
+    return sendSuccess(reply, { message: 'If that email exists, a reset link has been sent.' })
+  })
+
+  // POST /api/auth/reset-password — apply new password
+  server.post('/reset-password', async (request, reply) => {
+    const { token, password } = request.body as { token: string; password: string }
+    if (!token || !password || password.length < 8) return sendError(reply, 400, 'token and password (min 8 chars) required')
+
+    const resetToken = await prisma.passwordResetToken.findUnique({
+      where: { token },
+      include: { user: true },
+    })
+    if (!resetToken || resetToken.usedAt || resetToken.expiresAt < new Date()) {
+      return sendError(reply, 400, 'Reset link is invalid or has expired')
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12)
+    await prisma.user.update({ where: { id: resetToken.userId }, data: { passwordHash } })
+    await prisma.passwordResetToken.update({ where: { id: resetToken.id }, data: { usedAt: new Date() } })
+    // Revoke all refresh tokens for security
+    await prisma.refreshToken.updateMany({ where: { userId: resetToken.userId, revokedAt: null }, data: { revokedAt: new Date() } })
+
+    return sendSuccess(reply, { message: 'Password updated successfully. Please sign in.' })
   })
 
   // GET /api/auth/me

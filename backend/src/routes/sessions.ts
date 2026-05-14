@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../db'
 import { sendError, sendSuccess } from '../utils/errors'
 import { scoreSession } from '../services/scoring'
+import { sendSubmissionNotification } from '../utils/email'
 
 const submitAnswerSchema = z.object({
   questionId: z.string(),
@@ -244,6 +245,9 @@ export async function sessionRoutes(server: FastifyInstance) {
 
     const score = await scoreSession(sessionId)
 
+    // Notify recruiters/admins asynchronously (fire-and-forget)
+    notifyRecruitersOnSubmission(sessionId, score).catch(() => {})
+
     return sendSuccess(reply, {
       message: 'Assessment submitted successfully',
       score: score
@@ -280,6 +284,46 @@ export async function sessionRoutes(server: FastifyInstance) {
       score: session.score,
     })
   })
+}
+
+async function notifyRecruitersOnSubmission(
+  sessionId: string,
+  score: { percentage: number; passed?: boolean | null } | null
+) {
+  const session = await prisma.session.findUnique({
+    where: { id: sessionId },
+    include: {
+      candidate: { select: { firstName: true, lastName: true } },
+      test: { include: { tenant: { select: { settings: true } } } },
+    },
+  })
+  if (!session) return
+
+  const recruiters = await prisma.user.findMany({
+    where: {
+      tenantId: session.test.tenantId,
+      isActive: true,
+      role: { in: ['COMPANY_ADMIN', 'RECRUITER'] },
+    },
+    select: { email: true, firstName: true },
+  })
+
+  const candidateName = `${session.candidate.firstName} ${session.candidate.lastName}`
+  const settings = (session.test.tenant.settings ?? undefined) as any
+
+  await Promise.allSettled(
+    recruiters.map(r =>
+      sendSubmissionNotification({
+        to: r.email,
+        recruiterName: r.firstName,
+        candidateName,
+        testTitle: session.test.title,
+        sessionId,
+        score,
+        tenantSettings: settings,
+      })
+    )
+  )
 }
 
 async function autoSubmit(sessionId: string) {

@@ -5,9 +5,13 @@ import { Toaster } from '@/components/ui/toaster'
 // Auth pages
 import { LoginPage } from '@/pages/auth/LoginPage'
 import { RegisterPage } from '@/pages/auth/RegisterPage'
+import { ForgotPasswordPage } from '@/pages/auth/ForgotPasswordPage'
+import { ResetPasswordPage } from '@/pages/auth/ResetPasswordPage'
 
 // Admin pages
 import { AdminLayout } from '@/components/layout/AdminLayout'
+import { TeamPage } from '@/pages/admin/TeamPage'
+import { LiveMonitorPage } from '@/pages/admin/LiveMonitorPage'
 import { DashboardPage } from '@/pages/admin/DashboardPage'
 import { TestsPage } from '@/pages/admin/TestsPage'
 import { TestBuilderPage } from '@/pages/admin/TestBuilderPage'
@@ -35,6 +39,8 @@ export default function App() {
         {/* Auth */}
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
 
         {/* Admin — protected */}
         <Route path="/admin" element={<RequireAuth><AdminLayout /></RequireAuth>}>
@@ -49,6 +55,8 @@ export default function App() {
           <Route path="results/:sessionId" element={<ResultDetailPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="analytics" element={<AnalyticsPage />} />
+          <Route path="team" element={<TeamPage />} />
+          <Route path="monitor" element={<LiveMonitorPage />} />
         </Route>
 
         {/* Candidate-facing — public */}

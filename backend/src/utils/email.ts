@@ -156,4 +156,85 @@ export async function sendInvitationEmail(params: {
   console.log(`[EMAIL] No provider configured — would send invite to ${params.to}: ${url}`)
 }
 
+export async function sendPasswordResetEmail(params: {
+  to: string
+  name: string
+  token: string
+  tenantSettings?: TenantEmailSettings
+}) {
+  const url = `${FRONTEND_URL}/reset-password?token=${params.token}`
+  const html = `
+    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #6366f1;">Reset your password</h2>
+      <p>Hi ${params.name},</p>
+      <p>We received a request to reset your password. Click the button below to choose a new one.</p>
+      <a href="${url}" style="display:inline-block;background:#6366f1;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;margin:16px 0;">
+        Reset Password
+      </a>
+      <p>This link expires in <strong>1 hour</strong>. If you didn't request this, you can safely ignore this email.</p>
+    </div>
+  `
+  const subject = 'Reset your NeutaraAssessments password'
+  const s = params.tenantSettings
+  if (process.env.AZURE_TENANT_ID && process.env.AZURE_CLIENT_ID && process.env.AZURE_CLIENT_SECRET) {
+    await sendViaGraph({ from: FROM_EMAIL, to: params.to, subject, html }); return
+  }
+  if (process.env.RESEND_API_KEY) {
+    const resend = new Resend(process.env.RESEND_API_KEY)
+    await resend.emails.send({ from: FROM_EMAIL, to: params.to, subject, html }); return
+  }
+  if (s?.emailProvider === 'smtp' && s.smtpHost && s.smtpUser && s.smtpPass) {
+    await sendViaSmtp({ to: params.to, subject, html, smtpHost: s.smtpHost, smtpPort: s.smtpPort ?? 587, smtpUser: s.smtpUser, smtpPass: s.smtpPass, smtpFrom: s.smtpFrom || s.smtpUser, smtpSecure: s.smtpSecure ?? false }); return
+  }
+  if (s?.emailProvider === 'resend' && s.resendApiKey) {
+    const resend = new Resend(s.resendApiKey)
+    await resend.emails.send({ from: s.smtpFrom || FROM_EMAIL, to: params.to, subject, html }); return
+  }
+  console.log(`[EMAIL] No provider — password reset for ${params.to}: ${url}`)
+}
+
+export async function sendSubmissionNotification(params: {
+  to: string
+  recruiterName: string
+  candidateName: string
+  testTitle: string
+  sessionId: string
+  score?: { percentage: number; passed?: boolean | null } | null
+  tenantSettings?: TenantEmailSettings
+}) {
+  const url = `${FRONTEND_URL}/admin/results/${params.sessionId}`
+  const scoreHtml = params.score
+    ? `<p>Score: <strong>${params.score.percentage.toFixed(1)}%</strong>${params.score.passed != null ? ` — <span style="color:${params.score.passed ? '#16a34a' : '#dc2626'}">${params.score.passed ? 'Passed' : 'Failed'}</span>` : ''}</p>`
+    : '<p>Auto-grading in progress.</p>'
+
+  const html = `
+    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #6366f1;">Assessment Submitted</h2>
+      <p>Hi ${params.recruiterName},</p>
+      <p><strong>${params.candidateName}</strong> has just submitted their assessment for <strong>${params.testTitle}</strong>.</p>
+      ${scoreHtml}
+      <a href="${url}" style="display:inline-block;background:#6366f1;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;margin:16px 0;">
+        View Result
+      </a>
+    </div>
+  `
+  const subject = `${params.candidateName} submitted: ${params.testTitle}`
+  const s = params.tenantSettings
+  if (process.env.AZURE_TENANT_ID && process.env.AZURE_CLIENT_ID && process.env.AZURE_CLIENT_SECRET) {
+    await sendViaGraph({ from: FROM_EMAIL, to: params.to, subject, html }); return
+  }
+  if (process.env.RESEND_API_KEY) {
+    const resend = new Resend(process.env.RESEND_API_KEY)
+    await resend.emails.send({ from: FROM_EMAIL, to: params.to, subject, html }); return
+  }
+  if (s?.emailProvider === 'smtp' && s.smtpHost && s.smtpUser && s.smtpPass) {
+    await sendViaSmtp({ to: params.to, subject, html, smtpHost: s.smtpHost, smtpPort: s.smtpPort ?? 587, smtpUser: s.smtpUser, smtpPass: s.smtpPass, smtpFrom: s.smtpFrom || s.smtpUser, smtpSecure: s.smtpSecure ?? false }); return
+  }
+  if (s?.emailProvider === 'resend' && s.resendApiKey) {
+    const resend = new Resend(s.resendApiKey)
+    await resend.emails.send({ from: s.smtpFrom || FROM_EMAIL, to: params.to, subject, html }); return
+  }
+  console.log(`[EMAIL] No provider — submission notify for ${params.to}`)
+}
+
 export { sendViaGraph }

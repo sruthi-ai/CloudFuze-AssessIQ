@@ -137,9 +137,9 @@ export function TeamPage() {
                   </div>
                   <RoleBadge role={member.role} />
                   {member.isActive ? (
-                    <CheckCircle className="h-4 w-4 text-green-500 shrink-0" title="Active" />
+                    <span title="Active"><CheckCircle className="h-4 w-4 text-green-500 shrink-0" /></span>
                   ) : (
-                    <XCircle className="h-4 w-4 text-red-400 shrink-0" title="Suspended" />
+                    <span title="Suspended"><XCircle className="h-4 w-4 text-red-400 shrink-0" /></span>
                   )}
                   {isAdmin && member.id !== currentUser?.id && (
                     <DropdownMenu>

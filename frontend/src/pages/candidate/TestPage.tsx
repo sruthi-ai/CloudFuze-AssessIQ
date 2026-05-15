@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import {
-  Clock, AlertTriangle, ChevronLeft, ChevronRight, Send, Loader2,
-  Camera, CameraOff, Maximize, ShieldAlert,
+  Clock, ChevronLeft, ChevronRight, Send, Loader2,
+  Camera, CameraOff, Maximize,
 } from 'lucide-react'
 import MonacoEditor from '@monaco-editor/react'
 import { Button } from '@/components/ui/button'
@@ -47,7 +47,6 @@ export function TestPage() {
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null)
   const [questionStartTime, setQuestionStartTime] = useState(Date.now())
   const [submitting, setSubmitting] = useState(false)
-  const [violations, setViolations] = useState<Record<string, number>>({})
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
 
   const proctoring = inviteData?.test?.proctoring !== false
@@ -67,7 +66,6 @@ export function TestPage() {
     sessionId,
     token: token ?? '',
     enabled: proctoring,
-    onViolation: (type, count) => setViolations(prev => ({ ...prev, [type]: count })),
   })
 
   const { data: testData, isLoading } = useQuery({
@@ -177,7 +175,6 @@ export function TestPage() {
   const answeredCount = Object.values(answers).filter(a =>
     a.selectedOptions.length > 0 || a.responseText || a.numericValue || a.codeSubmission
   ).length
-  const totalViolations = Object.values(violations).reduce((s, n) => s + n, 0)
   const isLastQuestion = currentSectionIdx === sections.length - 1 && currentQIdx === questions.length - 1
 
   if (!sessionId) {
@@ -218,12 +215,6 @@ export function TestPage() {
               {webcamActive
                 ? <Camera className="h-4 w-4 text-green-600" />
                 : <CameraOff className="h-4 w-4 text-red-500" />}
-              {totalViolations > 0 && (
-                <Badge variant="destructive" className="gap-1">
-                  <ShieldAlert className="h-3 w-3" />
-                  {totalViolations} flag{totalViolations > 1 ? 's' : ''}
-                </Badge>
-              )}
               <button onClick={requestFullscreen} title="Enter fullscreen" className="text-muted-foreground hover:text-gray-900">
                 <Maximize className="h-4 w-4" />
               </button>
@@ -353,16 +344,6 @@ export function TestPage() {
               <div className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-primary" />Current</div>
             </div>
 
-            {proctoring && totalViolations > 0 && (
-              <div className="pt-2 border-t">
-                <p className="text-xs font-medium text-red-600 flex items-center gap-1 mb-1">
-                  <AlertTriangle className="h-3 w-3" />Flags logged
-                </p>
-                {Object.entries(violations).map(([type, count]) => (
-                  <p key={type} className="text-xs text-muted-foreground">{type.replace(/_/g, ' ')}: {count}</p>
-                ))}
-              </div>
-            )}
           </div>
         </aside>
       </div>

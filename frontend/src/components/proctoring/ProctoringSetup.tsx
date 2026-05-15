@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Camera, Mic, CheckCircle, XCircle, Loader2, AlertCircle, Shield } from 'lucide-react'
+import { Camera, Mic, CheckCircle, XCircle, Loader2, AlertCircle, Shield, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
@@ -14,6 +14,21 @@ interface ProctoringSetupProps {
 
 export function ProctoringSetup({ attachVideoRef, webcamActive, micActive, faceCount, onReady }: ProctoringSetupProps) {
   const [canStart, setCanStart] = useState(false)
+  const [cameraBlocked, setCameraBlocked] = useState(false)
+
+  // Detect if camera permission was explicitly denied
+  useEffect(() => {
+    if (!('permissions' in navigator)) return
+    navigator.permissions.query({ name: 'camera' as PermissionName }).then(result => {
+      setCameraBlocked(result.state === 'denied')
+      result.addEventListener('change', () => setCameraBlocked(result.state === 'denied'))
+    }).catch(() => {})
+  }, [])
+
+  // If webcam goes active, clear blocked state
+  useEffect(() => {
+    if (webcamActive) setCameraBlocked(false)
+  }, [webcamActive])
 
   // Allow start once webcam is active, with a 3 s grace period for models to load
   useEffect(() => {
@@ -39,6 +54,27 @@ export function ProctoringSetup({ attachVideoRef, webcamActive, micActive, faceC
             Verify your camera and environment before beginning.
           </p>
         </div>
+
+        {/* Camera blocked — hard stop */}
+        {cameraBlocked && (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-center space-y-3">
+            <XCircle className="h-8 w-8 text-red-500 mx-auto" />
+            <div>
+              <p className="font-semibold text-red-700">Camera access is blocked</p>
+              <p className="text-sm text-red-600 mt-1">
+                You must allow camera access to take this proctored assessment.
+              </p>
+            </div>
+            <ol className="text-sm text-left text-red-700 space-y-1 list-decimal list-inside">
+              <li>Click the <strong>camera icon</strong> in your browser's address bar</li>
+              <li>Select <strong>"Allow"</strong> for camera and microphone</li>
+              <li>Reload this page</li>
+            </ol>
+            <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+              <RefreshCw className="h-4 w-4 mr-2" />Reload page
+            </Button>
+          </div>
+        )}
 
         {/* Camera preview */}
         <Card className="overflow-hidden">
@@ -116,9 +152,11 @@ export function ProctoringSetup({ attachVideoRef, webcamActive, micActive, faceC
           className="w-full"
           size="lg"
           onClick={onReady}
-          disabled={!canStart}
+          disabled={!canStart || cameraBlocked}
         >
-          {!webcamActive ? (
+          {cameraBlocked ? (
+            <><XCircle className="h-4 w-4 mr-2" />Camera access required</>
+          ) : !webcamActive ? (
             <><Loader2 className="h-4 w-4 animate-spin mr-2" />Setting up camera…</>
           ) : !canStart ? (
             <><Loader2 className="h-4 w-4 animate-spin mr-2" />Preparing proctoring…</>

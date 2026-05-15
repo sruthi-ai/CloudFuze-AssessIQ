@@ -12,6 +12,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { api, getErrorMessage } from '@/lib/api'
 import { toast } from '@/hooks/use-toast'
 import { useProctoring } from '@/hooks/useProctoring'
+import { useScreenRecorder } from '@/hooks/useScreenRecorder'
 import { ProctoringSetup } from '@/components/proctoring/ProctoringSetup'
 import { formatSeconds, cn } from '@/lib/utils'
 
@@ -57,6 +58,10 @@ export function TestPage() {
     return () => { document.documentElement.style.removeProperty('--brand-primary') }
   }, [brandColor])
 
+  const candidateName = inviteData?.candidate
+    ? `${inviteData.candidate.firstName ?? ''} ${inviteData.candidate.lastName ?? ''}`.trim()
+    : undefined
+
   const {
     pushEvent, stopProctoring, requestFullscreen, flush,
     attachVideoRef,
@@ -64,6 +69,17 @@ export function TestPage() {
     violationCounts,
   } = useProctoring({
     sessionId,
+    token: token ?? '',
+    enabled: proctoring,
+    candidateName,
+  })
+
+  const {
+    requestPermission: requestScreenShare,
+    stopAndUpload: stopAndUploadRecording,
+    permission: screenSharePermission,
+  } = useScreenRecorder({
+    sessionId: sessionId ?? '',
     token: token ?? '',
     enabled: proctoring,
   })
@@ -108,6 +124,11 @@ export function TestPage() {
   const submitMutation = useMutation({
     mutationFn: async () => {
       await flush()
+      // Upload screen recording before stopping (best-effort, non-blocking)
+      await Promise.race([
+        stopAndUploadRecording(),
+        new Promise(resolve => setTimeout(resolve, 8000)), // 8s cap so submit doesn't stall
+      ])
       await stopProctoring()
       return api.post(`/sessions/${sessionId}/submit`, { token })
     },
@@ -198,6 +219,8 @@ export function TestPage() {
         micActive={micActive}
         faceCount={faceCount}
         onReady={handleSetupReady}
+        onRequestScreenShare={requestScreenShare}
+        screenSharePermission={screenSharePermission}
       />
     )
   }

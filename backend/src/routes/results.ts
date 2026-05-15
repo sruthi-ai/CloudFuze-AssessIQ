@@ -24,7 +24,7 @@ export async function resultRoutes(server: FastifyInstance) {
       prisma.session.findMany({
         where,
         include: {
-          candidate: { select: { id: true, firstName: true, lastName: true, email: true } },
+          candidate: { select: { id: true, firstName: true, lastName: true, email: true, organization: true } },
           test: { select: { id: true, title: true, passingScore: true } },
           score: true,
         },

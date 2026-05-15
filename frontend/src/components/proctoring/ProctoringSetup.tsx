@@ -1,22 +1,27 @@
 import { useEffect, useState } from 'react'
-import { Camera, Mic, CheckCircle, XCircle, Loader2, AlertCircle, Shield, RefreshCw } from 'lucide-react'
+import { Camera, Mic, CheckCircle, XCircle, Loader2, AlertCircle, Shield, RefreshCw, Monitor } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
 interface ProctoringSetupProps {
   attachVideoRef: (el: HTMLVideoElement | null) => void
   webcamActive: boolean
   micActive: boolean
-  faceCount: number // -1=loading/detecting, 0=no face, 1=ok, 2+=multiple
+  faceCount: number
   onReady: () => void
+  onRequestScreenShare?: () => Promise<boolean>
+  screenSharePermission?: 'idle' | 'granted' | 'denied'
 }
 
-export function ProctoringSetup({ attachVideoRef, webcamActive, micActive, faceCount, onReady }: ProctoringSetupProps) {
+export function ProctoringSetup({
+  attachVideoRef, webcamActive, micActive, faceCount, onReady,
+  onRequestScreenShare, screenSharePermission = 'idle',
+}: ProctoringSetupProps) {
   const [canStart, setCanStart] = useState(false)
   const [cameraBlocked, setCameraBlocked] = useState(false)
+  const [screenShareLoading, setScreenShareLoading] = useState(false)
 
-  // Detect if camera permission was explicitly denied
   useEffect(() => {
     if (!('permissions' in navigator)) return
     navigator.permissions.query({ name: 'camera' as PermissionName }).then(result => {
@@ -25,12 +30,10 @@ export function ProctoringSetup({ attachVideoRef, webcamActive, micActive, faceC
     }).catch(() => {})
   }, [])
 
-  // If webcam goes active, clear blocked state
   useEffect(() => {
     if (webcamActive) setCameraBlocked(false)
   }, [webcamActive])
 
-  // Allow start once webcam is active, with a 3 s grace period for models to load
   useEffect(() => {
     if (!webcamActive) return
     const t = setTimeout(() => setCanStart(true), 3000)
@@ -41,6 +44,15 @@ export function ProctoringSetup({ attachVideoRef, webcamActive, micActive, faceC
     !webcamActive || faceCount === -1 ? 'loading' :
     faceCount === 0 ? 'none' :
     faceCount === 1 ? 'ok' : 'multiple'
+
+  const handleScreenShare = async () => {
+    if (!onRequestScreenShare) return
+    setScreenShareLoading(true)
+    await onRequestScreenShare()
+    setScreenShareLoading(false)
+  }
+
+  const screenShareEnabled = !!onRequestScreenShare
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
@@ -143,6 +155,65 @@ export function ProctoringSetup({ attachVideoRef, webcamActive, micActive, faceC
             label="Secure session"
           />
         </div>
+
+        {/* Screen share step (optional but strongly encouraged) */}
+        {screenShareEnabled && (
+          <div className={cn(
+            'rounded-lg border p-4 space-y-3',
+            screenSharePermission === 'granted'
+              ? 'border-green-200 bg-green-50'
+              : screenSharePermission === 'denied'
+              ? 'border-orange-200 bg-orange-50'
+              : 'border-blue-200 bg-blue-50'
+          )}>
+            <div className="flex items-start gap-3">
+              <Monitor className={cn(
+                'h-5 w-5 shrink-0 mt-0.5',
+                screenSharePermission === 'granted' ? 'text-green-600' :
+                screenSharePermission === 'denied' ? 'text-orange-500' : 'text-blue-600'
+              )} />
+              <div className="flex-1">
+                <p className={cn(
+                  'text-sm font-semibold',
+                  screenSharePermission === 'granted' ? 'text-green-700' :
+                  screenSharePermission === 'denied' ? 'text-orange-700' : 'text-blue-700'
+                )}>
+                  {screenSharePermission === 'granted'
+                    ? '✓ Screen recording active'
+                    : screenSharePermission === 'denied'
+                    ? 'Screen share declined'
+                    : 'Screen share required'}
+                </p>
+                <p className={cn(
+                  'text-xs mt-0.5',
+                  screenSharePermission === 'granted' ? 'text-green-600' :
+                  screenSharePermission === 'denied' ? 'text-orange-600' : 'text-blue-600'
+                )}>
+                  {screenSharePermission === 'granted'
+                    ? 'Your screen is being recorded for this assessment.'
+                    : screenSharePermission === 'denied'
+                    ? 'You may proceed without screen share, but this will be flagged.'
+                    : 'Share your entire screen so we can verify your environment.'}
+                </p>
+              </div>
+            </div>
+            {screenSharePermission !== 'granted' && (
+              <Button
+                size="sm"
+                variant={screenSharePermission === 'denied' ? 'outline' : 'default'}
+                onClick={handleScreenShare}
+                disabled={screenShareLoading}
+                className="w-full"
+              >
+                {screenShareLoading
+                  ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Requesting…</>
+                  : <><Monitor className="h-4 w-4 mr-2" />
+                    {screenSharePermission === 'denied' ? 'Try Again' : 'Share My Screen'}
+                  </>}
+              </Button>
+            )}
+          </div>
+        )}
 
         <p className="text-xs text-center text-muted-foreground">
           Sit in a well-lit, quiet space. Your face must remain visible throughout the assessment.

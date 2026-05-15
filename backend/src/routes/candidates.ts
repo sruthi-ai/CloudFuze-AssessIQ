@@ -10,6 +10,7 @@ const createCandidateSchema = z.object({
   firstName: z.string().min(1).default('Candidate'),
   lastName: z.string().default(''),
   phone: z.string().optional(),
+  organization: z.string().optional(),
   metadata: z.record(z.unknown()).optional(),
 })
 
@@ -19,6 +20,7 @@ const inviteSchema = z.object({
     email: z.string().email(),
     firstName: z.string().default('Candidate'),
     lastName: z.string().default(''),
+    organization: z.string().optional(),
   })),
   expiresInDays: z.number().int().min(1).max(90).default(7),
   message: z.string().optional(),
@@ -150,6 +152,11 @@ export async function candidateRoutes(server: FastifyInstance) {
         if (!candidate) {
           candidate = await prisma.candidate.create({
             data: { ...c, tenantId: request.user.tenantId },
+          })
+        } else if (c.organization && !candidate.organization) {
+          candidate = await prisma.candidate.update({
+            where: { id: candidate.id },
+            data: { organization: c.organization },
           })
         }
 

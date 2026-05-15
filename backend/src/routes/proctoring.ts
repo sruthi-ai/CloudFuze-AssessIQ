@@ -1,8 +1,13 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import { createWriteStream } from 'fs'
+import { join } from 'path'
+import { pipeline } from 'stream/promises'
+import { statSync } from 'fs'
 import { prisma } from '../db'
 import { sendError, sendSuccess } from '../utils/errors'
 import { requireRole } from '../middleware/authenticate'
+import { UPLOADS_DIR } from '../uploads'
 
 const SEVERITY_MAP: Record<string, 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'> = {
   TAB_SWITCH: 'HIGH',
@@ -17,16 +22,21 @@ const SEVERITY_MAP: Record<string, 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'> = {
   SCREENSHOT_TAKEN: 'LOW',
   DEVTOOLS_OPEN: 'CRITICAL',
   PHONE_DETECTED: 'CRITICAL',
+  HEAD_TURNED: 'HIGH',
+  SCREEN_RECORDING_STOPPED: 'HIGH',
   CUSTOM: 'MEDIUM',
 }
 
+const EVENT_TYPES = [
+  'TAB_SWITCH', 'WINDOW_BLUR', 'FULLSCREEN_EXIT', 'COPY_PASTE', 'RIGHT_CLICK',
+  'WEBCAM_BLOCKED', 'MULTIPLE_FACES', 'NO_FACE_DETECTED', 'NOISE_DETECTED',
+  'SCREENSHOT_TAKEN', 'DEVTOOLS_OPEN', 'PHONE_DETECTED', 'HEAD_TURNED',
+  'SCREEN_RECORDING_STOPPED', 'CUSTOM',
+] as const
+
 const eventSchema = z.object({
   token: z.string(),
-  type: z.enum([
-    'TAB_SWITCH', 'WINDOW_BLUR', 'FULLSCREEN_EXIT', 'COPY_PASTE', 'RIGHT_CLICK',
-    'WEBCAM_BLOCKED', 'MULTIPLE_FACES', 'NO_FACE_DETECTED', 'NOISE_DETECTED',
-    'SCREENSHOT_TAKEN', 'DEVTOOLS_OPEN', 'PHONE_DETECTED', 'CUSTOM',
-  ]),
+  type: z.enum(EVENT_TYPES),
   description: z.string().optional(),
   metadata: z.record(z.unknown()).optional(),
   occurredAt: z.string().datetime().optional(),
@@ -134,6 +144,75 @@ export async function proctoringRoutes(server: FastifyInstance) {
     }))
 
     return sendSuccess(reply, result)
+  })
+
+  // POST /api/proctoring/:sessionId/snapshot — upload watermarked webcam snapshot
+  server.post('/:sessionId/snapshot', async (request, reply) => {
+    const { sessionId } = request.params as { sessionId: string }
+    const token = (request.query as { token?: string }).token
+
+    const session = await prisma.session.findFirst({
+      where: { id: sessionId, invitation: { token } },
+      select: { id: true, test: { select: { proctoring: true } } },
+    })
+    if (!session) return sendError(reply, 404, 'Session not found')
+    if (!session.test.proctoring) return sendSuccess(reply, { skipped: true })
+
+    const data = await request.file()
+    if (!data) return sendError(reply, 400, 'No file uploaded')
+
+    const filename = `${sessionId}_${Date.now()}.jpg`
+    const filePath = join(UPLOADS_DIR, 'snapshots', filename)
+    await pipeline(data.file, createWriteStream(filePath))
+
+    const snapshot = await prisma.webcamSnapshot.create({
+      data: { sessionId, url: `/uploads/snapshots/${filename}` },
+    })
+    return sendSuccess(reply, snapshot, 201)
+  })
+
+  // POST /api/proctoring/:sessionId/screen-recording — upload screen recording
+  server.post('/:sessionId/screen-recording', async (request, reply) => {
+    const { sessionId } = request.params as { sessionId: string }
+    const token = (request.query as { token?: string }).token
+
+    const session = await prisma.session.findFirst({
+      where: { id: sessionId, invitation: { token } },
+      select: { id: true },
+    })
+    if (!session) return sendError(reply, 404, 'Session not found')
+
+    const data = await request.file()
+    if (!data) return sendError(reply, 400, 'No file uploaded')
+
+    const filename = `${sessionId}_${Date.now()}.webm`
+    const filePath = join(UPLOADS_DIR, 'recordings', filename)
+    await pipeline(data.file, createWriteStream(filePath))
+
+    const stat = statSync(filePath)
+    const recording = await prisma.screenRecording.upsert({
+      where: { sessionId },
+      update: { url: `/uploads/recordings/${filename}`, fileSize: stat.size },
+      create: { sessionId, url: `/uploads/recordings/${filename}`, fileSize: stat.size },
+    })
+    return sendSuccess(reply, recording, 201)
+  })
+
+  // GET /api/proctoring/:sessionId/snapshots — list all snapshots for a session (admin)
+  server.get('/:sessionId/snapshots', { preHandler: canView }, async (request, reply) => {
+    const { sessionId } = request.params as { sessionId: string }
+    const session = await prisma.session.findFirst({
+      where: { id: sessionId, test: { tenantId: request.user.tenantId } },
+      include: {
+        webcamSnapshots: { orderBy: { occurredAt: 'asc' } },
+        screenRecording: true,
+      },
+    })
+    if (!session) return sendError(reply, 404, 'Session not found')
+    return sendSuccess(reply, {
+      snapshots: session.webcamSnapshots,
+      screenRecording: session.screenRecording,
+    })
   })
 
   // GET /api/proctoring/:sessionId/events — admin view of all events for a session

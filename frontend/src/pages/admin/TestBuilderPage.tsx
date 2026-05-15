@@ -7,6 +7,8 @@ import { z } from 'zod'
 import {
   ArrowLeft, Plus, Trash2, Settings, BookOpen,
   GripVertical, Loader2, Save, Eye, Pencil, X, Check,
+  Users, BarChart2, Copy, RefreshCw, XCircle, Send,
+  TrendingUp, CheckCircle, Clock,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -275,6 +277,273 @@ function SectionTitleEditor({ sectionId, testId, initialTitle }: SectionTitleEdi
   )
 }
 
+// ─── Candidates Tab ───────────────────────────────────────────────────────────
+
+const INV_STATUS_VARIANT: Record<string, any> = {
+  PENDING: 'secondary', SENT: 'secondary', OPENED: 'warning',
+  STARTED: 'warning', COMPLETED: 'success', EXPIRED: 'destructive', CANCELLED: 'outline',
+}
+
+function TestCandidatesTab({ testId }: { testId: string }) {
+  const qc = useQueryClient()
+  const [copiedToken, setCopiedToken] = useState<string | null>(null)
+
+  const { data: invitations = [], isLoading } = useQuery<any[]>({
+    queryKey: ['test-invitations', testId],
+    queryFn: () => api.get(`/candidates/invitations/${testId}`).then(r => r.data.data),
+  })
+
+  const resendMutation = useMutation({
+    mutationFn: (invitationId: string) => api.post(`/candidates/invitations/${invitationId}/resend`, {}),
+    onSuccess: () => { toast({ title: 'Invitation resent' }); qc.invalidateQueries({ queryKey: ['test-invitations', testId] }) },
+    onError: err => toast({ title: 'Error', description: getErrorMessage(err), variant: 'destructive' }),
+  })
+
+  const cancelMutation = useMutation({
+    mutationFn: (invitationId: string) => api.delete(`/candidates/invitations/${invitationId}`),
+    onSuccess: () => { toast({ title: 'Invitation cancelled' }); qc.invalidateQueries({ queryKey: ['test-invitations', testId] }) },
+    onError: err => toast({ title: 'Error', description: getErrorMessage(err), variant: 'destructive' }),
+  })
+
+  const copyLink = (token: string) => {
+    navigator.clipboard.writeText(`${window.location.origin}/take/${token}`)
+    setCopiedToken(token)
+    setTimeout(() => setCopiedToken(null), 2000)
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">{invitations.length} candidate{invitations.length !== 1 ? 's' : ''} invited</p>
+        <Button size="sm" asChild>
+          <Link to={`/admin/candidates?testId=${testId}`}>
+            <Send className="h-3.5 w-3.5 mr-1.5" />Invite More
+          </Link>
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+      ) : invitations.length === 0 ? (
+        <div className="rounded-lg border border-dashed p-10 text-center">
+          <Users className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
+          <p className="text-sm text-muted-foreground mb-3">No candidates invited yet.</p>
+          <Button size="sm" asChild>
+            <Link to={`/admin/candidates?testId=${testId}`}><Send className="h-3.5 w-3.5 mr-1.5" />Invite Candidates</Link>
+          </Button>
+        </div>
+      ) : (
+        <Card>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-gray-50/50">
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">Candidate</th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">Organization</th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">Status</th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">Score</th>
+                  <th className="px-4 py-3" />
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {invitations.map((inv: any) => (
+                  <tr key={inv.id} className="hover:bg-gray-50/50">
+                    <td className="px-4 py-3">
+                      <p className="font-medium">{inv.candidate.firstName} {inv.candidate.lastName}</p>
+                      <p className="text-xs text-muted-foreground">{inv.candidate.email}</p>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground text-xs">
+                      {inv.candidate.organization ?? <span className="italic">—</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge variant={INV_STATUS_VARIANT[inv.status] ?? 'secondary'} className="text-xs">
+                        {inv.status}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3">
+                      {inv.session?.score ? (
+                        <span className={cn('font-medium text-sm', inv.session.score.passed ? 'text-green-600' : 'text-red-600')}>
+                          {inv.session.score.percentage.toFixed(0)}%
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1 justify-end">
+                        <button
+                          onClick={() => copyLink(inv.token)}
+                          className="p-1 text-muted-foreground hover:text-primary transition-colors"
+                          title="Copy invite link"
+                        >
+                          {copiedToken === inv.token ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                        </button>
+                        {!['CANCELLED', 'COMPLETED', 'EXPIRED'].includes(inv.status) && (
+                          <button
+                            onClick={() => resendMutation.mutate(inv.id)}
+                            disabled={resendMutation.isPending}
+                            className="p-1 text-muted-foreground hover:text-primary transition-colors"
+                            title="Resend email"
+                          >
+                            <RefreshCw className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        {!['CANCELLED', 'COMPLETED', 'EXPIRED'].includes(inv.status) && (
+                          <button
+                            onClick={() => cancelMutation.mutate(inv.id)}
+                            disabled={cancelMutation.isPending}
+                            className="p-1 text-muted-foreground hover:text-red-500 transition-colors"
+                            title="Cancel invitation"
+                          >
+                            <XCircle className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        {inv.session?.id && (
+                          <Link
+                            to={`/admin/results/${inv.session.id}`}
+                            className="p-1 text-muted-foreground hover:text-primary transition-colors"
+                            title="View result"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                          </Link>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+    </div>
+  )
+}
+
+// ─── Results Tab ──────────────────────────────────────────────────────────────
+
+function TestResultsTab({ testId, passingScore }: { testId: string; passingScore: number | null }) {
+  const { data, isLoading } = useQuery<{ sessions: any[]; total: number }>({
+    queryKey: ['test-results', testId],
+    queryFn: () => api.get(`/results?testId=${testId}&limit=100`).then(r => r.data.data),
+  })
+
+  const sessions = data?.sessions ?? []
+  const submitted = sessions.filter(s => s.status === 'SUBMITTED' || s.status === 'TIMED_OUT')
+  const withScore = submitted.filter(s => s.score)
+  const avgScore = withScore.length
+    ? withScore.reduce((sum, s) => sum + s.score.percentage, 0) / withScore.length
+    : null
+  const passed = withScore.filter(s => s.score.passed).length
+  const passRate = withScore.length ? (passed / withScore.length) * 100 : null
+
+  return (
+    <div className="space-y-4">
+      {/* Summary stats */}
+      <div className="grid grid-cols-3 gap-3">
+        <Card>
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-muted-foreground" />
+              <p className="text-xs text-muted-foreground">Submitted</p>
+            </div>
+            <p className="text-2xl font-bold mt-1">{submitted.length}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              <p className="text-xs text-muted-foreground">Avg Score</p>
+            </div>
+            <p className="text-2xl font-bold mt-1">
+              {avgScore !== null ? `${avgScore.toFixed(0)}%` : '—'}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center gap-2">
+              <CheckCircle className="h-4 w-4 text-muted-foreground" />
+              <p className="text-xs text-muted-foreground">Pass Rate</p>
+            </div>
+            <p className="text-2xl font-bold mt-1">
+              {passRate !== null ? `${passRate.toFixed(0)}%` : '—'}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+      ) : submitted.length === 0 ? (
+        <div className="rounded-lg border border-dashed p-10 text-center">
+          <Clock className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
+          <p className="text-sm text-muted-foreground">No submissions yet.</p>
+        </div>
+      ) : (
+        <Card>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-gray-50/50">
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">Candidate</th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">Organization</th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">Submitted</th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">Score</th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">Result</th>
+                  <th className="px-4 py-3" />
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {submitted.map((s: any) => (
+                  <tr key={s.id} className="hover:bg-gray-50/50">
+                    <td className="px-4 py-3">
+                      <p className="font-medium">{s.candidate.firstName} {s.candidate.lastName}</p>
+                      <p className="text-xs text-muted-foreground">{s.candidate.email}</p>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                      {s.candidate.organization ?? <span className="italic">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                      {s.submittedAt ? new Date(s.submittedAt).toLocaleDateString() : '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      {s.score ? (
+                        <span className="font-medium">{s.score.percentage.toFixed(0)}%</span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {s.score ? (
+                        s.score.passed === true ? (
+                          <Badge variant="success" className="text-xs">Pass</Badge>
+                        ) : s.score.passed === false ? (
+                          <Badge variant="destructive" className="text-xs">Fail</Badge>
+                        ) : (
+                          <Badge variant="secondary" className="text-xs">Graded</Badge>
+                        )
+                      ) : (
+                        <Badge variant="secondary" className="text-xs">Pending</Badge>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <Button variant="ghost" size="sm" className="h-7 text-xs" asChild>
+                        <Link to={`/admin/results/${s.id}`}><Eye className="h-3 w-3 mr-1" />Details</Link>
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+    </div>
+  )
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export function TestBuilderPage() {
@@ -283,7 +552,7 @@ export function TestBuilderPage() {
   const qc = useQueryClient()
   const isNew = !testId
 
-  const [activeTab, setActiveTab] = useState<'settings' | 'questions'>('settings')
+  const [activeTab, setActiveTab] = useState<'settings' | 'questions' | 'candidates' | 'results'>('settings')
   const [showQuestionPicker, setShowQuestionPicker] = useState(false)
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null)
 
@@ -541,24 +810,26 @@ export function TestBuilderPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b">
-        {(['settings', 'questions'] as const).map(tab => (
+      <div className="flex gap-1 border-b overflow-x-auto">
+        {([
+          { id: 'settings', label: 'Settings', Icon: Settings },
+          { id: 'questions', label: 'Questions', Icon: BookOpen },
+          { id: 'candidates', label: 'Candidates', Icon: Users },
+          { id: 'results', label: 'Results', Icon: BarChart2 },
+        ] as const).map(({ id, label, Icon }) => (
           <button
-            key={tab}
-            onClick={() => { if (!isNew || tab === 'settings') setActiveTab(tab) }}
-            disabled={isNew && tab === 'questions'}
+            key={id}
+            onClick={() => { if (!isNew || id === 'settings') setActiveTab(id) }}
+            disabled={isNew && id !== 'settings'}
             className={cn(
-              'px-4 py-2 text-sm font-medium capitalize border-b-2 -mb-px transition-colors',
-              activeTab === tab
+              'flex items-center gap-1.5 px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors',
+              activeTab === id
                 ? 'border-primary text-primary'
                 : 'border-transparent text-muted-foreground hover:text-gray-900',
-              isNew && tab === 'questions' && 'opacity-40 cursor-not-allowed'
+              isNew && id !== 'settings' && 'opacity-40 cursor-not-allowed'
             )}
           >
-            {tab === 'settings'
-              ? <><Settings className="h-4 w-4 inline mr-1.5" />Settings</>
-              : <><BookOpen className="h-4 w-4 inline mr-1.5" />Questions</>
-            }
+            <Icon className="h-4 w-4" />{label}
           </button>
         ))}
       </div>
@@ -838,6 +1109,16 @@ export function TestBuilderPage() {
             </div>
           )}
         </div>
+      )}
+
+      {/* ── Candidates tab ── */}
+      {activeTab === 'candidates' && testId && (
+        <TestCandidatesTab testId={testId} />
+      )}
+
+      {/* ── Results tab ── */}
+      {activeTab === 'results' && testId && (
+        <TestResultsTab testId={testId} passingScore={test?.passingScore ?? null} />
       )}
 
       {/* ── Question Picker Modal ── */}

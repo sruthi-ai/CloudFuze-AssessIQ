@@ -1,11 +1,11 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
-import { api } from '@/lib/api'
 import { toast } from '@/hooks/use-toast'
 
 export type ProctoringEventType =
   | 'TAB_SWITCH' | 'WINDOW_BLUR' | 'FULLSCREEN_EXIT' | 'COPY_PASTE'
   | 'RIGHT_CLICK' | 'WEBCAM_BLOCKED' | 'MULTIPLE_FACES' | 'NO_FACE_DETECTED'
-  | 'NOISE_DETECTED' | 'SCREENSHOT_TAKEN' | 'DEVTOOLS_OPEN' | 'PHONE_DETECTED' | 'CUSTOM'
+  | 'NOISE_DETECTED' | 'SCREENSHOT_TAKEN' | 'DEVTOOLS_OPEN' | 'PHONE_DETECTED'
+  | 'HEAD_TURNED' | 'SCREEN_RECORDING_STOPPED' | 'CUSTOM'
 
 interface QueuedEvent {
   type: ProctoringEventType
@@ -18,16 +18,29 @@ interface UseProctoringOptions {
   sessionId: string
   token: string
   enabled: boolean
+  candidateName?: string
   onViolation?: (type: ProctoringEventType, count: number) => void
 }
 
-export function useProctoring({ sessionId, token, enabled, onViolation }: UseProctoringOptions) {
+const API_BASE = import.meta.env.VITE_API_URL ?? ''
+
+// Draw a semi-transparent watermark footer on a canvas context
+function drawWatermark(ctx: CanvasRenderingContext2D, W: number, H: number, label: string) {
+  ctx.save()
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'
+  ctx.fillRect(0, H - 18, W, 18)
+  ctx.fillStyle = '#fff'
+  ctx.font = `bold ${Math.max(8, Math.round(W / 42))}px monospace`
+  ctx.fillText(label, 4, H - 5)
+  ctx.restore()
+}
+
+export function useProctoring({ sessionId, token, enabled, candidateName, onViolation }: UseProctoringOptions) {
   const queueRef = useRef<QueuedEvent[]>([])
   const violationCountRef = useRef<Record<string, number>>({})
   const flushTimerRef = useRef<number | null>(null)
   const webcamStreamRef = useRef<MediaStream | null>(null)
 
-  // Advanced proctoring refs
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const audioCtxRef = useRef<AudioContext | null>(null)
   const analyserRef = useRef<AnalyserNode | null>(null)
@@ -35,7 +48,6 @@ export function useProctoring({ sessionId, token, enabled, onViolation }: UsePro
   const faceCheckRef = useRef<number | null>(null)
   const screenshotRef = useRef<number | null>(null)
 
-  // Exposed state for setup UI
   const [webcamActive, setWebcamActive] = useState(false)
   const [micActive, setMicActive] = useState(false)
   const [faceCount, setFaceCount] = useState<number>(-1)
@@ -52,7 +64,6 @@ export function useProctoring({ sessionId, token, enabled, onViolation }: UsePro
     onViolation?.(type, count)
   }, [enabled, onViolation])
 
-  // Stable ref so interval callbacks always see the latest pushEvent
   const pushEventRef = useRef(pushEvent)
   useEffect(() => { pushEventRef.current = pushEvent }, [pushEvent])
 
@@ -61,7 +72,15 @@ export function useProctoring({ sessionId, token, enabled, onViolation }: UsePro
     const events = [...queueRef.current]
     queueRef.current = []
     try {
-      await api.post(`/proctoring/${sessionId}/events`, { token, events })
+      const accessToken = localStorage.getItem('accessToken')
+      await fetch(`${API_BASE}/api/proctoring/${sessionId}/events`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+        body: JSON.stringify({ token, events }),
+      })
     } catch {
       queueRef.current = [...events, ...queueRef.current]
     }
@@ -73,15 +92,24 @@ export function useProctoring({ sessionId, token, enabled, onViolation }: UsePro
     }
   }, [])
 
-  // Callback ref for <video> element — auto-attaches the stream when element mounts/changes
   const attachVideoRef = useCallback((el: HTMLVideoElement | null) => {
     videoRef.current = el
-    if (el && webcamStreamRef.current) {
-      el.srcObject = webcamStreamRef.current
-    }
+    if (el && webcamStreamRef.current) el.srcObject = webcamStreamRef.current
   }, [])
 
-  // ── Webcam + audio + face detection + screenshots ──────────────────────────
+  // ── Upload a watermarked webcam snapshot ────────────────────────────────────
+  const uploadSnapshot = useCallback(async (blob: Blob) => {
+    try {
+      const fd = new FormData()
+      fd.append('file', blob, 'snapshot.jpg')
+      await fetch(`${API_BASE}/api/proctoring/${sessionId}/snapshot?token=${encodeURIComponent(token)}`, {
+        method: 'POST',
+        body: fd,
+      })
+    } catch {}
+  }, [sessionId, token])
+
+  // ── Webcam + audio + face/head-pose + screenshots ───────────────────────────
   useEffect(() => {
     if (!enabled) return
     let cancelled = false
@@ -115,22 +143,25 @@ export function useProctoring({ sessionId, token, enabled, onViolation }: UsePro
       } catch {}
     }
 
-    const startFaceDetection = () => {
-      // Delay 2.5 s to let the video stream warm up, then load CDN models
+    const startFaceAndPoseDetection = () => {
       setTimeout(async () => {
         if (cancelled) return
         try {
-          const { initFaceDetection, countFaces } = await import('@/lib/faceDetection')
+          const { initFaceDetection, detectFacesWithPose } = await import('@/lib/faceDetection')
           const loaded = await initFaceDetection()
           if (!loaded || cancelled) return
 
           let consecutiveNoFace = 0
+          let consecutiveHeadTurn = 0
+
           const check = async () => {
             if (cancelled || !videoRef.current) return
-            const n = await countFaces(videoRef.current)
+            const { count, headPose } = await detectFacesWithPose(videoRef.current)
             if (cancelled) return
-            setFaceCount(n)
-            if (n === 0) {
+
+            setFaceCount(count)
+
+            if (count === 0) {
               consecutiveNoFace++
               if (consecutiveNoFace >= 2) {
                 pushEventRef.current('NO_FACE_DETECTED', 'No face visible in webcam for extended period')
@@ -138,11 +169,30 @@ export function useProctoring({ sessionId, token, enabled, onViolation }: UsePro
               }
             } else {
               consecutiveNoFace = 0
-              if (n > 1) {
-                pushEventRef.current('MULTIPLE_FACES', `${n} faces detected in webcam`)
+              if (count > 1) {
+                pushEventRef.current('MULTIPLE_FACES', `${count} faces detected in webcam`)
               }
             }
+
+            // Head pose: yaw > 0.45 = looking significantly left/right
+            if (headPose && (Math.abs(headPose.yaw) > 0.45 || headPose.pitch < -0.5)) {
+              consecutiveHeadTurn++
+              if (consecutiveHeadTurn >= 2) {
+                const dir = Math.abs(headPose.yaw) > 0.45
+                  ? (headPose.yaw > 0 ? 'right' : 'left')
+                  : 'up'
+                pushEventRef.current('HEAD_TURNED', `Candidate looking ${dir} (yaw=${headPose.yaw.toFixed(2)})`, {
+                  yaw: headPose.yaw,
+                  pitch: headPose.pitch,
+                  direction: dir,
+                })
+                consecutiveHeadTurn = 0
+              }
+            } else {
+              consecutiveHeadTurn = 0
+            }
           }
+
           await check()
           if (!cancelled) {
             faceCheckRef.current = window.setInterval(check, 10_000)
@@ -156,21 +206,30 @@ export function useProctoring({ sessionId, token, enabled, onViolation }: UsePro
         if (cancelled) return
         const video = videoRef.current
         if (!video || video.readyState < 2 || video.videoWidth === 0) return
-        const W = Math.min(video.videoWidth, 320)
+
+        const W = Math.min(video.videoWidth, 480)
         const H = Math.round(W * video.videoHeight / video.videoWidth)
         const canvas = document.createElement('canvas')
         canvas.width = W
         canvas.height = H
         const ctx = canvas.getContext('2d')
         if (!ctx) return
+
         ctx.drawImage(video, 0, 0, W, H)
-        pushEventRef.current('SCREENSHOT_TAKEN', 'Periodic webcam snapshot', {
-          screenshot: canvas.toDataURL('image/jpeg', 0.5),
-        })
+
+        // Draw watermark
+        const ts = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false })
+        const label = `${candidateName ?? 'Candidate'} | ${ts} | ${sessionId.substring(0, 8)}`
+        drawWatermark(ctx, W, H, label)
+
+        canvas.toBlob(blob => {
+          if (!blob) return
+          uploadSnapshot(blob)
+          pushEventRef.current('SCREENSHOT_TAKEN', 'Periodic webcam snapshot captured')
+        }, 'image/jpeg', 0.7)
       }, 30_000)
     }
 
-    // Try video+audio first, fall back to video-only
     const acquire = () =>
       navigator.mediaDevices.getUserMedia({ video: true, audio: true })
         .catch(() => navigator.mediaDevices.getUserMedia({ video: true, audio: false }))
@@ -182,10 +241,8 @@ export function useProctoring({ sessionId, token, enabled, onViolation }: UsePro
         if (videoRef.current) videoRef.current.srcObject = stream
         setWebcamActive(true)
 
-        const hasAudio = stream.getAudioTracks().length > 0
-        if (hasAudio) startAudioMonitoring(stream)
-
-        startFaceDetection()
+        if (stream.getAudioTracks().length > 0) startAudioMonitoring(stream)
+        startFaceAndPoseDetection()
         startScreenshots()
       })
       .catch(() => {
@@ -214,7 +271,7 @@ export function useProctoring({ sessionId, token, enabled, onViolation }: UsePro
     }
   }, [enabled]) // stable: uses refs for callbacks
 
-  // ── Existing behavioral detections ─────────────────────────────────────────
+  // ── Tab / window / fullscreen detection ─────────────────────────────────────
 
   useEffect(() => {
     if (!enabled) return
@@ -248,11 +305,30 @@ export function useProctoring({ sessionId, token, enabled, onViolation }: UsePro
     return () => document.removeEventListener('fullscreenchange', handler)
   }, [enabled, pushEvent, requestFullscreen])
 
+  // ── Copy / paste / right-click with clipboard content capture ───────────────
+
   useEffect(() => {
     if (!enabled) return
-    const blockCopy = (e: Event) => { e.preventDefault(); pushEvent('COPY_PASTE', 'Copy action attempted') }
-    const blockPaste = (e: Event) => { e.preventDefault(); pushEvent('COPY_PASTE', 'Paste action attempted') }
-    const blockRight = (e: Event) => { e.preventDefault(); pushEvent('RIGHT_CLICK', 'Right-click attempted') }
+
+    const blockCopy = (e: ClipboardEvent) => {
+      e.preventDefault()
+      pushEvent('COPY_PASTE', 'Copy action attempted')
+    }
+
+    const blockPaste = (e: ClipboardEvent) => {
+      e.preventDefault()
+      const text = e.clipboardData?.getData('text') ?? ''
+      pushEvent('COPY_PASTE', 'Paste action attempted', {
+        pastedLength: text.length,
+        pastedPreview: text.substring(0, 300),
+      })
+    }
+
+    const blockRight = (e: MouseEvent) => {
+      e.preventDefault()
+      pushEvent('RIGHT_CLICK', 'Right-click attempted')
+    }
+
     document.addEventListener('copy', blockCopy)
     document.addEventListener('paste', blockPaste)
     document.addEventListener('contextmenu', blockRight)
@@ -262,6 +338,8 @@ export function useProctoring({ sessionId, token, enabled, onViolation }: UsePro
       document.removeEventListener('contextmenu', blockRight)
     }
   }, [enabled, pushEvent])
+
+  // ── DevTools detection ───────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!enabled) return
@@ -280,7 +358,8 @@ export function useProctoring({ sessionId, token, enabled, onViolation }: UsePro
     return () => clearInterval(interval)
   }, [enabled, pushEvent])
 
-  // ── Flush timer ─────────────────────────────────────────────────────────────
+  // ── Flush timer ──────────────────────────────────────────────────────────────
+
   useEffect(() => {
     if (!enabled) return
     flushTimerRef.current = window.setInterval(flush, 15_000)

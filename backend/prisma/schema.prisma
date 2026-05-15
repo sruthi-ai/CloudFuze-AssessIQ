@@ -288,13 +288,14 @@ model TestQuestion {
 // ─── Candidates ───────────────────────────────────────────────────────────────
 
 model Candidate {
-  id          String   @id @default(cuid())
-  email       String
-  firstName   String
-  lastName    String
-  phone       String?
-  isActive    Boolean  @default(true)
-  metadata    Json?    // extra fields like department, job_role, etc.
+  id           String   @id @default(cuid())
+  email        String
+  firstName    String
+  lastName     String
+  phone        String?
+  organization String?
+  isActive     Boolean  @default(true)
+  metadata     Json?    // extra fields like department, job_role, etc.
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -359,6 +360,8 @@ model Session {
   answers            Answer[]
   score              Score?
   proctoringEvents   ProctoringEvent[]
+  webcamSnapshots    WebcamSnapshot[]
+  screenRecording    ScreenRecording?
 
   @@map("sessions")
 }
@@ -407,6 +410,8 @@ enum ProctoringEventType {
   SCREENSHOT_TAKEN
   DEVTOOLS_OPEN
   PHONE_DETECTED
+  HEAD_TURNED
+  SCREEN_RECORDING_STOPPED
   CUSTOM
 }
 
@@ -449,4 +454,33 @@ model Score {
   session         Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@map("scores")
+}
+
+// ─── Webcam Snapshots ─────────────────────────────────────────────────────────
+
+model WebcamSnapshot {
+  id         String   @id @default(cuid())
+  url        String
+  occurredAt DateTime @default(now())
+
+  sessionId  String
+  session    Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("webcam_snapshots")
+}
+
+// ─── Screen Recordings ────────────────────────────────────────────────────────
+
+model ScreenRecording {
+  id        String   @id @default(cuid())
+  url       String
+  duration  Int?
+  fileSize  Int?
+  createdAt DateTime @default(now())
+
+  sessionId String   @unique
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("screen_recordings")
 }

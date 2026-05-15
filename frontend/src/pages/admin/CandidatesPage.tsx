@@ -53,13 +53,14 @@ export function CandidatesPage() {
         const email = parts[0] ?? ''
         let firstName = parts[1] ?? ''
         let lastName = parts[2] ?? ''
+        const organization = parts[3] ?? undefined
         if (!firstName) {
           const localPart = email.split('@')[0] ?? 'Candidate'
           const nameParts = localPart.replace(/[._-]/g, ' ').split(' ').filter(Boolean)
           firstName = nameParts[0] ? nameParts[0].charAt(0).toUpperCase() + nameParts[0].slice(1) : 'Candidate'
           lastName = nameParts[1] ? nameParts[1].charAt(0).toUpperCase() + nameParts[1].slice(1) : ''
         }
-        return { email, firstName, lastName }
+        return { email, firstName, lastName, ...(organization ? { organization } : {}) }
       })
       return api.post('/candidates/invite', {
         testId: inviteForm.testId,
@@ -165,11 +166,11 @@ export function CandidatesPage() {
               </div>
               <div className="space-y-2">
                 <Label>Candidates (one per line)</Label>
-                <p className="text-xs text-muted-foreground">One email per line. Optionally: <code className="bg-gray-100 px-0.5 rounded">email, First Name, Last Name</code></p>
+                <p className="text-xs text-muted-foreground">One per line. Format: <code className="bg-gray-100 px-0.5 rounded">email, First, Last, Organization</code></p>
                 <textarea
                   rows={5}
                   className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  placeholder={`sruthi@cloudfuze.com\njane@example.com, Jane, Smith`}
+                  placeholder={`sruthi@cloudfuze.com\njane@example.com, Jane, Smith, ABC College`}
                   value={inviteForm.candidateLines}
                   onChange={e => setInviteForm(f => ({ ...f, candidateLines: e.target.value }))}
                 />
@@ -281,6 +282,9 @@ export function CandidatesPage() {
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground">{c.email}</p>
+                      {c.organization && (
+                        <p className="text-xs text-muted-foreground/70">{c.organization}</p>
+                      )}
                     </div>
                     <div className="text-right shrink-0 text-xs text-muted-foreground mr-2">
                       <p>{c._count.invitations} invite{c._count.invitations !== 1 ? 's' : ''}</p>

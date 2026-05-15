@@ -5,6 +5,9 @@ import helmet from '@fastify/helmet'
 import jwt from '@fastify/jwt'
 import rateLimit from '@fastify/rate-limit'
 import multipart from '@fastify/multipart'
+import { createReadStream, existsSync } from 'fs'
+import { extname, join } from 'path'
+import { UPLOADS_DIR, initUploads } from './uploads'
 
 import { authRoutes } from './routes/auth'
 import { userRoutes } from './routes/users'
@@ -25,6 +28,7 @@ const server = Fastify({
 })
 
 async function bootstrap() {
+  initUploads()
   // Security
   await server.register(helmet, { contentSecurityPolicy: false })
   await server.register(cors, {
@@ -54,6 +58,21 @@ async function bootstrap() {
 
   // Health check
   server.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }))
+
+  // Static file serving for uploads (snapshots, screen recordings)
+  server.get('/uploads/*', async (request, reply) => {
+    const wildcard = (request.params as { '*': string })['*']
+    const safePath = wildcard.replace(/\.\./g, '').replace(/^\/+/, '')
+    const fullPath = join(UPLOADS_DIR, safePath)
+    if (!existsSync(fullPath)) return reply.status(404).send({ error: 'File not found' })
+    const ext = extname(fullPath).toLowerCase()
+    const mime =
+      ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' :
+      ext === '.png' ? 'image/png' :
+      ext === '.webm' ? 'video/webm' :
+      'application/octet-stream'
+    return reply.type(mime).send(createReadStream(fullPath))
+  })
 
   // 404 handler
   server.setNotFoundHandler((request, reply) => {

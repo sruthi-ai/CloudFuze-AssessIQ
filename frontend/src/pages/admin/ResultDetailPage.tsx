@@ -5,6 +5,7 @@ import {
   ShieldAlert, ShieldCheck, AlertTriangle, Trophy,
   Camera, CameraOff, TabletSmartphone, Minimize2, Copy,
   MousePointer2, Code2, Users, UserX, Volume2, Smartphone,
+  Navigation, MonitorPlay,
 } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -44,6 +45,8 @@ function EventIcon({ type }: { type: string }) {
     case 'NOISE_DETECTED': return <Volume2 className={cls} />
     case 'SCREENSHOT_TAKEN': return <Camera className={cls} />
     case 'PHONE_DETECTED': return <Smartphone className={cls} />
+    case 'HEAD_TURNED': return <Navigation className={cls} />
+    case 'SCREEN_RECORDING_STOPPED': return <MonitorPlay className={cls} />
     default: return <AlertTriangle className={cls} />
   }
 }
@@ -62,6 +65,12 @@ export function ResultDetailPage() {
   const { data: proctoringData } = useQuery({
     queryKey: ['proctoring', sessionId],
     queryFn: () => api.get(`/proctoring/${sessionId}/events`).then(r => r.data.data),
+    enabled: !!sessionId,
+  })
+
+  const { data: snapshotsData } = useQuery({
+    queryKey: ['proctoring-snapshots', sessionId],
+    queryFn: () => api.get(`/proctoring/${sessionId}/snapshots`).then(r => r.data.data),
     enabled: !!sessionId,
   })
 
@@ -93,9 +102,7 @@ export function ResultDetailPage() {
   const hasPendingAnswers = session.answers.some((a: any) => a.gradingStatus === 'PENDING')
   const riskScore = proctoringData?.summary?.riskScore ?? 0
 
-  const screenshots: any[] = (proctoringData?.events ?? []).filter(
-    (e: any) => e.type === 'SCREENSHOT_TAKEN' && e.metadata?.screenshot
-  )
+  // Show all events in the timeline except low-noise periodic snapshots
   const nonScreenshotEvents: any[] = (proctoringData?.events ?? []).filter(
     (e: any) => e.type !== 'SCREENSHOT_TAKEN'
   )
@@ -237,32 +244,57 @@ export function ResultDetailPage() {
                 ))}
               </div>
 
-              {/* Screenshot gallery */}
-              {screenshots.length > 0 && (
+              {/* Screen recording */}
+              {snapshotsData?.screenRecording && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <MonitorPlay className="h-4 w-4" />
+                      Screen Recording
+                      {snapshotsData.screenRecording.fileSize && (
+                        <span className="text-xs font-normal text-muted-foreground ml-1">
+                          ({(snapshotsData.screenRecording.fileSize / 1024 / 1024).toFixed(1)} MB)
+                        </span>
+                      )}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <video
+                      src={snapshotsData.screenRecording.url}
+                      controls
+                      className="w-full rounded-md border max-h-64"
+                    />
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Webcam snapshot gallery — real uploaded images with watermarks */}
+              {(snapshotsData?.snapshots?.length ?? 0) > 0 && (
                 <Card>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-base flex items-center gap-2">
                       <Camera className="h-4 w-4" />
-                      Webcam Snapshots ({screenshots.length})
+                      Webcam Snapshots ({snapshotsData!.snapshots.length})
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-                      {screenshots.map((evt: any) => (
+                      {snapshotsData!.snapshots.map((snap: any) => (
                         <button
-                          key={evt.id}
-                          onClick={() => setExpandedShot(evt.metadata.screenshot)}
+                          key={snap.id}
+                          onClick={() => setExpandedShot(snap.url)}
                           className="relative group aspect-video overflow-hidden rounded border hover:ring-2 hover:ring-primary transition-all"
-                          title={formatDateTime(evt.occurredAt)}
+                          title={formatDateTime(snap.occurredAt)}
                         >
                           <img
-                            src={evt.metadata.screenshot}
-                            alt={`Snapshot ${formatDateTime(evt.occurredAt)}`}
+                            src={snap.url}
+                            alt={`Snapshot ${formatDateTime(snap.occurredAt)}`}
                             className="w-full h-full object-cover"
+                            loading="lazy"
                           />
                           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-end justify-center pb-0.5">
                             <span className="text-[9px] text-white/0 group-hover:text-white/90 font-mono leading-none">
-                              {new Date(evt.occurredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              {new Date(snap.occurredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </span>
                           </div>
                         </button>
@@ -272,7 +304,7 @@ export function ResultDetailPage() {
                 </Card>
               )}
 
-              {/* Expanded screenshot lightbox */}
+              {/* Expanded snapshot lightbox */}
               {expandedShot && (
                 <div
                   className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"

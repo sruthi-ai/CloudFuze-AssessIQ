@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { BarChart3, Search, Loader2, ChevronRight } from 'lucide-react'
+import { BarChart3, Search, Loader2, ChevronRight, Trash2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -15,10 +15,20 @@ const STATUS_VARIANT: Record<string, any> = {
 
 export function ResultsPage() {
   const [search, setSearch] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const queryClient = useQueryClient()
 
   const { data, isLoading } = useQuery({
     queryKey: ['results'],
     queryFn: () => api.get('/results?limit=100').then(r => r.data.data),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (sessionId: string) => api.delete(`/results/${sessionId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['results'] })
+      setConfirmDelete(null)
+    },
   })
 
   const sessions = (data?.sessions ?? []).filter((s: any) => {
@@ -94,11 +104,41 @@ export function ResultsPage() {
                     {s.submittedAt ? formatDateTime(s.submittedAt) : '—'}
                   </td>
                   <td className="px-4 py-3">
-                    <Button variant="ghost" size="sm" asChild>
-                      <Link to={`/admin/results/${s.id}`}>
-                        View <ChevronRight className="h-3.5 w-3.5 ml-1" />
-                      </Link>
-                    </Button>
+                    <div className="flex items-center gap-1 justify-end">
+                      {confirmDelete === s.id ? (
+                        <>
+                          <span className="text-xs text-gray-500 mr-1">Delete?</span>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            className="h-7 px-2 text-xs"
+                            disabled={deleteMutation.isPending}
+                            onClick={() => deleteMutation.mutate(s.id)}
+                          >
+                            {deleteMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Yes'}
+                          </Button>
+                          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setConfirmDelete(null)}>
+                            Cancel
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button variant="ghost" size="sm" asChild>
+                            <Link to={`/admin/results/${s.id}`}>
+                              View <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                            </Link>
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-muted-foreground hover:text-destructive"
+                            onClick={() => setConfirmDelete(s.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

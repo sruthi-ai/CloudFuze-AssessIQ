@@ -5,6 +5,27 @@ import { sendError, sendSuccess } from '../utils/errors'
 import { scoreSession } from '../services/scoring'
 import { sendSubmissionNotification } from '../utils/email'
 
+function fisherYates<T>(arr: T[]): T[] {
+  const a = [...arr]
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
+}
+
+function seededShuffle<T>(arr: T[], seed: string): T[] {
+  const a = [...arr]
+  let h = 0
+  for (let i = 0; i < seed.length; i++) h = (Math.imul(31, h) + seed.charCodeAt(i)) | 0
+  for (let i = a.length - 1; i > 0; i--) {
+    h = (Math.imul(1664525, h) + 1013904223) | 0
+    const j = Math.abs(h) % (i + 1)
+    ;[a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
+}
+
 const submitAnswerSchema = z.object({
   questionId: z.string(),
   responseText: z.string().optional(),
@@ -91,7 +112,16 @@ export async function sessionRoutes(server: FastifyInstance) {
 
     const invitation = await prisma.invitation.findUnique({
       where: { token },
-      include: { test: true },
+      include: {
+        test: {
+          include: {
+            sections: {
+              include: { testQuestions: { orderBy: { order: 'asc' } } },
+              orderBy: { order: 'asc' },
+            },
+          },
+        },
+      },
     })
     if (!invitation) return sendError(reply, 404, 'Invalid invitation')
     if (invitation.expiresAt < new Date()) return sendError(reply, 410, 'Invitation expired')
@@ -108,6 +138,15 @@ export async function sessionRoutes(server: FastifyInstance) {
 
     const timeoutAt = new Date(Date.now() + invitation.test.duration * 60 * 1000)
 
+    // Generate per-session question order if shuffling is enabled
+    let questionOrder: Record<string, string[]> | null = null
+    if (invitation.test.shuffleQuestions) {
+      questionOrder = {}
+      for (const section of invitation.test.sections) {
+        questionOrder[section.id] = fisherYates(section.testQuestions.map(tq => tq.questionId))
+      }
+    }
+
     const session = await prisma.session.create({
       data: {
         testId: invitation.testId,
@@ -118,6 +157,7 @@ export async function sessionRoutes(server: FastifyInstance) {
         timeoutAt,
         ipAddress: ipAddress || request.ip,
         userAgent: userAgent || request.headers['user-agent'],
+        ...(questionOrder ? { questionOrder } : {}),
       },
     })
 
@@ -171,31 +211,42 @@ export async function sessionRoutes(server: FastifyInstance) {
     }
 
     const answeredIds = new Set(session.answers.map(a => a.questionId))
+    const questionOrder = session.questionOrder as Record<string, string[]> | null
+    const shuffleOptions = session.test.shuffleOptions
 
     return sendSuccess(reply, {
-      sections: session.test.sections.map(s => ({
-        id: s.id,
-        title: s.title,
-        description: s.description,
-        timeLimit: s.timeLimit,
-        questions: s.testQuestions.map(tq => ({
-          testQuestionId: tq.id,
-          questionId: tq.question.id,
-          order: tq.order,
-          points: tq.points ?? tq.question.points,
-          isRequired: tq.isRequired,
-          answered: answeredIds.has(tq.question.id),
-          question: {
-            id: tq.question.id,
-            type: tq.question.type,
-            title: tq.question.title,
-            body: tq.question.body,
-            timeLimit: tq.question.timeLimit,
-            options: tq.question.options,
-            codeTestCases: (tq.question as any).codeTestCases ?? [],
-          },
-        })),
-      })),
+      sections: session.test.sections.map(s => {
+        let questions = s.testQuestions.map(tq => {
+          const opts = shuffleOptions && tq.question.options.length > 1
+            ? seededShuffle(tq.question.options, session.id + tq.question.id)
+            : tq.question.options
+          return {
+            testQuestionId: tq.id,
+            questionId: tq.question.id,
+            order: tq.order,
+            points: tq.points ?? tq.question.points,
+            isRequired: tq.isRequired,
+            answered: answeredIds.has(tq.question.id),
+            question: {
+              id: tq.question.id,
+              type: tq.question.type,
+              title: tq.question.title,
+              body: tq.question.body,
+              timeLimit: tq.question.timeLimit,
+              options: opts,
+              codeTestCases: (tq.question as any).codeTestCases ?? [],
+            },
+          }
+        })
+
+        // Apply stored question order if shuffled at session start
+        if (questionOrder?.[s.id]) {
+          const orderMap = new Map(questionOrder[s.id].map((id, idx) => [id, idx]))
+          questions = questions.sort((a, b) => (orderMap.get(a.questionId) ?? 0) - (orderMap.get(b.questionId) ?? 0))
+        }
+
+        return { id: s.id, title: s.title, description: s.description, timeLimit: s.timeLimit, questions }
+      }),
       timeRemaining: session.timeoutAt ? Math.max(0, Math.floor((session.timeoutAt.getTime() - Date.now()) / 1000)) : null,
     })
   })

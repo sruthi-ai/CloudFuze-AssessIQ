@@ -70,6 +70,28 @@ export async function resultRoutes(server: FastifyInstance) {
     return sendSuccess(reply, session)
   })
 
+  // DELETE /api/results/:sessionId — remove a session and reset the invitation
+  server.delete('/:sessionId', {
+    preHandler: requireRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'RECRUITER'),
+  }, async (request, reply) => {
+    const { sessionId } = request.params as { sessionId: string }
+    const session = await prisma.session.findFirst({
+      where: { id: sessionId, test: { tenantId: request.user.tenantId } },
+      include: { invitation: true },
+    })
+    if (!session) return sendError(reply, 404, 'Session not found')
+
+    await prisma.session.delete({ where: { id: sessionId } })
+
+    // Reset invitation so candidate can be re-invited if needed
+    await prisma.invitation.update({
+      where: { id: session.invitationId },
+      data: { status: 'CANCELLED' },
+    })
+
+    return sendSuccess(reply, { deleted: true })
+  })
+
   // PATCH /api/results/:sessionId/answers/:answerId — human override grading
   server.patch('/:sessionId/answers/:answerId', {
     preHandler: requireRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'RECRUITER'),

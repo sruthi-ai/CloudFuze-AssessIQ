@@ -8,7 +8,7 @@ import {
   ArrowLeft, Plus, Trash2, Settings, BookOpen,
   GripVertical, Loader2, Save, Eye, Pencil, X, Check,
   Users, BarChart2, Copy, RefreshCw, XCircle, Send,
-  TrendingUp, CheckCircle, Clock,
+  TrendingUp, CheckCircle, Clock, RotateCcw,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -339,6 +339,12 @@ function TestCandidatesTab({ testId, testStatus }: { testId: string; testStatus:
     onError: err => toast({ title: 'Error', description: getErrorMessage(err), variant: 'destructive' }),
   })
 
+  const retakeMutation = useMutation({
+    mutationFn: (invitationId: string) => api.post(`/candidates/invitations/${invitationId}/retake`, { expiresInDays: 7 }),
+    onSuccess: () => { toast({ title: 'Retake sent', description: 'Previous result cleared. Invitation email resent.' }); qc.invalidateQueries({ queryKey: ['test-invitations', testId] }) },
+    onError: err => toast({ title: 'Error', description: getErrorMessage(err), variant: 'destructive' }),
+  })
+
   const copyLink = (token: string) => {
     navigator.clipboard.writeText(`${window.location.origin}/take/${token}`)
     setCopiedToken(token)
@@ -465,6 +471,19 @@ function TestCandidatesTab({ testId, testStatus }: { testId: string; testStatus:
                             title="Resend email"
                           >
                             <RefreshCw className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        {['COMPLETED', 'EXPIRED'].includes(inv.status) && (
+                          <button
+                            onClick={() => {
+                              if (window.confirm(`Allow ${inv.candidate.firstName} ${inv.candidate.lastName} to retake this test?\n\nThis will permanently delete their previous result and resend the invitation link.`))
+                                retakeMutation.mutate(inv.id)
+                            }}
+                            disabled={retakeMutation.isPending}
+                            className="p-1 text-muted-foreground hover:text-amber-600 transition-colors"
+                            title="Allow retake (clears previous result)"
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" />
                           </button>
                         )}
                         {!['CANCELLED', 'COMPLETED', 'EXPIRED'].includes(inv.status) && (

@@ -222,6 +222,44 @@ export async function candidateRoutes(server: FastifyInstance) {
     return sendSuccess(reply, { resent: true })
   })
 
+  // POST /api/candidates/invitations/:invitationId/retake — reset session, re-send link
+  server.post('/invitations/:invitationId/retake', { preHandler: canEdit }, async (request, reply) => {
+    const { invitationId } = request.params as { invitationId: string }
+    const body = request.body as { expiresInDays?: number }
+    const invitation = await prisma.invitation.findFirst({
+      where: { id: invitationId },
+      include: { candidate: true, test: { include: { tenant: true } }, session: true },
+    })
+    if (!invitation) return sendError(reply, 404, 'Invitation not found')
+    if (invitation.test.tenantId !== request.user.tenantId) return sendError(reply, 403, 'Forbidden')
+
+    // Delete the existing session (cascades to answers, score, proctoring events, snapshots)
+    if (invitation.session) {
+      await prisma.session.delete({ where: { id: invitation.session.id } })
+    }
+
+    const expiresAt = new Date()
+    expiresAt.setDate(expiresAt.getDate() + (body.expiresInDays ?? 7))
+
+    await prisma.invitation.update({
+      where: { id: invitationId },
+      data: { status: 'SENT', sentAt: new Date(), expiresAt },
+    })
+
+    await sendInvitationEmail({
+      to: invitation.candidate.email,
+      candidateName: `${invitation.candidate.firstName} ${invitation.candidate.lastName}`,
+      testTitle: invitation.test.title,
+      companyName: invitation.test.tenant.name,
+      token: invitation.token,
+      expiresAt,
+      message: invitation.message ?? undefined,
+      tenantSettings: (invitation.test.tenant.settings ?? undefined) as any,
+    })
+
+    return sendSuccess(reply, { retakeScheduled: true })
+  })
+
   // DELETE /api/candidates/invitations/:invitationId — cancel invitation
   server.delete('/invitations/:invitationId', { preHandler: canEdit }, async (request, reply) => {
     const { invitationId } = request.params as { invitationId: string }

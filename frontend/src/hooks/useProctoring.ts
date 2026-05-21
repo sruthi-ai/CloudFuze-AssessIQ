@@ -43,6 +43,7 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
   const webcamStreamRef = useRef<MediaStream | null>(null)
   const lastWindowBlurRef = useRef<number>(0)
   const tabHiddenRef = useRef<boolean>(false)
+  const stoppingRef = useRef<boolean>(false)
   const onTabReturnRef = useRef(onTabReturn)
   useEffect(() => { onTabReturnRef.current = onTabReturn }, [onTabReturn])
 
@@ -307,6 +308,20 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
     }
   }, [enabled]) // stable: uses refs for callbacks
 
+  // ── Mobile / touch device detection ─────────────────────────────────────────
+  useEffect(() => {
+    if (!enabled) return
+    const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+      || (navigator.maxTouchPoints > 0 && window.screen.width < 1024)
+    if (isMobile) {
+      pushEventRef.current('PHONE_DETECTED', 'Test opened on a mobile or touch device', {
+        userAgent: navigator.userAgent,
+        screenWidth: window.screen.width,
+        touchPoints: navigator.maxTouchPoints,
+      })
+    }
+  }, [enabled])
+
   // ── Tab / window / fullscreen detection ─────────────────────────────────────
 
   useEffect(() => {
@@ -347,6 +362,7 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
   useEffect(() => {
     if (!enabled) return
     const handler = () => {
+      if (stoppingRef.current) return
       if (!document.fullscreenElement) {
         pushEvent('FULLSCREEN_EXIT', 'Candidate exited fullscreen mode')
         toast({ title: 'Warning: Fullscreen required', description: 'Please stay in fullscreen mode.', variant: 'destructive' })
@@ -421,6 +437,7 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
   }, [enabled, flush])
 
   const stopProctoring = useCallback(async () => {
+    stoppingRef.current = true
     webcamStreamRef.current?.getTracks().forEach(t => t.stop())
     audioCtxRef.current?.close().catch(() => {})
     if (noiseCheckRef.current) { clearInterval(noiseCheckRef.current); noiseCheckRef.current = null }

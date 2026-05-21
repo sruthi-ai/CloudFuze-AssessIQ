@@ -22,17 +22,17 @@ function SecureImage({ src, alt, className, onClick }: {
   src: string; alt: string; className?: string; onClick?: () => void
 }) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null)
-  const [failed, setFailed] = useState(false)
+  const [errorStatus, setErrorStatus] = useState<number | null>(null)
   const prevUrl = useRef<string | null>(null)
 
   useEffect(() => {
     setObjectUrl(null)
-    setFailed(false)
+    setErrorStatus(null)
     let active = true
     const token = localStorage.getItem('accessToken')
     fetch(src, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
       .then(r => {
-        if (!r.ok) throw new Error(`${r.status}`)
+        if (!r.ok) { if (active) setErrorStatus(r.status); throw new Error(`${r.status}`) }
         return r.blob()
       })
       .then(blob => {
@@ -42,17 +42,17 @@ function SecureImage({ src, alt, className, onClick }: {
         prevUrl.current = url
         setObjectUrl(url)
       })
-      .catch(() => { if (active) setFailed(true) })
+      .catch(() => {})
     return () => {
       active = false
       if (prevUrl.current) { URL.revokeObjectURL(prevUrl.current); prevUrl.current = null }
     }
   }, [src])
 
-  if (failed) return (
+  if (errorStatus !== null) return (
     <div className={cn('flex flex-col items-center justify-center bg-gray-100 text-gray-400 gap-1', className)}>
       <CameraOff className="h-4 w-4" />
-      <span className="text-[9px]">Not found</span>
+      <span className="text-[9px]">{errorStatus === 404 ? 'Not found' : `Error ${errorStatus}`}</span>
     </div>
   )
   if (!objectUrl) return (
@@ -73,7 +73,7 @@ const EVENT_LABELS: Record<string, string> = {
   NOISE_DETECTED: 'Background noise',
   SCREENSHOT_TAKEN: 'Webcam snapshot',
   DEVTOOLS_OPEN: 'DevTools opened',
-  PHONE_DETECTED: 'Phone detected',
+  PHONE_DETECTED: 'Mobile device detected',
   HEAD_TURNED: 'Head turned away',
   SCREEN_RECORDING_STOPPED: 'Screen recording stopped',
   CUSTOM: 'Custom event',

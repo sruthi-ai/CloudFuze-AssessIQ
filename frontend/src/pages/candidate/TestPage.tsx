@@ -142,7 +142,7 @@ export function TestPage() {
     },
     onSuccess: res => {
       setSubmitting(false)
-      navigate(`/take/${token}/done`, { state: { result: res.data.data } })
+      navigate(`/take/${token}/done`, { state: { result: res.data.data }, replace: true })
     },
     onError: err => {
       setSubmitting(false)

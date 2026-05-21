@@ -318,7 +318,9 @@ model Invitation {
   expiresAt   DateTime
   openedAt    DateTime?
   sentAt      DateTime?
-  message     String?          // optional custom message in invite email
+  message          String?    // optional custom message in invite email
+  attemptNumber    Int        @default(1)   // current attempt (1-based)
+  previousAttempts Json?                    // [{attemptNumber, score, percentage, passed, submittedAt}]
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 

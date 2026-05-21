@@ -11,14 +11,14 @@ import { addAlertClient, removeAlertClient, broadcastAlert, AlertPayload } from 
 
 const SEVERITY_MAP: Record<string, 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'> = {
   TAB_SWITCH: 'HIGH',
-  WINDOW_BLUR: 'MEDIUM',
-  FULLSCREEN_EXIT: 'MEDIUM',
+  WINDOW_BLUR: 'HIGH',
+  FULLSCREEN_EXIT: 'HIGH',
   COPY_PASTE: 'HIGH',
-  RIGHT_CLICK: 'LOW',
+  RIGHT_CLICK: 'HIGH',
   WEBCAM_BLOCKED: 'CRITICAL',
   MULTIPLE_FACES: 'CRITICAL',
   NO_FACE_DETECTED: 'HIGH',
-  NOISE_DETECTED: 'LOW',
+  NOISE_DETECTED: 'HIGH',
   SCREENSHOT_TAKEN: 'LOW',
   DEVTOOLS_OPEN: 'CRITICAL',
   PHONE_DETECTED: 'CRITICAL',
@@ -191,6 +191,11 @@ export async function proctoringRoutes(server: FastifyInstance) {
           take: 5,
           select: { id: true, type: true, severity: true, occurredAt: true, description: true },
         },
+        webcamSnapshots: {
+          orderBy: { occurredAt: 'desc' },
+          take: 1,
+          select: { id: true, occurredAt: true },
+        },
         _count: { select: { proctoringEvents: true } },
       },
       orderBy: { startedAt: 'asc' },
@@ -205,6 +210,7 @@ export async function proctoringRoutes(server: FastifyInstance) {
       recentEvents: s.proctoringEvents,
       totalEvents: s._count.proctoringEvents,
       riskScore: calculateRiskScore(s.proctoringEvents),
+      latestSnapshot: s.webcamSnapshots[0] ?? null,
     }))
 
     return sendSuccess(reply, result)

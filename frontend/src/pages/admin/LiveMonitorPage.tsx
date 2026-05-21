@@ -23,6 +23,7 @@ interface LiveSession {
   recentEvents: Array<{ id: string; type: string; severity: string; occurredAt: string; description: string | null }>
   totalEvents: number
   riskScore: number
+  latestSnapshot: { id: string; occurredAt: string } | null
 }
 
 interface AlertPayload {
@@ -74,6 +75,55 @@ const SEVERITY_COLOR: Record<string, string> = {
   HIGH: 'text-orange-700 bg-orange-100 border-orange-200',
   MEDIUM: 'text-yellow-700 bg-yellow-100 border-yellow-200',
   LOW: 'text-blue-700 bg-blue-100 border-blue-200',
+}
+
+// Shows latest webcam snapshot for a live session, auto-refreshes every 30s
+function LiveSnapshot({ sessionId, snapshot }: { sessionId: string; snapshot: { id: string; occurredAt: string } | null }) {
+  const [src, setSrc] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+  const prevSrc = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!snapshot) return
+    setFailed(false)
+    let active = true
+    const token = localStorage.getItem('accessToken')
+    fetch(`/api/proctoring/${sessionId}/media/snapshot/${snapshot.id}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    }).then(r => {
+      if (!r.ok) throw new Error(`${r.status}`)
+      return r.blob()
+    }).then(blob => {
+      if (!active) return
+      if (prevSrc.current) URL.revokeObjectURL(prevSrc.current)
+      const url = URL.createObjectURL(blob)
+      prevSrc.current = url
+      setSrc(url)
+    }).catch(() => { if (active) setFailed(true) })
+    return () => { active = false }
+  }, [sessionId, snapshot?.id])
+
+  if (!snapshot) return (
+    <div className="w-full h-28 rounded bg-gray-100 flex flex-col items-center justify-center gap-1 text-gray-400">
+      <CameraOff className="h-5 w-5" />
+      <span className="text-[10px]">No snapshot yet</span>
+    </div>
+  )
+  if (failed) return (
+    <div className="w-full h-28 rounded bg-gray-100 flex flex-col items-center justify-center gap-1 text-gray-400">
+      <CameraOff className="h-5 w-5" />
+      <span className="text-[10px]">Snapshot unavailable</span>
+    </div>
+  )
+  if (!src) return <div className="w-full h-28 rounded bg-gray-200 animate-pulse" />
+  return (
+    <div className="relative">
+      <img src={src} alt="Latest webcam snapshot" className="w-full h-28 object-cover rounded" />
+      <span className="absolute bottom-1 right-1 bg-black/60 text-white text-[9px] px-1 rounded">
+        {new Date(snapshot.occurredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+      </span>
+    </div>
+  )
 }
 
 function RiskBar({ score }: { score: number }) {
@@ -254,6 +304,8 @@ export function LiveMonitorPage() {
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-3">
+                      {/* Live snapshot thumbnail */}
+                      <LiveSnapshot sessionId={s.sessionId} snapshot={s.latestSnapshot} />
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
                         <FileText className="h-3.5 w-3.5 shrink-0" />
                         <span className="truncate flex-1">{s.test.title}</span>

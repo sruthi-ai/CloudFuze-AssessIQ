@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { CheckCircle, Brain } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
@@ -6,6 +7,14 @@ import { Badge } from '@/components/ui/badge'
 export function SubmittedPage() {
   const location = useLocation()
   const result = location.state?.result
+
+  // Prevent back-navigation to the test
+  useEffect(() => {
+    window.history.pushState(null, '', window.location.href)
+    const block = () => window.history.pushState(null, '', window.location.href)
+    window.addEventListener('popstate', block)
+    return () => window.removeEventListener('popstate', block)
+  }, [])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-white flex items-center justify-center p-4">

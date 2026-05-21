@@ -222,28 +222,64 @@ export async function candidateRoutes(server: FastifyInstance) {
     return sendSuccess(reply, { resent: true })
   })
 
-  // POST /api/candidates/invitations/:invitationId/retake — reset session, re-send link
+  // POST /api/candidates/invitations/:invitationId/retake — save history, reset, re-send
   server.post('/invitations/:invitationId/retake', { preHandler: canEdit }, async (request, reply) => {
+    const MAX_ATTEMPTS = 3
     const { invitationId } = request.params as { invitationId: string }
     const body = request.body as { expiresInDays?: number }
     const invitation = await prisma.invitation.findFirst({
       where: { id: invitationId },
-      include: { candidate: true, test: { include: { tenant: true } }, session: true },
+      include: {
+        candidate: true,
+        test: { include: { tenant: true } },
+        session: { include: { score: true } },
+      },
     })
     if (!invitation) return sendError(reply, 404, 'Invitation not found')
     if (invitation.test.tenantId !== request.user.tenantId) return sendError(reply, 403, 'Forbidden')
+    if (invitation.attemptNumber >= MAX_ATTEMPTS) {
+      return sendError(reply, 409, `Maximum ${MAX_ATTEMPTS} attempts reached for this candidate`)
+    }
 
-    // Delete the existing session (cascades to answers, score, proctoring events, snapshots)
+    // Archive the current attempt's score before deleting the session
+    type AttemptRecord = { attemptNumber: number; score: number; percentage: number; passed: boolean | null; submittedAt: string | null }
+    const previous = (invitation.previousAttempts ?? []) as AttemptRecord[]
+    if (invitation.session?.score) {
+      previous.push({
+        attemptNumber: invitation.attemptNumber,
+        score: invitation.session.score.earnedPoints,
+        percentage: invitation.session.score.percentage,
+        passed: invitation.session.score.passed,
+        submittedAt: invitation.session.submittedAt?.toISOString() ?? null,
+      })
+    } else if (invitation.session) {
+      previous.push({
+        attemptNumber: invitation.attemptNumber,
+        score: 0,
+        percentage: 0,
+        passed: null,
+        submittedAt: invitation.session.submittedAt?.toISOString() ?? null,
+      })
+    }
+
+    // Delete the session (cascades: answers, score, proctoring events, snapshots)
     if (invitation.session) {
       await prisma.session.delete({ where: { id: invitation.session.id } })
     }
 
     const expiresAt = new Date()
     expiresAt.setDate(expiresAt.getDate() + (body.expiresInDays ?? 7))
+    const nextAttempt = invitation.attemptNumber + 1
 
     await prisma.invitation.update({
       where: { id: invitationId },
-      data: { status: 'SENT', sentAt: new Date(), expiresAt },
+      data: {
+        status: 'SENT',
+        sentAt: new Date(),
+        expiresAt,
+        attemptNumber: nextAttempt,
+        previousAttempts: previous as any,
+      },
     })
 
     await sendInvitationEmail({
@@ -257,7 +293,7 @@ export async function candidateRoutes(server: FastifyInstance) {
       tenantSettings: (invitation.test.tenant.settings ?? undefined) as any,
     })
 
-    return sendSuccess(reply, { retakeScheduled: true })
+    return sendSuccess(reply, { retakeScheduled: true, attemptNumber: nextAttempt, attemptsRemaining: MAX_ATTEMPTS - nextAttempt })
   })
 
   // DELETE /api/candidates/invitations/:invitationId — cancel invitation

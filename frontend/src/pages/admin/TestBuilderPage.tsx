@@ -447,9 +447,16 @@ function TestCandidatesTab({ testId, testStatus }: { testId: string; testStatus:
                     </td>
                     <td className="px-4 py-3">
                       {inv.session?.score ? (
-                        <span className={cn('font-medium text-sm', inv.session.score.passed ? 'text-green-600' : 'text-red-600')}>
-                          {inv.session.score.percentage.toFixed(0)}%
-                        </span>
+                        <div>
+                          <span className={cn('font-medium text-sm', inv.session.score.passed ? 'text-green-600' : 'text-red-600')}>
+                            {inv.session.score.percentage.toFixed(0)}%
+                          </span>
+                          {inv.previousAttempts?.length > 0 && (
+                            <p className="text-[10px] text-muted-foreground mt-0.5">
+                              Attempt {inv.attemptNumber} · Prev: {(inv.previousAttempts as any[]).map((a: any) => `${a.percentage?.toFixed(0)}%`).join(', ')}
+                            </p>
+                          )}
+                        </div>
                       ) : (
                         <span className="text-muted-foreground text-xs">—</span>
                       )}
@@ -473,18 +480,25 @@ function TestCandidatesTab({ testId, testStatus }: { testId: string; testStatus:
                             <RefreshCw className="h-3.5 w-3.5" />
                           </button>
                         )}
-                        {['COMPLETED', 'EXPIRED'].includes(inv.status) && (
+                        {['COMPLETED', 'EXPIRED'].includes(inv.status) && inv.attemptNumber < 3 && (
                           <button
                             onClick={() => {
-                              if (window.confirm(`Allow ${inv.candidate.firstName} ${inv.candidate.lastName} to retake this test?\n\nThis will permanently delete their previous result and resend the invitation link.`))
-                                retakeMutation.mutate(inv.id)
+                              const attemptsLeft = 3 - inv.attemptNumber
+                              if (window.confirm(
+                                `Allow ${inv.candidate.firstName} ${inv.candidate.lastName} to retake?\n\n` +
+                                `Attempt ${inv.attemptNumber + 1} of 3 (${attemptsLeft - 1} remaining after this).\n\n` +
+                                `Previous score is saved in history. A fresh session will be created.`
+                              )) retakeMutation.mutate(inv.id)
                             }}
                             disabled={retakeMutation.isPending}
                             className="p-1 text-muted-foreground hover:text-amber-600 transition-colors"
-                            title="Allow retake (clears previous result)"
+                            title={`Allow retake (attempt ${inv.attemptNumber + 1}/3)`}
                           >
                             <RotateCcw className="h-3.5 w-3.5" />
                           </button>
+                        )}
+                        {['COMPLETED', 'EXPIRED'].includes(inv.status) && inv.attemptNumber >= 3 && (
+                          <span className="text-[10px] text-red-500 px-1" title="Max 3 attempts reached">Max attempts</span>
                         )}
                         {!['CANCELLED', 'COMPLETED', 'EXPIRED'].includes(inv.status) && (
                           <button

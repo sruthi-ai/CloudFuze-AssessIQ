@@ -284,7 +284,7 @@ const INV_STATUS_VARIANT: Record<string, any> = {
   STARTED: 'warning', COMPLETED: 'success', EXPIRED: 'destructive', CANCELLED: 'outline',
 }
 
-function TestCandidatesTab({ testId }: { testId: string }) {
+function TestCandidatesTab({ testId, testStatus }: { testId: string; testStatus: string }) {
   const qc = useQueryClient()
   const [copiedToken, setCopiedToken] = useState<string | null>(null)
   const [showInviteForm, setShowInviteForm] = useState(false)
@@ -345,17 +345,26 @@ function TestCandidatesTab({ testId }: { testId: string }) {
     setTimeout(() => setCopiedToken(null), 2000)
   }
 
+  const isDraft = testStatus !== 'PUBLISHED'
+
   return (
     <div className="space-y-4">
+      {isDraft && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 flex items-center gap-2">
+          <span className="text-base">⚠</span>
+          This test is <strong>DRAFT</strong>. Publish it before inviting candidates.
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{invitations.length} candidate{invitations.length !== 1 ? 's' : ''} invited</p>
-        <Button size="sm" onClick={() => setShowInviteForm(v => !v)}>
+        <Button size="sm" onClick={() => setShowInviteForm(v => !v)} disabled={isDraft}>
           <Send className="h-3.5 w-3.5 mr-1.5" />{showInviteForm ? 'Cancel' : 'Invite Candidates'}
         </Button>
       </div>
 
       {/* Inline invite form */}
-      {showInviteForm && (
+      {showInviteForm && !isDraft && (
         <Card>
           <CardContent className="pt-4 space-y-3">
             <div className="space-y-1">
@@ -753,7 +762,9 @@ export function TestBuilderPage() {
 
   const publishMutation = useMutation({
     mutationFn: (action: 'publish' | 'archive') =>
-      api.post(`/tests/${testId}/${action}`),
+      api.patch(`/tests/${testId}/status`, {
+        status: action === 'publish' ? 'PUBLISHED' : 'ARCHIVED',
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['test', testId] })
       qc.invalidateQueries({ queryKey: ['tests'] })
@@ -1183,7 +1194,7 @@ export function TestBuilderPage() {
 
       {/* ── Candidates tab ── */}
       {activeTab === 'candidates' && testId && (
-        <TestCandidatesTab testId={testId} />
+        <TestCandidatesTab testId={testId} testStatus={test?.status ?? 'DRAFT'} />
       )}
 
       {/* ── Results tab ── */}

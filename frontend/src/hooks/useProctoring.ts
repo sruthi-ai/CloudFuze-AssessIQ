@@ -311,14 +311,17 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
   // ── Mobile / touch device detection ─────────────────────────────────────────
   useEffect(() => {
     if (!enabled) return
-    const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
-      || (navigator.maxTouchPoints > 0 && window.screen.width < 1024)
+    const ua = navigator.userAgent
+    const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua)
+      || (navigator.maxTouchPoints > 1 && window.screen.width < 1024)
     if (isMobile) {
       pushEventRef.current('PHONE_DETECTED', 'Test opened on a mobile or touch device', {
-        userAgent: navigator.userAgent,
+        userAgent: ua,
         screenWidth: window.screen.width,
         touchPoints: navigator.maxTouchPoints,
       })
+      // Flush immediately — don't wait for the 15s batch timer
+      setTimeout(() => flushRef.current?.(), 100)
     }
   }, [enabled])
 

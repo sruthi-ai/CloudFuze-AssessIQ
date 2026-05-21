@@ -14,17 +14,38 @@ const SEVERITY_MAP: Record<string, 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'> = {
   WINDOW_BLUR: 'HIGH',
   FULLSCREEN_EXIT: 'HIGH',
   COPY_PASTE: 'HIGH',
-  RIGHT_CLICK: 'HIGH',
+  RIGHT_CLICK: 'MEDIUM',
   WEBCAM_BLOCKED: 'CRITICAL',
   MULTIPLE_FACES: 'CRITICAL',
   NO_FACE_DETECTED: 'HIGH',
-  NOISE_DETECTED: 'HIGH',
+  NOISE_DETECTED: 'MEDIUM',
   SCREENSHOT_TAKEN: 'LOW',
   DEVTOOLS_OPEN: 'CRITICAL',
   PHONE_DETECTED: 'CRITICAL',
   HEAD_TURNED: 'HIGH',
   SCREEN_RECORDING_STOPPED: 'HIGH',
   CUSTOM: 'MEDIUM',
+}
+
+// Per-event-type risk score weights and per-type caps.
+// weight  = points added per occurrence
+// maxPts  = maximum this event type can contribute in total (prevents spam inflating score)
+const EVENT_RISK: Record<string, { weight: number; maxPts: number }> = {
+  PHONE_DETECTED:           { weight: 65, maxPts: 65  }, // clear rule violation — device change
+  DEVTOOLS_OPEN:            { weight: 55, maxPts: 55  }, // attempting to use dev tools
+  WEBCAM_BLOCKED:           { weight: 45, maxPts: 45  }, // hiding from camera
+  MULTIPLE_FACES:           { weight: 40, maxPts: 80  }, // another person visible
+  TAB_SWITCH:               { weight: 25, maxPts: 75  }, // left test window
+  SCREEN_RECORDING_STOPPED: { weight: 20, maxPts: 20  }, // stopped proctoring
+  COPY_PASTE:               { weight: 18, maxPts: 54  }, // pasting external content
+  FULLSCREEN_EXIT:          { weight: 12, maxPts: 36  }, // exited fullscreen
+  NO_FACE_DETECTED:         { weight: 10, maxPts: 40  }, // face not visible
+  HEAD_TURNED:              { weight:  8, maxPts: 32  }, // looking away
+  WINDOW_BLUR:              { weight:  6, maxPts: 18  }, // window lost focus (can be accidental)
+  RIGHT_CLICK:              { weight:  2, maxPts:  6  }, // right-click (often accidental)
+  NOISE_DETECTED:           { weight:  2, maxPts:  8  }, // background noise (common)
+  SCREENSHOT_TAKEN:         { weight:  0, maxPts:  0  }, // system monitoring — not a violation
+  CUSTOM:                   { weight:  5, maxPts: 20  },
 }
 
 const EVENT_TYPES = [
@@ -56,14 +77,11 @@ async function maybeAlert(sessionId: string, type: string, severity: string, des
       include: {
         candidate: { select: { firstName: true, lastName: true, email: true } },
         test: { select: { id: true, title: true, tenantId: true } },
-        proctoringEvents: { select: { severity: true } },
+        proctoringEvents: { select: { type: true, severity: true } },
       },
     })
     if (!session) return
-    const weights: Record<string, number> = { CRITICAL: 30, HIGH: 15, MEDIUM: 5, LOW: 1 }
-    const riskScore = Math.min(100, session.proctoringEvents.reduce(
-      (s, e) => s + (weights[e.severity] ?? 0), 0
-    ))
+    const riskScore = calculateRiskScore(session.proctoringEvents)
     const payload: AlertPayload = {
       type: 'VIOLATION',
       sessionId,
@@ -355,8 +373,14 @@ export async function proctoringRoutes(server: FastifyInstance) {
   })
 }
 
-function calculateRiskScore(events: { severity: string }[]): number {
-  const weights = { CRITICAL: 30, HIGH: 15, MEDIUM: 5, LOW: 1 }
-  const raw = events.reduce((sum, e) => sum + (weights[e.severity as keyof typeof weights] ?? 0), 0)
+function calculateRiskScore(events: { type: string; severity: string }[]): number {
+  // Tally contribution per event type, capped per type to prevent single-category inflation
+  const totals: Record<string, number> = {}
+  for (const e of events) {
+    const rule = EVENT_RISK[e.type]
+    if (!rule || rule.weight === 0) continue
+    totals[e.type] = Math.min(rule.maxPts, (totals[e.type] ?? 0) + rule.weight)
+  }
+  const raw = Object.values(totals).reduce((s, v) => s + v, 0)
   return Math.min(100, raw)
 }

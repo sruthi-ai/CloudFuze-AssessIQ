@@ -20,6 +20,7 @@ interface UseProctoringOptions {
   enabled: boolean
   candidateName?: string
   onViolation?: (type: ProctoringEventType, count: number) => void
+  onTabReturn?: () => void  // called when candidate returns from a tab switch
 }
 
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
@@ -35,11 +36,15 @@ function drawWatermark(ctx: CanvasRenderingContext2D, W: number, H: number, labe
   ctx.restore()
 }
 
-export function useProctoring({ sessionId, token, enabled, candidateName, onViolation }: UseProctoringOptions) {
+export function useProctoring({ sessionId, token, enabled, candidateName, onViolation, onTabReturn }: UseProctoringOptions) {
   const queueRef = useRef<QueuedEvent[]>([])
   const violationCountRef = useRef<Record<string, number>>({})
   const flushTimerRef = useRef<number | null>(null)
   const webcamStreamRef = useRef<MediaStream | null>(null)
+  const lastWindowBlurRef = useRef<number>(0)
+  const tabHiddenRef = useRef<boolean>(false)
+  const onTabReturnRef = useRef(onTabReturn)
+  useEffect(() => { onTabReturnRef.current = onTabReturn }, [onTabReturn])
 
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const audioCtxRef = useRef<AudioContext | null>(null)
@@ -86,6 +91,19 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
     }
   }, [enabled, sessionId, token])
 
+  const flushRef = useRef(flush)
+  useEffect(() => { flushRef.current = flush }, [flush])
+
+  // pushImmediate: enqueue + flush within 50 ms so the backend gets it right away
+  const pushImmediate = useCallback((
+    type: ProctoringEventType,
+    description?: string,
+    metadata?: Record<string, unknown>
+  ) => {
+    pushEventRef.current(type, description, metadata)
+    setTimeout(() => flushRef.current(), 50)
+  }, [])
+
   const requestFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().catch(() => {})
@@ -108,6 +126,23 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
       })
     } catch {}
   }, [sessionId, token])
+
+  // Capture an immediate snapshot (used on high-severity violations)
+  const captureViolationSnapshot = useCallback(() => {
+    const video = videoRef.current
+    if (!video || video.readyState < 2 || video.videoWidth === 0) return
+    const W = Math.min(video.videoWidth, 480)
+    const H = Math.round(W * video.videoHeight / video.videoWidth)
+    const canvas = document.createElement('canvas')
+    canvas.width = W; canvas.height = H
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.drawImage(video, 0, 0, W, H)
+    const ts = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false })
+    const label = `${candidateName ?? 'Candidate'} | ${ts} | ${sessionId.substring(0, 8)}`
+    drawWatermark(ctx, W, H, label)
+    canvas.toBlob(blob => { if (blob) uploadSnapshot(blob) }, 'image/jpeg', 0.7)
+  }, [candidateName, sessionId, uploadSnapshot])
 
   // ── Webcam + audio + face/head-pose + screenshots ───────────────────────────
   useEffect(() => {
@@ -164,13 +199,14 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
             if (count === 0) {
               consecutiveNoFace++
               if (consecutiveNoFace >= 2) {
-                pushEventRef.current('NO_FACE_DETECTED', 'No face visible in webcam for extended period')
+                captureViolationSnapshot()
+                pushImmediate('NO_FACE_DETECTED', 'No face visible in webcam for extended period')
                 consecutiveNoFace = 0
               }
             } else {
               consecutiveNoFace = 0
               if (count > 1) {
-                pushEventRef.current('MULTIPLE_FACES', `${count} faces detected in webcam`)
+                pushImmediate('MULTIPLE_FACES', `${count} faces detected in webcam`)
               }
             }
 
@@ -181,7 +217,7 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
                 const dir = Math.abs(headPose.yaw) > 0.45
                   ? (headPose.yaw > 0 ? 'right' : 'left')
                   : 'up'
-                pushEventRef.current('HEAD_TURNED', `Candidate looking ${dir} (yaw=${headPose.yaw.toFixed(2)})`, {
+                pushImmediate('HEAD_TURNED', `Candidate looking ${dir} (yaw=${headPose.yaw.toFixed(2)})`, {
                   yaw: headPose.yaw,
                   pitch: headPose.pitch,
                   direction: dir,
@@ -277,17 +313,33 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
     if (!enabled) return
     const handler = () => {
       if (document.hidden) {
-        pushEvent('TAB_SWITCH', 'Candidate switched or minimized the browser tab')
-        toast({ title: 'Warning: Tab switch detected', description: 'This has been logged.', variant: 'destructive' })
+        // Document became hidden — tab switch
+        tabHiddenRef.current = true
+        lastWindowBlurRef.current = Date.now()
+        captureViolationSnapshot()
+        pushImmediate('TAB_SWITCH', 'Candidate switched or minimized the browser tab')
+      } else {
+        // Returned to the tab
+        if (tabHiddenRef.current) {
+          tabHiddenRef.current = false
+          onTabReturnRef.current?.()
+        }
       }
     }
     document.addEventListener('visibilitychange', handler)
     return () => document.removeEventListener('visibilitychange', handler)
-  }, [enabled, pushEvent])
+  }, [enabled, pushEvent, captureViolationSnapshot])
 
   useEffect(() => {
     if (!enabled) return
-    const handler = () => pushEvent('WINDOW_BLUR', 'Browser window lost focus')
+    const handler = () => {
+      // Skip if a TAB_SWITCH was just logged (they overlap) or if debounce window active
+      if (tabHiddenRef.current) return
+      const now = Date.now()
+      if (now - lastWindowBlurRef.current < 5000) return
+      lastWindowBlurRef.current = now
+      pushEvent('WINDOW_BLUR', 'Browser window lost focus')
+    }
     window.addEventListener('blur', handler)
     return () => window.removeEventListener('blur', handler)
   }, [enabled, pushEvent])
@@ -380,10 +432,12 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
 
   return {
     pushEvent,
+    pushImmediate,
     flush,
     stopProctoring,
     requestFullscreen,
     attachVideoRef,
+    captureViolationSnapshot,
     violationCounts: violationCountRef.current,
     webcamActive,
     micActive,

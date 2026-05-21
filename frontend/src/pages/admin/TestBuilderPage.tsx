@@ -287,10 +287,44 @@ const INV_STATUS_VARIANT: Record<string, any> = {
 function TestCandidatesTab({ testId }: { testId: string }) {
   const qc = useQueryClient()
   const [copiedToken, setCopiedToken] = useState<string | null>(null)
+  const [showInviteForm, setShowInviteForm] = useState(false)
+  const [candidateLines, setCandidateLines] = useState('')
+  const [expiresInDays, setExpiresInDays] = useState(7)
 
   const { data: invitations = [], isLoading } = useQuery<any[]>({
     queryKey: ['test-invitations', testId],
     queryFn: () => api.get(`/candidates/invitations/${testId}`).then(r => r.data.data),
+  })
+
+  const inviteMutation = useMutation({
+    mutationFn: () => {
+      const lines = candidateLines.split('\n').filter(l => l.trim())
+      const candidates = lines.map(line => {
+        const parts = line.split(',').map(s => s.trim())
+        const email = parts[0] ?? ''
+        let firstName = parts[1] ?? ''
+        let lastName = parts[2] ?? ''
+        const organization = parts[3] || undefined
+        if (!firstName) {
+          const localPart = email.split('@')[0] ?? 'Candidate'
+          const np = localPart.replace(/[._-]/g, ' ').split(' ').filter(Boolean)
+          firstName = np[0] ? np[0][0].toUpperCase() + np[0].slice(1) : 'Candidate'
+          lastName = np[1] ? np[1][0].toUpperCase() + np[1].slice(1) : ''
+        }
+        return { email, firstName, lastName, ...(organization ? { organization } : {}) }
+      })
+      return api.post('/candidates/invite', { testId, candidates, expiresInDays })
+    },
+    onSuccess: (res) => {
+      const summary = res.data.data.summary
+      const sent = summary.filter((s: any) => s.status === 'invited').length
+      const skipped = summary.filter((s: any) => s.status === 'skipped').length
+      toast({ title: `${sent} invitation${sent !== 1 ? 's' : ''} sent${skipped > 0 ? `, ${skipped} skipped` : ''}` })
+      setCandidateLines('')
+      setShowInviteForm(false)
+      qc.invalidateQueries({ queryKey: ['test-invitations', testId] })
+    },
+    onError: err => toast({ title: 'Error', description: getErrorMessage(err), variant: 'destructive' }),
   })
 
   const resendMutation = useMutation({
@@ -315,24 +349,60 @@ function TestCandidatesTab({ testId }: { testId: string }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{invitations.length} candidate{invitations.length !== 1 ? 's' : ''} invited</p>
-        <Button size="sm" asChild>
-          <Link to={`/admin/candidates?testId=${testId}`}>
-            <Send className="h-3.5 w-3.5 mr-1.5" />Invite More
-          </Link>
+        <Button size="sm" onClick={() => setShowInviteForm(v => !v)}>
+          <Send className="h-3.5 w-3.5 mr-1.5" />{showInviteForm ? 'Cancel' : 'Invite Candidates'}
         </Button>
       </div>
 
+      {/* Inline invite form */}
+      {showInviteForm && (
+        <Card>
+          <CardContent className="pt-4 space-y-3">
+            <div className="space-y-1">
+              <p className="text-xs font-medium">Candidates — one per line</p>
+              <p className="text-xs text-muted-foreground">Format: <code className="bg-gray-100 px-0.5 rounded">email, First, Last, Organization</code></p>
+              <textarea
+                rows={4}
+                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                placeholder={`john@example.com\njane@example.com, Jane, Smith, ABC College`}
+                value={candidateLines}
+                onChange={e => setCandidateLines(e.target.value)}
+              />
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-muted-foreground whitespace-nowrap">Expires in</label>
+                <Input
+                  type="number" min="1" max="90" className="w-20 h-8 text-sm"
+                  value={expiresInDays}
+                  onChange={e => setExpiresInDays(parseInt(e.target.value) || 7)}
+                />
+                <span className="text-xs text-muted-foreground">days</span>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => inviteMutation.mutate()}
+                disabled={inviteMutation.isPending || !candidateLines.trim()}
+              >
+                {inviteMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Send className="h-3.5 w-3.5 mr-1.5" />}
+                Send Invitations
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {isLoading ? (
         <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-      ) : invitations.length === 0 ? (
+      ) : invitations.length === 0 && !showInviteForm ? (
         <div className="rounded-lg border border-dashed p-10 text-center">
           <Users className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
           <p className="text-sm text-muted-foreground mb-3">No candidates invited yet.</p>
-          <Button size="sm" asChild>
-            <Link to={`/admin/candidates?testId=${testId}`}><Send className="h-3.5 w-3.5 mr-1.5" />Invite Candidates</Link>
+          <Button size="sm" onClick={() => setShowInviteForm(true)}>
+            <Send className="h-3.5 w-3.5 mr-1.5" />Invite Candidates
           </Button>
         </div>
-      ) : (
+      ) : invitations.length > 0 ? (
         <Card>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -415,7 +485,7 @@ function TestCandidatesTab({ testId }: { testId: string }) {
             </table>
           </div>
         </Card>
-      )}
+      ) : null}
     </div>
   )
 }

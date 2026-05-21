@@ -5,9 +5,9 @@ import {
   ShieldAlert, ShieldCheck, AlertTriangle, Trophy,
   Camera, CameraOff, TabletSmartphone, Minimize2, Copy,
   MousePointer2, Code2, Users, UserX, Volume2, Smartphone,
-  Navigation, MonitorPlay,
+  Navigation, MonitorPlay, ZoomIn,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -16,6 +16,68 @@ import { Label } from '@/components/ui/label'
 import { api, getErrorMessage } from '@/lib/api'
 import { toast } from '@/hooks/use-toast'
 import { formatDateTime, formatSeconds, cn } from '@/lib/utils'
+
+// ── SecureImage: fetches with Authorization header, renders as blob URL ───────
+function SecureImage({ src, alt, className, onClick }: {
+  src: string; alt: string; className?: string; onClick?: () => void
+}) {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+  const prevUrl = useRef<string | null>(null)
+
+  useEffect(() => {
+    setObjectUrl(null)
+    setFailed(false)
+    let active = true
+    const token = localStorage.getItem('accessToken')
+    fetch(src, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then(r => {
+        if (!r.ok) throw new Error(`${r.status}`)
+        return r.blob()
+      })
+      .then(blob => {
+        if (!active) return
+        if (prevUrl.current) URL.revokeObjectURL(prevUrl.current)
+        const url = URL.createObjectURL(blob)
+        prevUrl.current = url
+        setObjectUrl(url)
+      })
+      .catch(() => { if (active) setFailed(true) })
+    return () => {
+      active = false
+      if (prevUrl.current) { URL.revokeObjectURL(prevUrl.current); prevUrl.current = null }
+    }
+  }, [src])
+
+  if (failed) return (
+    <div className={cn('flex flex-col items-center justify-center bg-gray-100 text-gray-400 gap-1', className)}>
+      <CameraOff className="h-4 w-4" />
+      <span className="text-[9px]">Not found</span>
+    </div>
+  )
+  if (!objectUrl) return (
+    <div className={cn('bg-gray-100 animate-pulse', className)} />
+  )
+  return <img src={objectUrl} alt={alt} className={cn('object-cover', className)} onClick={onClick} />
+}
+
+const EVENT_LABELS: Record<string, string> = {
+  TAB_SWITCH: 'Tab switched',
+  WINDOW_BLUR: 'Window lost focus',
+  FULLSCREEN_EXIT: 'Exited fullscreen',
+  COPY_PASTE: 'Copy / paste attempt',
+  RIGHT_CLICK: 'Right-click attempted',
+  WEBCAM_BLOCKED: 'Webcam blocked',
+  MULTIPLE_FACES: 'Multiple faces detected',
+  NO_FACE_DETECTED: 'No face visible',
+  NOISE_DETECTED: 'Background noise',
+  SCREENSHOT_TAKEN: 'Webcam snapshot',
+  DEVTOOLS_OPEN: 'DevTools opened',
+  PHONE_DETECTED: 'Phone detected',
+  HEAD_TURNED: 'Head turned away',
+  SCREEN_RECORDING_STOPPED: 'Screen recording stopped',
+  CUSTOM: 'Custom event',
+}
 
 const TYPE_LABELS: Record<string, string> = {
   MCQ_SINGLE: 'MCQ', MCQ_MULTI: 'Multi-Select', TRUE_FALSE: 'True/False',
@@ -55,7 +117,9 @@ export function ResultDetailPage() {
   const { sessionId } = useParams()
   const qc = useQueryClient()
   const [activeTab, setActiveTab] = useState<'answers' | 'proctoring'>('answers')
-  const [expandedShot, setExpandedShot] = useState<string | null>(null)
+  const [expandedShot, setExpandedShot] = useState<{ id: string; url: string } | null>(null)
+  const [linkedSnapshotId, setLinkedSnapshotId] = useState<string | null>(null)
+  const snapshotRefs = useRef<Record<string, HTMLButtonElement | null>>({})
 
   const { data: session, isLoading } = useQuery({
     queryKey: ['result', sessionId],
@@ -101,6 +165,28 @@ export function ResultDetailPage() {
   const answerMap = new Map(session.answers.map((a: any) => [a.questionId, a]))
   const hasPendingAnswers = session.answers.some((a: any) => a.gradingStatus === 'PENDING')
   const riskScore = proctoringData?.summary?.riskScore ?? 0
+
+  // Find the snapshot closest in time to a given ISO timestamp
+  const findNearestSnapshot = (isoTime: string) => {
+    const snapshots: any[] = snapshotsData?.snapshots ?? []
+    if (snapshots.length === 0) return null
+    const t = new Date(isoTime).getTime()
+    return snapshots.reduce((best: any, snap: any) => {
+      const d = Math.abs(new Date(snap.occurredAt).getTime() - t)
+      const bd = Math.abs(new Date(best.occurredAt).getTime() - t)
+      return d < bd ? snap : best
+    })
+  }
+
+  const handleEventClick = (evt: any) => {
+    setActiveTab('proctoring')
+    const snap = findNearestSnapshot(evt.occurredAt)
+    if (!snap) return
+    setLinkedSnapshotId(snap.id)
+    setTimeout(() => {
+      snapshotRefs.current[snap.id]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 50)
+  }
 
   // Show all events in the timeline except low-noise periodic snapshots
   const nonScreenshotEvents: any[] = (proctoringData?.events ?? []).filter(
@@ -260,46 +346,69 @@ export function ResultDetailPage() {
                   </CardHeader>
                   <CardContent>
                     <video
-                      src={snapshotsData.screenRecording.url}
+                      src={`/api/proctoring/${sessionId}/media/recording`}
                       controls
-                      className="w-full rounded-md border max-h-64"
+                      className="w-full rounded-md border max-h-72 bg-black"
                     />
                   </CardContent>
                 </Card>
               )}
 
-              {/* Webcam snapshot gallery — real uploaded images with watermarks */}
+              {/* Webcam snapshot gallery */}
               {(snapshotsData?.snapshots?.length ?? 0) > 0 && (
                 <Card>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-base flex items-center gap-2">
                       <Camera className="h-4 w-4" />
                       Webcam Snapshots ({snapshotsData!.snapshots.length})
+                      {linkedSnapshotId && (
+                        <button
+                          className="ml-auto text-xs text-muted-foreground hover:text-foreground"
+                          onClick={() => setLinkedSnapshotId(null)}
+                        >
+                          Clear highlight ✕
+                        </button>
+                      )}
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-                      {snapshotsData!.snapshots.map((snap: any) => (
-                        <button
-                          key={snap.id}
-                          onClick={() => setExpandedShot(snap.url)}
-                          className="relative group aspect-video overflow-hidden rounded border hover:ring-2 hover:ring-primary transition-all"
-                          title={formatDateTime(snap.occurredAt)}
-                        >
-                          <img
-                            src={snap.url}
-                            alt={`Snapshot ${formatDateTime(snap.occurredAt)}`}
-                            className="w-full h-full object-cover"
-                            loading="lazy"
-                          />
-                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-end justify-center pb-0.5">
-                            <span className="text-[9px] text-white/0 group-hover:text-white/90 font-mono leading-none">
-                              {new Date(snap.occurredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                          </div>
-                        </button>
-                      ))}
+                    <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                      {snapshotsData!.snapshots.map((snap: any) => {
+                        const isLinked = linkedSnapshotId === snap.id
+                        const imgSrc = `/api/proctoring/${sessionId}/media/snapshot/${snap.id}`
+                        return (
+                          <button
+                            key={snap.id}
+                            ref={el => { snapshotRefs.current[snap.id] = el }}
+                            onClick={() => setExpandedShot({ id: snap.id, url: imgSrc })}
+                            className={cn(
+                              'relative group aspect-video overflow-hidden rounded-md border transition-all',
+                              isLinked
+                                ? 'ring-2 ring-orange-400 border-orange-400 shadow-md'
+                                : 'hover:ring-2 hover:ring-primary'
+                            )}
+                          >
+                            <SecureImage
+                              src={imgSrc}
+                              alt={`Snapshot ${formatDateTime(snap.occurredAt)}`}
+                              className="w-full h-full"
+                            />
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors" />
+                            <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/60 to-transparent p-1">
+                              <span className="text-[9px] text-white font-mono leading-none">
+                                {new Date(snap.occurredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                              </span>
+                            </div>
+                            {isLinked && (
+                              <div className="absolute top-1 right-1 bg-orange-400 rounded-full p-0.5">
+                                <ZoomIn className="h-2.5 w-2.5 text-white" />
+                              </div>
+                            )}
+                          </button>
+                        )
+                      })}
                     </div>
+                    <p className="text-xs text-muted-foreground mt-2">Click a timeline event to highlight the nearest snapshot. Click a snapshot to expand it.</p>
                   </CardContent>
                 </Card>
               )}
@@ -307,25 +416,26 @@ export function ResultDetailPage() {
               {/* Expanded snapshot lightbox */}
               {expandedShot && (
                 <div
-                  className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+                  className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
                   onClick={() => setExpandedShot(null)}
                 >
-                  <img
-                    src={expandedShot}
-                    alt="Snapshot"
-                    className="max-w-full max-h-full rounded-lg shadow-2xl"
-                    onClick={e => e.stopPropagation()}
-                  />
-                  <button
-                    className="absolute top-4 right-4 text-white/80 hover:text-white text-2xl font-bold"
-                    onClick={() => setExpandedShot(null)}
-                  >
-                    ✕
-                  </button>
+                  <div className="relative max-w-3xl w-full" onClick={e => e.stopPropagation()}>
+                    <SecureImage
+                      src={expandedShot.url}
+                      alt="Snapshot"
+                      className="w-full rounded-lg shadow-2xl"
+                    />
+                    <button
+                      className="absolute top-3 right-3 bg-black/50 hover:bg-black/80 text-white rounded-full w-8 h-8 flex items-center justify-center text-lg font-bold transition-colors"
+                      onClick={() => setExpandedShot(null)}
+                    >
+                      ✕
+                    </button>
+                  </div>
                 </div>
               )}
 
-              {/* Event timeline (excluding screenshots) */}
+              {/* Event timeline */}
               {nonScreenshotEvents.length === 0 ? (
                 <Card>
                   <CardContent className="py-8 text-center">
@@ -336,23 +446,41 @@ export function ResultDetailPage() {
               ) : (
                 <Card>
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-base">Event Timeline</CardTitle>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      Event Timeline
+                      <span className="text-xs font-normal text-muted-foreground">— click any event to find nearest snapshot</span>
+                    </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
-                      {nonScreenshotEvents.map((evt: any) => (
-                        <div key={evt.id} className={cn('flex items-start gap-3 p-2.5 rounded-md border text-sm', SEVERITY_COLOR[evt.severity])}>
-                          <EventIcon type={evt.type} />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-medium">{evt.type.replace(/_/g, ' ')}</span>
-                              <Badge variant="outline" className="text-xs py-0">{evt.severity}</Badge>
+                    <div className="space-y-1.5 max-h-96 overflow-y-auto pr-1">
+                      {nonScreenshotEvents.map((evt: any) => {
+                        const nearestSnap = findNearestSnapshot(evt.occurredAt)
+                        const hasSnap = !!nearestSnap
+                        return (
+                          <button
+                            key={evt.id}
+                            onClick={() => handleEventClick(evt)}
+                            className={cn(
+                              'w-full flex items-start gap-3 p-2.5 rounded-md border text-sm text-left transition-all',
+                              SEVERITY_COLOR[evt.severity],
+                              hasSnap ? 'hover:brightness-95 cursor-pointer' : 'cursor-default'
+                            )}
+                          >
+                            <EventIcon type={evt.type} />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-semibold">{EVENT_LABELS[evt.type] ?? evt.type.replace(/_/g, ' ')}</span>
+                                <Badge variant="outline" className="text-xs py-0 font-normal">{evt.severity}</Badge>
+                              </div>
+                              {evt.description && <p className="text-xs mt-0.5 opacity-80">{evt.description}</p>}
                             </div>
-                            {evt.description && <p className="text-xs mt-0.5 opacity-80">{evt.description}</p>}
-                          </div>
-                          <span className="text-xs shrink-0 opacity-70">{formatDateTime(evt.occurredAt)}</span>
-                        </div>
-                      ))}
+                            <div className="shrink-0 text-right">
+                              <span className="text-xs opacity-70 block">{formatDateTime(evt.occurredAt)}</span>
+                              {hasSnap && <span className="text-[10px] opacity-50">📷 view snapshot</span>}
+                            </div>
+                          </button>
+                        )
+                      })}
                     </div>
                   </CardContent>
                 </Card>

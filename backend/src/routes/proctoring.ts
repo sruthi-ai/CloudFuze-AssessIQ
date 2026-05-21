@@ -1,13 +1,13 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { createWriteStream } from 'fs'
-import { join } from 'path'
+import { createWriteStream, createReadStream, existsSync, statSync } from 'fs'
+import { join, extname } from 'path'
 import { pipeline } from 'stream/promises'
-import { statSync } from 'fs'
 import { prisma } from '../db'
 import { sendError, sendSuccess } from '../utils/errors'
 import { requireRole } from '../middleware/authenticate'
 import { UPLOADS_DIR } from '../uploads'
+import { addAlertClient, removeAlertClient, broadcastAlert, AlertPayload } from '../alerts'
 
 const SEVERITY_MAP: Record<string, 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'> = {
   TAB_SWITCH: 'HIGH',
@@ -47,8 +47,70 @@ const bulkEventSchema = z.object({
   events: z.array(eventSchema.omit({ token: true })),
 })
 
+// Broadcast a proctoring event alert to all connected admins for the session's tenant
+async function maybeAlert(sessionId: string, type: string, severity: string, description: string | null, occurredAt: Date) {
+  if (severity !== 'HIGH' && severity !== 'CRITICAL') return
+  try {
+    const session = await prisma.session.findUnique({
+      where: { id: sessionId },
+      include: {
+        candidate: { select: { firstName: true, lastName: true, email: true } },
+        test: { select: { id: true, title: true, tenantId: true } },
+        proctoringEvents: { select: { severity: true } },
+      },
+    })
+    if (!session) return
+    const weights: Record<string, number> = { CRITICAL: 30, HIGH: 15, MEDIUM: 5, LOW: 1 }
+    const riskScore = Math.min(100, session.proctoringEvents.reduce(
+      (s, e) => s + (weights[e.severity] ?? 0), 0
+    ))
+    const payload: AlertPayload = {
+      type: 'VIOLATION',
+      sessionId,
+      severity,
+      eventType: type,
+      description,
+      occurredAt: occurredAt.toISOString(),
+      candidate: session.candidate,
+      test: { id: session.test.id, title: session.test.title },
+      riskScore,
+    }
+    broadcastAlert(session.test.tenantId, payload)
+  } catch { /* best-effort — never block the event store */ }
+}
+
 export async function proctoringRoutes(server: FastifyInstance) {
   const canView = requireRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'RECRUITER', 'VIEWER')
+
+  // GET /api/proctoring/live/alerts — SSE stream for real-time proctor alerts (admin)
+  server.get('/live/alerts', { preHandler: canView }, async (request, reply) => {
+    const tenantId = request.user.tenantId
+
+    reply.raw.setHeader('Content-Type', 'text/event-stream')
+    reply.raw.setHeader('Cache-Control', 'no-cache, no-transform')
+    reply.raw.setHeader('Connection', 'keep-alive')
+    reply.raw.setHeader('X-Accel-Buffering', 'no')
+    reply.raw.writeHead(200)
+
+    const send = (data: AlertPayload) => {
+      try { reply.raw.write(`data: ${JSON.stringify(data)}\n\n`) } catch {}
+    }
+
+    addAlertClient(tenantId, send)
+    send({ type: 'CONNECTED' })
+
+    const heartbeat = setInterval(() => {
+      try { reply.raw.write(': heartbeat\n\n') } catch {}
+    }, 25_000)
+
+    await new Promise<void>(resolve => {
+      reply.raw.socket?.once('close', resolve)
+      reply.raw.once('close', resolve)
+    })
+
+    clearInterval(heartbeat)
+    removeAlertClient(tenantId, send)
+  })
 
   // POST /api/proctoring/:sessionId/event — record a single proctoring event (public, token-validated)
   server.post('/:sessionId/event', async (request, reply) => {
@@ -65,16 +127,13 @@ export async function proctoringRoutes(server: FastifyInstance) {
     if (!session) return sendError(reply, 404, 'Session not found')
     if (!session.test.proctoring) return sendSuccess(reply, { skipped: true })
 
+    const ts = occurredAt ? new Date(occurredAt) : new Date()
+    const severity = SEVERITY_MAP[type] ?? 'MEDIUM'
     const event = await prisma.proctoringEvent.create({
-      data: {
-        sessionId,
-        type,
-        severity: SEVERITY_MAP[type] ?? 'MEDIUM',
-        description,
-        metadata: (metadata ?? null) as any,
-        occurredAt: occurredAt ? new Date(occurredAt) : new Date(),
-      },
+      data: { sessionId, type, severity, description, metadata: (metadata ?? null) as any, occurredAt: ts },
     })
+
+    maybeAlert(sessionId, type, severity, description ?? null, ts)
 
     return sendSuccess(reply, event, 201)
   })
@@ -108,6 +167,11 @@ export async function proctoringRoutes(server: FastifyInstance) {
         })
       )
     )
+
+    // Broadcast alerts for any HIGH/CRITICAL events in this batch (non-blocking)
+    created.forEach(ev => {
+      maybeAlert(sessionId, ev.type, ev.severity, ev.description ?? null, ev.occurredAt)
+    })
 
     return sendSuccess(reply, { count: created.length }, 201)
   })
@@ -196,6 +260,41 @@ export async function proctoringRoutes(server: FastifyInstance) {
       create: { sessionId, url: `/uploads/recordings/${filename}`, fileSize: stat.size },
     })
     return sendSuccess(reply, recording, 201)
+  })
+
+  // GET /api/proctoring/:sessionId/media/snapshot/:snapshotId — serve snapshot image (admin)
+  server.get('/:sessionId/media/snapshot/:snapshotId', { preHandler: canView }, async (request, reply) => {
+    const { sessionId, snapshotId } = request.params as { sessionId: string; snapshotId: string }
+    const snapshot = await prisma.webcamSnapshot.findFirst({
+      where: { id: snapshotId, sessionId, session: { test: { tenantId: request.user.tenantId } } },
+    })
+    if (!snapshot) return sendError(reply, 404, 'Snapshot not found')
+
+    // snapshot.url is /uploads/snapshots/filename.jpg — strip the leading /uploads/
+    const relativePath = snapshot.url.replace(/^\/uploads\//, '')
+    const filePath = join(UPLOADS_DIR, relativePath)
+    if (!existsSync(filePath)) {
+      return reply.status(404).send({ success: false, error: 'Snapshot file missing from disk', url: snapshot.url })
+    }
+    const ext = extname(filePath).toLowerCase()
+    const mime = ext === '.png' ? 'image/png' : 'image/jpeg'
+    return reply.type(mime).send(createReadStream(filePath))
+  })
+
+  // GET /api/proctoring/:sessionId/media/recording — serve screen recording (admin)
+  server.get('/:sessionId/media/recording', { preHandler: canView }, async (request, reply) => {
+    const { sessionId } = request.params as { sessionId: string }
+    const recording = await prisma.screenRecording.findFirst({
+      where: { sessionId, session: { test: { tenantId: request.user.tenantId } } },
+    })
+    if (!recording) return sendError(reply, 404, 'Recording not found')
+
+    const relativePath = recording.url.replace(/^\/uploads\//, '')
+    const filePath = join(UPLOADS_DIR, relativePath)
+    if (!existsSync(filePath)) {
+      return reply.status(404).send({ success: false, error: 'Recording file missing from disk', url: recording.url })
+    }
+    return reply.type('video/webm').send(createReadStream(filePath))
   })
 
   // GET /api/proctoring/:sessionId/snapshots — list all snapshots for a session (admin)

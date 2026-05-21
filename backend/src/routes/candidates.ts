@@ -6,7 +6,7 @@ import { requireRole } from '../middleware/authenticate'
 import { sendInvitationEmail } from '../utils/email'
 
 const createCandidateSchema = z.object({
-  email: z.string().email(),
+  email: z.string().email().transform(v => v.toLowerCase()),
   firstName: z.string().min(1).default('Candidate'),
   lastName: z.string().default(''),
   phone: z.string().optional(),
@@ -17,7 +17,7 @@ const createCandidateSchema = z.object({
 const inviteSchema = z.object({
   testId: z.string(),
   candidates: z.array(z.object({
-    email: z.string().email(),
+    email: z.string().email().transform(v => v.toLowerCase()),
     firstName: z.string().default('Candidate'),
     lastName: z.string().default(''),
     organization: z.string().optional(),

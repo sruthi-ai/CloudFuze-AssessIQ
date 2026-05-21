@@ -49,6 +49,8 @@ export function TestPage() {
   const [questionStartTime, setQuestionStartTime] = useState(Date.now())
   const [submitting, setSubmitting] = useState(false)
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
+  const [tabWarningCount, setTabWarningCount] = useState(0)
+  const [showTabWarning, setShowTabWarning] = useState(false)
 
   const proctoring = inviteData?.test?.proctoring !== false
   const brandColor = inviteData?.test?.tenant?.primaryColor ?? '#6366f1'
@@ -62,6 +64,11 @@ export function TestPage() {
     ? `${inviteData.candidate.firstName ?? ''} ${inviteData.candidate.lastName ?? ''}`.trim()
     : undefined
 
+  const handleTabReturn = useCallback(() => {
+    setTabWarningCount(c => c + 1)
+    setShowTabWarning(true)
+  }, [])
+
   const {
     pushEvent, stopProctoring, requestFullscreen, flush,
     attachVideoRef,
@@ -72,6 +79,7 @@ export function TestPage() {
     token: token ?? '',
     enabled: proctoring,
     candidateName,
+    onTabReturn: handleTabReturn,
   })
 
   const {
@@ -228,6 +236,34 @@ export function TestPage() {
   // ── Test UI ────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* Tab-return warning overlay */}
+      {showTabWarning && (
+        <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 text-center space-y-4">
+            <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mx-auto">
+              <span className="text-3xl">⚠️</span>
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Tab switch detected</h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                You left this tab. This violation has been recorded and a screenshot was taken.
+              </p>
+              {tabWarningCount >= 3 && (
+                <p className="text-sm text-red-600 font-medium mt-2">
+                  {tabWarningCount} violations logged. Repeated switching may result in disqualification.
+                </p>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Violation #{tabWarningCount} — your proctor will be notified.
+            </p>
+            <Button className="w-full" onClick={() => { setShowTabWarning(false); requestFullscreen() }}>
+              I understand — continue test
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="bg-white border-b sticky top-0 z-10" style={{ borderTopColor: brandColor, borderTopWidth: 3, borderTopStyle: 'solid' }}>
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center gap-3">

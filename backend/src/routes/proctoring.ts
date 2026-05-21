@@ -32,8 +32,8 @@ const SEVERITY_MAP: Record<string, 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'> = {
 // maxPts  = maximum this event type can contribute in total (prevents spam inflating score)
 const EVENT_RISK: Record<string, { weight: number; maxPts: number }> = {
   PHONE_DETECTED:           { weight: 65, maxPts: 65  }, // clear rule violation — device change
-  DEVTOOLS_OPEN:            { weight: 55, maxPts: 55  }, // attempting to use dev tools
-  WEBCAM_BLOCKED:           { weight: 45, maxPts: 45  }, // hiding from camera
+  WEBCAM_BLOCKED:           { weight: 55, maxPts: 55  }, // deliberately hiding from camera
+  DEVTOOLS_OPEN:            { weight: 45, maxPts: 45  }, // suspicious but easy accidental F12
   MULTIPLE_FACES:           { weight: 40, maxPts: 80  }, // another person visible
   TAB_SWITCH:               { weight: 25, maxPts: 75  }, // left test window
   SCREEN_RECORDING_STOPPED: { weight: 20, maxPts: 20  }, // stopped proctoring

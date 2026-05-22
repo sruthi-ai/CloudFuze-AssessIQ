@@ -91,6 +91,7 @@ const SEVERITY_COLOR: Record<string, string> = {
   MEDIUM: 'text-yellow-600 bg-yellow-50 border-yellow-200',
   LOW: 'text-blue-600 bg-blue-50 border-blue-200',
 }
+const SEVERITY_ORDER: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 }
 
 // Border classes applied to snapshot thumbnails based on nearby events
 const RISK_BORDER: Record<string, string> = {
@@ -215,13 +216,33 @@ export function ResultDetailPage() {
     }, 50)
   }
 
-  // Show all events in the timeline except low-noise periodic snapshots
-  const nonScreenshotEvents: any[] = (proctoringData?.events ?? []).filter(
-    (e: any) => e.type !== 'SCREENSHOT_TAKEN'
-  )
+  // Sorted: Critical → High → Medium → Low, then chronological within same severity
+  const nonScreenshotEvents: any[] = (proctoringData?.events ?? [])
+    .filter((e: any) => e.type !== 'SCREENSHOT_TAKEN')
+    .sort((a: any, b: any) => {
+      const sev = (SEVERITY_ORDER[a.severity] ?? 4) - (SEVERITY_ORDER[b.severity] ?? 4)
+      if (sev !== 0) return sev
+      return new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime()
+    })
+
+  // Auto-select: when proctoring tab opens, show the first critical/high event's snapshot
+  useEffect(() => {
+    if (activeTab !== 'proctoring' || panelSnap || !snapshotsData?.snapshots?.length) return
+    const highPriority = nonScreenshotEvents.find(
+      e => e.severity === 'CRITICAL' || e.severity === 'HIGH'
+    )
+    const snap = highPriority
+      ? findNearestSnapshot(highPriority.occurredAt)
+      : snapshotsData.snapshots[0]
+    if (!snap) return
+    const url = `/api/proctoring/${sessionId}/media/snapshot/${snap.id}`
+    setPanelSnap({ id: snap.id, url })
+    setLinkedSnapshotId(snap.id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, snapshotsData])
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-6 max-w-5xl">
       <div className="flex items-center gap-4 flex-wrap">
         <Button variant="ghost" size="icon" asChild>
           <Link to="/admin/results"><ArrowLeft className="h-4 w-4" /></Link>
@@ -452,39 +473,74 @@ export function ResultDetailPage() {
                     </CardContent>
                   </Card>
 
-                  {/* Snapshot preview panel */}
+                  {/* Snapshot preview panel — sticky so it stays visible while scrolling events */}
                   {hasSnapshots && (
-                    <Card className="lg:col-span-2">
+                    <Card className="lg:col-span-2 lg:sticky lg:top-4 self-start">
                       <CardHeader className="pb-2">
                         <CardTitle className="text-base flex items-center gap-2">
                           <Camera className="h-4 w-4" />
                           Snapshot Preview
                         </CardTitle>
                       </CardHeader>
-                      <CardContent>
+                      <CardContent className="space-y-3">
                         {panelSnap ? (
-                          <div
-                            className="aspect-video rounded-lg overflow-hidden border cursor-zoom-in bg-black"
-                            onClick={() => setExpandedShot(panelSnap)}
-                          >
-                            <SecureImage
-                              src={panelSnap.url}
-                              alt="Selected snapshot"
-                              className="w-full h-full object-contain"
-                            />
-                          </div>
+                          <>
+                            <div
+                              className="rounded-lg overflow-hidden border cursor-zoom-in"
+                              title="Click to expand"
+                              onClick={() => setExpandedShot(panelSnap)}
+                            >
+                              <SecureImage
+                                src={panelSnap.url}
+                                alt="Selected snapshot"
+                                className="w-full rounded-lg"
+                              />
+                            </div>
+                            {/* Events near this snapshot */}
+                            {(() => {
+                              const snap = snapshotsData?.snapshots?.find((s: any) => s.id === panelSnap.id)
+                              if (!snap) return null
+                              const t = new Date(snap.occurredAt).getTime()
+                              const nearby = nonScreenshotEvents.filter(
+                                (e: any) => Math.abs(new Date(e.occurredAt).getTime() - t) <= 30_000
+                              )
+                              if (nearby.length === 0) return (
+                                <p className="text-xs text-muted-foreground text-center">No flagged events near this moment</p>
+                              )
+                              return (
+                                <div className="space-y-1">
+                                  <p className="text-xs font-medium text-gray-600">Nearby events:</p>
+                                  {nearby.slice(0, 4).map((evt: any) => (
+                                    <div key={evt.id} className={cn(
+                                      'flex items-center gap-2 text-xs px-2 py-1 rounded-md border',
+                                      SEVERITY_COLOR[evt.severity]
+                                    )}>
+                                      <EventIcon type={evt.type} />
+                                      <span className="flex-1 truncate">{EVENT_LABELS[evt.type] ?? evt.type}</span>
+                                      <Badge variant="outline" className="text-[9px] py-0 h-4 font-normal shrink-0">
+                                        {evt.severity}
+                                      </Badge>
+                                    </div>
+                                  ))}
+                                  {nearby.length > 4 && (
+                                    <p className="text-[10px] text-muted-foreground text-center">
+                                      +{nearby.length - 4} more
+                                    </p>
+                                  )}
+                                </div>
+                              )
+                            })()}
+                            <p className="text-[10px] text-muted-foreground text-center">
+                              Click image to expand fullscreen
+                            </p>
+                          </>
                         ) : (
-                          <div className="aspect-video rounded-lg bg-gray-50 border border-dashed flex flex-col items-center justify-center gap-2">
+                          <div className="py-8 rounded-lg bg-gray-50 border border-dashed flex flex-col items-center justify-center gap-2">
                             <Camera className="h-8 w-8 text-gray-300" />
                             <p className="text-xs text-muted-foreground text-center px-4">
                               Click any timeline event to preview the nearest snapshot
                             </p>
                           </div>
-                        )}
-                        {panelSnap && (
-                          <p className="text-[11px] text-muted-foreground text-center mt-1.5">
-                            Click to expand fullscreen
-                          </p>
                         )}
                       </CardContent>
                     </Card>

@@ -20,6 +20,7 @@ import { settingsRoutes } from './routes/settings'
 import { proctoringRoutes } from './routes/proctoring'
 import { codeRoutes } from './routes/code'
 import { analyticsRoutes } from './routes/analytics'
+import { startReminderJob } from './jobs/reminders'
 
 // ── Startup security validation ───────────────────────────────────────────────
 const JWT_SECRET = process.env.JWT_SECRET
@@ -133,6 +134,7 @@ async function bootstrap() {
 
   await server.listen({ port, host })
   console.log(`AssessIQ backend running at http://${host}:${port}`)
+  startReminderJob()
 }
 
 bootstrap().catch(err => {

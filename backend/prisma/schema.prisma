@@ -317,7 +317,8 @@ model Invitation {
   status      InvitationStatus @default(PENDING)
   expiresAt   DateTime
   openedAt    DateTime?
-  sentAt      DateTime?
+  sentAt           DateTime?
+  reminderSentAt   DateTime?  // last time a 24h expiry reminder was sent
   message          String?    // optional custom message in invite email
   attemptNumber    Int        @default(1)   // current attempt (1-based)
   previousAttempts Json?                    // [{attemptNumber, score, percentage, passed, submittedAt}]

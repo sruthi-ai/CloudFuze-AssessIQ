@@ -23,8 +23,8 @@ import { analyticsRoutes } from './routes/analytics'
 
 // ── Startup security validation ───────────────────────────────────────────────
 const JWT_SECRET = process.env.JWT_SECRET
-const INSECURE_DEFAULTS = ['dev-secret-change-in-production', 'change-in-production', 'secret', '']
-if (!JWT_SECRET || INSECURE_DEFAULTS.some(d => JWT_SECRET.includes(d))) {
+const INSECURE_DEFAULTS = ['dev-secret-change-in-production', 'change-in-production', 'secret']
+if (!JWT_SECRET || JWT_SECRET.length < 32 || INSECURE_DEFAULTS.some(d => JWT_SECRET.includes(d))) {
   if (process.env.NODE_ENV === 'production') {
     console.error('FATAL: JWT_SECRET is not set to a secure value. Refusing to start.')
     process.exit(1)

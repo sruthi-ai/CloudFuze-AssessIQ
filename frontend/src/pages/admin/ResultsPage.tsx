@@ -21,7 +21,7 @@ function riskLevel(eventCount: number): { label: string; variant: any } {
 }
 
 function exportCSV(sessions: any[]) {
-  const headers = ['Candidate', 'Email', 'Test', 'Status', 'Score %', 'Pass', 'Submitted', 'Risk Events']
+  const headers = ['Candidate', 'Email', 'Test', 'Status', 'Score %', 'Pass', 'Submitted', 'Malpractice']
   const rows = sessions.map(s => [
     `${s.candidate.firstName} ${s.candidate.lastName}`,
     s.candidate.email,
@@ -159,7 +159,7 @@ export function ResultsPage() {
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Test</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
                 <SortTh label="Score" col="score" />
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Risk</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Malpractice</th>
                 <SortTh label="Submitted" col="submittedAt" />
                 <th className="px-4 py-3" />
               </tr>

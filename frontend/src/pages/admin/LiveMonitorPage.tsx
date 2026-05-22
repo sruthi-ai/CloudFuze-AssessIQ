@@ -318,7 +318,7 @@ export function LiveMonitorPage() {
                       </div>
                       <div className="space-y-1">
                         <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>Risk score</span>
+                          <span>Malpractice score</span>
                           <span>{s.totalEvents} event{s.totalEvents !== 1 ? 's' : ''}</span>
                         </div>
                         <RiskBar score={s.riskScore} />

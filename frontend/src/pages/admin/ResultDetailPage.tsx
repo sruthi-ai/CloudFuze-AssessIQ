@@ -313,7 +313,7 @@ export function ResultDetailPage() {
                 : <ShieldAlert className="h-6 w-6 text-red-500" />}
               <p className="text-2xl font-bold">{riskScore}</p>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">Risk score</p>
+            <p className="text-xs text-muted-foreground mt-1">Malpractice score</p>
           </CardContent>
         </Card>
       </div>

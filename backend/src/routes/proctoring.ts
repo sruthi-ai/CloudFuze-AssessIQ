@@ -39,7 +39,7 @@ const EVENT_RISK: Record<string, { weight: number; maxPts: number }> = {
   SCREEN_RECORDING_STOPPED: { weight: 20, maxPts: 20  }, // stopped proctoring
   COPY_PASTE:               { weight: 18, maxPts: 54  }, // pasting external content
   FULLSCREEN_EXIT:          { weight: 12, maxPts: 36  }, // exited fullscreen
-  NO_FACE_DETECTED:         { weight: 10, maxPts: 40  }, // face not visible
+  NO_FACE_DETECTED:         { weight: 4, maxPts: 40  }, // face not visible
   HEAD_TURNED:              { weight:  8, maxPts: 32  }, // looking away
   WINDOW_BLUR:              { weight:  6, maxPts: 18  }, // window lost focus (can be accidental)
   RIGHT_CLICK:              { weight:  2, maxPts:  6  }, // right-click (often accidental)

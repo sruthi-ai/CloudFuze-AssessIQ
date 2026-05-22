@@ -354,6 +354,57 @@ export function ResultDetailPage() {
                 </Card>
               )}
 
+              {/* Event timeline */}
+              {nonScreenshotEvents.length === 0 ? (
+                <Card>
+                  <CardContent className="py-8 text-center">
+                    <ShieldCheck className="h-10 w-10 text-green-500 mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground">No violations detected</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      Event Timeline
+                      <span className="text-xs font-normal text-muted-foreground">— click any event to find nearest snapshot</span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-1.5 max-h-96 overflow-y-auto pr-1">
+                      {nonScreenshotEvents.map((evt: any) => {
+                        const nearestSnap = findNearestSnapshot(evt.occurredAt)
+                        const hasSnap = !!nearestSnap
+                        return (
+                          <button
+                            key={evt.id}
+                            onClick={() => handleEventClick(evt)}
+                            className={cn(
+                              'w-full flex items-start gap-3 p-2.5 rounded-md border text-sm text-left transition-all',
+                              SEVERITY_COLOR[evt.severity],
+                              hasSnap ? 'hover:brightness-95 cursor-pointer' : 'cursor-default'
+                            )}
+                          >
+                            <EventIcon type={evt.type} />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-semibold">{EVENT_LABELS[evt.type] ?? evt.type.replace(/_/g, ' ')}</span>
+                                <Badge variant="outline" className="text-xs py-0 font-normal">{evt.severity}</Badge>
+                              </div>
+                              {evt.description && <p className="text-xs mt-0.5 opacity-80">{evt.description}</p>}
+                            </div>
+                            <div className="shrink-0 text-right">
+                              <span className="text-xs opacity-70 block">{formatDateTime(evt.occurredAt)}</span>
+                              {hasSnap && <span className="text-[10px] opacity-50">📷 view snapshot</span>}
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               {/* Webcam snapshot gallery */}
               {(snapshotsData?.snapshots?.length ?? 0) > 0 && (
                 <Card>
@@ -433,57 +484,6 @@ export function ResultDetailPage() {
                     </button>
                   </div>
                 </div>
-              )}
-
-              {/* Event timeline */}
-              {nonScreenshotEvents.length === 0 ? (
-                <Card>
-                  <CardContent className="py-8 text-center">
-                    <ShieldCheck className="h-10 w-10 text-green-500 mx-auto mb-2" />
-                    <p className="text-sm text-muted-foreground">No violations detected</p>
-                  </CardContent>
-                </Card>
-              ) : (
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base flex items-center gap-2">
-                      Event Timeline
-                      <span className="text-xs font-normal text-muted-foreground">— click any event to find nearest snapshot</span>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-1.5 max-h-96 overflow-y-auto pr-1">
-                      {nonScreenshotEvents.map((evt: any) => {
-                        const nearestSnap = findNearestSnapshot(evt.occurredAt)
-                        const hasSnap = !!nearestSnap
-                        return (
-                          <button
-                            key={evt.id}
-                            onClick={() => handleEventClick(evt)}
-                            className={cn(
-                              'w-full flex items-start gap-3 p-2.5 rounded-md border text-sm text-left transition-all',
-                              SEVERITY_COLOR[evt.severity],
-                              hasSnap ? 'hover:brightness-95 cursor-pointer' : 'cursor-default'
-                            )}
-                          >
-                            <EventIcon type={evt.type} />
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-semibold">{EVENT_LABELS[evt.type] ?? evt.type.replace(/_/g, ' ')}</span>
-                                <Badge variant="outline" className="text-xs py-0 font-normal">{evt.severity}</Badge>
-                              </div>
-                              {evt.description && <p className="text-xs mt-0.5 opacity-80">{evt.description}</p>}
-                            </div>
-                            <div className="shrink-0 text-right">
-                              <span className="text-xs opacity-70 block">{formatDateTime(evt.occurredAt)}</span>
-                              {hasSnap && <span className="text-[10px] opacity-50">📷 view snapshot</span>}
-                            </div>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </CardContent>
-                </Card>
               )}
             </>
           )}

@@ -183,6 +183,26 @@ export function ResultDetailPage() {
     onError: err => toast({ title: 'AI grading failed', description: getErrorMessage(err), variant: 'destructive' }),
   })
 
+  // Auto-select: when proctoring tab opens, show the first critical/high event's snapshot.
+  // MUST be before any conditional returns to follow Rules of Hooks.
+  useEffect(() => {
+    if (activeTab !== 'proctoring' || panelSnap || !snapshotsData?.snapshots?.length || !proctoringData) return
+    const snapshots: any[] = snapshotsData.snapshots
+    const events: any[] = (proctoringData.events ?? []).filter((e: any) => e.type !== 'SCREENSHOT_TAKEN')
+    const highPriority = events.find((e: any) => e.severity === 'CRITICAL' || e.severity === 'HIGH')
+    const t = highPriority ? new Date(highPriority.occurredAt).getTime() : null
+    const snap = t
+      ? snapshots.reduce((best: any, s: any) => {
+          const d = Math.abs(new Date(s.occurredAt).getTime() - t)
+          const bd = Math.abs(new Date(best.occurredAt).getTime() - t)
+          return d < bd ? s : best
+        })
+      : snapshots[0]
+    if (!snap) return
+    setPanelSnap({ id: snap.id, url: `/api/proctoring/${sessionId}/media/snapshot/${snap.id}` })
+    setLinkedSnapshotId(snap.id)
+  }, [activeTab, snapshotsData, proctoringData]) // eslint-disable-line react-hooks/exhaustive-deps
+
   if (isLoading) {
     return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
   }
@@ -192,7 +212,6 @@ export function ResultDetailPage() {
   const hasPendingAnswers = session.answers.some((a: any) => a.gradingStatus === 'PENDING')
   const riskScore = proctoringData?.summary?.riskScore ?? 0
 
-  // Find the snapshot closest in time to a given ISO timestamp
   const findNearestSnapshot = (isoTime: string) => {
     const snapshots: any[] = snapshotsData?.snapshots ?? []
     if (snapshots.length === 0) return null
@@ -224,22 +243,6 @@ export function ResultDetailPage() {
       if (sev !== 0) return sev
       return new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime()
     })
-
-  // Auto-select: when proctoring tab opens, show the first critical/high event's snapshot
-  useEffect(() => {
-    if (activeTab !== 'proctoring' || panelSnap || !snapshotsData?.snapshots?.length) return
-    const highPriority = nonScreenshotEvents.find(
-      e => e.severity === 'CRITICAL' || e.severity === 'HIGH'
-    )
-    const snap = highPriority
-      ? findNearestSnapshot(highPriority.occurredAt)
-      : snapshotsData.snapshots[0]
-    if (!snap) return
-    const url = `/api/proctoring/${sessionId}/media/snapshot/${snap.id}`
-    setPanelSnap({ id: snap.id, url })
-    setLinkedSnapshotId(snap.id)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, snapshotsData])
 
   return (
     <div className="space-y-6 max-w-5xl">

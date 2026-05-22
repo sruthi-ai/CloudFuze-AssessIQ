@@ -133,6 +133,66 @@ export async function testRoutes(server: FastifyInstance) {
     return sendSuccess(reply, updated)
   })
 
+  // POST /api/tests/:id/duplicate
+  server.post('/:id/duplicate', { preHandler: canEdit }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const original = await prisma.test.findFirst({
+      where: { id, tenantId: request.user.tenantId },
+      include: {
+        sections: {
+          include: { testQuestions: { orderBy: { order: 'asc' } } },
+          orderBy: { order: 'asc' },
+        },
+      },
+    })
+    if (!original) return sendError(reply, 404, 'Test not found')
+
+    const copy = await prisma.$transaction(async (tx) => {
+      const newTest = await tx.test.create({
+        data: {
+          title: `${original.title} (Copy)`,
+          description: original.description,
+          instructions: original.instructions,
+          domain: original.domain,
+          duration: original.duration,
+          passingScore: original.passingScore,
+          shuffleQuestions: original.shuffleQuestions,
+          shuffleOptions: original.shuffleOptions,
+          showResults: original.showResults,
+          allowedAttempts: original.allowedAttempts,
+          proctoring: original.proctoring,
+          status: 'DRAFT',
+          tenantId: request.user.tenantId,
+          createdById: request.user.sub,
+        },
+      })
+
+      for (const s of original.sections) {
+        await tx.testSection.create({
+          data: {
+            title: s.title,
+            description: s.description,
+            order: s.order,
+            timeLimit: s.timeLimit,
+            testId: newTest.id,
+            testQuestions: {
+              create: s.testQuestions.map(tq => ({
+                questionId: tq.questionId,
+                testId: newTest.id,
+                order: tq.order,
+                points: tq.points ?? undefined,
+                isRequired: tq.isRequired,
+              })),
+            },
+          },
+        })
+      }
+
+      return newTest
+    })
+    return sendSuccess(reply, copy, 201)
+  })
+
   // DELETE /api/tests/:id
   server.delete('/:id', { preHandler: requireRole('SUPER_ADMIN', 'COMPANY_ADMIN') }, async (request, reply) => {
     const { id } = request.params as { id: string }

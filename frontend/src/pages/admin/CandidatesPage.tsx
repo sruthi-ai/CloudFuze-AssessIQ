@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, Link } from 'react-router-dom'
 import {
   Users, Send, Search, Loader2, Copy, Check, Trash2, Ban, UserCheck,
   ChevronDown, ChevronRight, RefreshCw, XCircle,
@@ -276,7 +276,12 @@ export function CandidatesPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <p className="font-medium text-sm">{c.firstName} {c.lastName}</p>
+                        <Link
+                          to={`/admin/candidates/${c.id}`}
+                          className="font-medium text-sm hover:text-primary transition-colors"
+                        >
+                          {c.firstName} {c.lastName}
+                        </Link>
                         {c.isActive === false && (
                           <Badge variant="destructive" className="text-xs py-0">Suspended</Badge>
                         )}

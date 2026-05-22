@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Trash2, Pencil, BookOpen, Loader2, Code2, Eye, EyeOff } from 'lucide-react'
+import { Plus, Search, Trash2, Pencil, BookOpen, Loader2, Code2, Eye, EyeOff, Upload, X, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -48,6 +48,54 @@ const emptyTestCase = (): TestCase => ({
 
 const DIFF_VARIANT: Record<string, any> = { EASY: 'success', MEDIUM: 'warning', HARD: 'destructive' }
 
+interface CsvRow {
+  type: string; title: string; body: string; difficulty: string; points: number
+  tags: string; domain: string; options: { text: string; isCorrect: boolean }[]
+}
+
+function parseQuestionsCSV(text: string): { rows: CsvRow[]; errors: string[] } {
+  const lines = text.split(/\r?\n/).filter(l => l.trim())
+  if (lines.length < 2) return { rows: [], errors: ['CSV must have a header row and at least one data row'] }
+
+  const headers = lines[0].split(',').map(h => h.trim().toLowerCase())
+  const rows: CsvRow[] = []
+  const errors: string[] = []
+
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(',').map(c => c.replace(/^"|"$/g, '').trim())
+    const get = (name: string) => cols[headers.indexOf(name)] ?? ''
+
+    const type = get('type').toUpperCase()
+    const VALID_TYPES = ['MCQ_SINGLE', 'MCQ_MULTI', 'TRUE_FALSE', 'ESSAY', 'SHORT_ANSWER', 'NUMERICAL', 'CODE']
+    if (!VALID_TYPES.includes(type)) { errors.push(`Row ${i + 1}: invalid type "${type}"`); continue }
+
+    const title = get('title')
+    const body = get('body') || title
+    if (!title) { errors.push(`Row ${i + 1}: title is required`); continue }
+
+    const correctRaw = get('correct').toUpperCase()
+    const correctLetters = new Set(correctRaw.split('|').map(s => s.trim()).filter(Boolean))
+    const optionKeys = ['a', 'b', 'c', 'd', 'e']
+    const optionTexts = optionKeys.map(k => get(`option_${k}`)).filter(Boolean)
+
+    const options = optionTexts.map((text, idx) => ({
+      text,
+      isCorrect: correctLetters.has(optionKeys[idx].toUpperCase()),
+    }))
+
+    rows.push({
+      type, title, body,
+      difficulty: get('difficulty').toUpperCase() || 'MEDIUM',
+      points: parseFloat(get('points')) || 1,
+      tags: get('tags'),
+      domain: get('domain'),
+      options: ['MCQ_SINGLE', 'MCQ_MULTI', 'TRUE_FALSE'].includes(type) ? options : [],
+    })
+  }
+
+  return { rows, errors }
+}
+
 export function QuestionBankPage() {
   const [search, setSearch] = useState('')
   const [filterType, setFilterType] = useState('')
@@ -56,6 +104,11 @@ export function QuestionBankPage() {
   const [loadingEdit, setLoadingEdit] = useState(false)
   const [options, setOptions] = useState([{ text: '', isCorrect: false }, { text: '', isCorrect: false }])
   const [testCases, setTestCases] = useState<TestCase[]>([emptyTestCase()])
+  const [showImport, setShowImport] = useState(false)
+  const [importRows, setImportRows] = useState<CsvRow[]>([])
+  const [importErrors, setImportErrors] = useState<string[]>([])
+  const [importProgress, setImportProgress] = useState<{ done: number; total: number } | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const qc = useQueryClient()
 
   const { data, isLoading } = useQuery({
@@ -166,17 +219,66 @@ export function QuestionBankPage() {
 
   const questions = data?.questions ?? []
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => {
+      const text = ev.target?.result as string
+      const { rows, errors } = parseQuestionsCSV(text)
+      setImportRows(rows)
+      setImportErrors(errors)
+      setShowImport(true)
+    }
+    reader.readAsText(file)
+    e.target.value = ''
+  }
+
+  const runImport = async () => {
+    setImportProgress({ done: 0, total: importRows.length })
+    let done = 0
+    for (const row of importRows) {
+      try {
+        await api.post('/questions', {
+          type: row.type,
+          title: row.title,
+          body: row.body,
+          difficulty: row.difficulty,
+          points: row.points,
+          tags: row.tags ? row.tags.split('|').map(t => t.trim()).filter(Boolean) : [],
+          domain: row.domain || undefined,
+          options: row.options.length > 0 ? row.options : undefined,
+        })
+      } catch { /* silently skip individual failures */ }
+      done++
+      setImportProgress({ done, total: importRows.length })
+    }
+    qc.invalidateQueries({ queryKey: ['questions'] })
+    toast({ title: `Imported ${done} question${done !== 1 ? 's' : ''}` })
+    setShowImport(false)
+    setImportRows([])
+    setImportErrors([])
+    setImportProgress(null)
+  }
+
   return (
     <div className="space-y-6">
+      <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleFileChange} />
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Question Bank</h1>
           <p className="text-muted-foreground">{data?.total ?? 0} questions</p>
         </div>
-        <Button onClick={() => { closeForm(); setShowForm(true) }}>
-          <Plus className="h-4 w-4 mr-2" />
-          New Question
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
+            <Upload className="h-4 w-4 mr-2" />
+            Import CSV
+          </Button>
+          <Button onClick={() => { closeForm(); setShowForm(true) }}>
+            <Plus className="h-4 w-4 mr-2" />
+            New Question
+          </Button>
+        </div>
       </div>
 
       <div className="flex gap-3">
@@ -193,6 +295,76 @@ export function QuestionBankPage() {
           {QUESTION_TYPES.map(t => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
         </select>
       </div>
+
+      {/* CSV Import Modal */}
+      {showImport && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-lg">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+              <CardTitle className="text-base">Import Questions from CSV</CardTitle>
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setShowImport(false); setImportRows([]); setImportErrors([]) }}>
+                <X className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {importErrors.length > 0 && (
+                <div className="rounded-md bg-destructive/10 p-3 space-y-1">
+                  <p className="text-xs font-medium text-destructive flex items-center gap-1"><AlertCircle className="h-3.5 w-3.5" />{importErrors.length} parse error{importErrors.length !== 1 ? 's' : ''}</p>
+                  {importErrors.slice(0, 5).map((e, i) => <p key={i} className="text-xs text-destructive/80">{e}</p>)}
+                </div>
+              )}
+              {importRows.length > 0 ? (
+                <div className="rounded-md border overflow-hidden">
+                  <div className="bg-gray-50 px-3 py-2 text-xs font-medium text-muted-foreground border-b">
+                    {importRows.length} question{importRows.length !== 1 ? 's' : ''} ready to import
+                  </div>
+                  <div className="max-h-48 overflow-y-auto divide-y">
+                    {importRows.map((row, i) => (
+                      <div key={i} className="px-3 py-2 flex items-center gap-2 text-sm">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-green-500 shrink-0" />
+                        <span className="flex-1 truncate">{row.title}</span>
+                        <Badge variant="outline" className="text-xs shrink-0">{row.type.replace('_', ' ')}</Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-4">No valid rows found in CSV.</p>
+              )}
+              <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground space-y-1">
+                <p className="font-medium">Expected CSV columns:</p>
+                <p><code>type,title,body,difficulty,points,tags,domain,option_a,option_b,option_c,option_d,correct</code></p>
+                <p>• <code>type</code>: MCQ_SINGLE, MCQ_MULTI, TRUE_FALSE, ESSAY, etc.</p>
+                <p>• <code>correct</code>: letter(s) of correct option(s), e.g. <code>A</code> or <code>A|C</code></p>
+                <p>• <code>tags</code>: pipe-separated, e.g. <code>javascript|react</code></p>
+              </div>
+              {importProgress && (
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>Importing…</span>
+                    <span>{importProgress.done}/{importProgress.total}</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="h-full bg-primary transition-all"
+                      style={{ width: `${(importProgress.done / importProgress.total) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => { setShowImport(false); setImportRows([]); setImportErrors([]) }}>
+                  Cancel
+                </Button>
+                <Button size="sm" disabled={importRows.length === 0 || !!importProgress} onClick={runImport}>
+                  {importProgress ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
+                  Import {importRows.length > 0 ? importRows.length : ''} Question{importRows.length !== 1 ? 's' : ''}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Question Form Modal */}
       {showForm && (

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
@@ -695,11 +695,15 @@ export function TestBuilderPage() {
 
   // ── Form ──────────────────────────────────────────────────────────────────
 
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   const {
     register,
     handleSubmit,
     reset,
-    formState: { errors },
+    watch,
+    formState: { errors, isDirty },
   } = useForm<TestFormValues>({
     resolver: zodResolver(testSchema),
     defaultValues: {
@@ -740,13 +744,32 @@ export function TestBuilderPage() {
         return data.data
       }
     },
+    onMutate: () => setSaveStatus('saving'),
     onSuccess: data => {
       qc.invalidateQueries({ queryKey: ['tests'] })
       if (isNew) navigate(`/admin/tests/${data.id}`)
-      toast({ title: 'Test saved' })
+      setSaveStatus('saved')
+      setTimeout(() => setSaveStatus('idle'), 2500)
     },
-    onError: err => toast({ title: 'Error', description: getErrorMessage(err), variant: 'destructive' }),
+    onError: err => {
+      setSaveStatus('idle')
+      toast({ title: 'Error', description: getErrorMessage(err), variant: 'destructive' })
+    },
   })
+
+  // Auto-save with 1.5s debounce when editing an existing test
+  const watchedValues = watch()
+  const autoSave = useCallback((values: TestFormValues) => {
+    if (!testId || isNew) return
+    saveMutation.mutate(values)
+  }, [testId, isNew]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!isDirty || isNew) return
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current)
+    autoSaveTimerRef.current = setTimeout(() => autoSave(watchedValues), 1500)
+    return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current) }
+  }, [JSON.stringify(watchedValues), isDirty]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const addSectionMutation = useMutation({
     mutationFn: () =>
@@ -904,14 +927,23 @@ export function TestBuilderPage() {
           <h1 className="text-2xl font-bold text-gray-900">
             {isNew ? 'New Test' : (test?.title ?? 'Edit Test')}
           </h1>
-          {test?.status && (
-            <Badge
-              variant={test.status === 'PUBLISHED' ? 'success' : 'secondary'}
-              className="mt-1"
-            >
-              {test.status}
-            </Badge>
-          )}
+          <div className="flex items-center gap-2 mt-1">
+            {test?.status && (
+              <Badge variant={test.status === 'PUBLISHED' ? 'success' : 'secondary'}>
+                {test.status}
+              </Badge>
+            )}
+            {!isNew && saveStatus === 'saving' && (
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" />Saving…
+              </span>
+            )}
+            {!isNew && saveStatus === 'saved' && (
+              <span className="flex items-center gap-1 text-xs text-green-600">
+                <Check className="h-3 w-3" />Saved
+              </span>
+            )}
+          </div>
         </div>
         {!isNew && (
           <Button variant="outline" size="sm" asChild>

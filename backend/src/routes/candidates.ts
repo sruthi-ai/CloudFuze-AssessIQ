@@ -79,7 +79,11 @@ export async function candidateRoutes(server: FastifyInstance) {
           orderBy: { createdAt: 'desc' },
         },
         sessions: {
-          include: { test: { select: { id: true, title: true } }, score: true },
+          include: {
+            test: { select: { id: true, title: true } },
+            score: true,
+            _count: { select: { proctoringEvents: true } },
+          },
           orderBy: { createdAt: 'desc' },
         },
       },

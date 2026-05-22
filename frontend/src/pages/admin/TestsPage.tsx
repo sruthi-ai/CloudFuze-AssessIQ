@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
-import { Plus, Search, MoreHorizontal, Eye, Pencil, Archive, Send } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { Plus, Search, Pencil, Archive, Send, Copy, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -19,6 +19,7 @@ const statusVariant: Record<string, any> = {
 export function TestsPage() {
   const [search, setSearch] = useState('')
   const qc = useQueryClient()
+  const navigate = useNavigate()
 
   const { data, isLoading } = useQuery({
     queryKey: ['tests'],
@@ -29,6 +30,16 @@ export function TestsPage() {
     mutationFn: ({ id, status }: { id: string; status: string }) =>
       api.patch(`/tests/${id}/status`, { status }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['tests'] }); toast({ title: 'Test updated' }) },
+    onError: err => toast({ title: 'Error', description: getErrorMessage(err), variant: 'destructive' }),
+  })
+
+  const duplicateMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/tests/${id}/duplicate`).then(r => r.data.data),
+    onSuccess: (copy) => {
+      qc.invalidateQueries({ queryKey: ['tests'] })
+      toast({ title: 'Test duplicated' })
+      navigate(`/admin/tests/${copy.id}`)
+    },
     onError: err => toast({ title: 'Error', description: getErrorMessage(err), variant: 'destructive' }),
   })
 
@@ -94,6 +105,16 @@ export function TestsPage() {
                         <Pencil className="h-3.5 w-3.5 mr-1" />
                         Edit
                       </Link>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={duplicateMutation.isPending}
+                      onClick={() => duplicateMutation.mutate(test.id)}
+                    >
+                      {duplicateMutation.isPending && duplicateMutation.variables === test.id
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <Copy className="h-3.5 w-3.5" />}
                     </Button>
                     {test.status === 'DRAFT' && (
                       <Button size="sm" onClick={() => publishMutation.mutate({ id: test.id, status: 'PUBLISHED' })}>

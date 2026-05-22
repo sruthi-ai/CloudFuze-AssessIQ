@@ -17,6 +17,7 @@ import { TestsPage } from '@/pages/admin/TestsPage'
 import { TestBuilderPage } from '@/pages/admin/TestBuilderPage'
 import { QuestionBankPage } from '@/pages/admin/QuestionBankPage'
 import { CandidatesPage } from '@/pages/admin/CandidatesPage'
+import { CandidateDetailPage } from '@/pages/admin/CandidateDetailPage'
 import { ResultsPage } from '@/pages/admin/ResultsPage'
 import { ResultDetailPage } from '@/pages/admin/ResultDetailPage'
 import { SettingsPage } from '@/pages/admin/SettingsPage'
@@ -51,6 +52,7 @@ export default function App() {
           <Route path="tests/:testId" element={<TestBuilderPage />} />
           <Route path="questions" element={<QuestionBankPage />} />
           <Route path="candidates" element={<CandidatesPage />} />
+          <Route path="candidates/:candidateId" element={<CandidateDetailPage />} />
           <Route path="results" element={<ResultsPage />} />
           <Route path="results/:sessionId" element={<ResultDetailPage />} />
           <Route path="settings" element={<SettingsPage />} />

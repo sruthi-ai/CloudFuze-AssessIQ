@@ -27,6 +27,7 @@ export async function resultRoutes(server: FastifyInstance) {
           candidate: { select: { id: true, firstName: true, lastName: true, email: true, organization: true } },
           test: { select: { id: true, title: true, passingScore: true } },
           score: true,
+          _count: { select: { proctoringEvents: true } },
         },
         orderBy: { submittedAt: 'desc' },
         skip,

@@ -92,6 +92,30 @@ const SEVERITY_COLOR: Record<string, string> = {
   LOW: 'text-blue-600 bg-blue-50 border-blue-200',
 }
 
+// Border classes applied to snapshot thumbnails based on nearby events
+const RISK_BORDER: Record<string, string> = {
+  CRITICAL: 'ring-2 ring-red-500 border-red-400',
+  HIGH: 'ring-2 ring-orange-400 border-orange-300',
+  MEDIUM: 'ring-1 ring-yellow-400 border-yellow-300',
+  LOW: 'ring-1 ring-blue-300 border-blue-200',
+}
+const RISK_DOT: Record<string, string> = {
+  CRITICAL: 'bg-red-500',
+  HIGH: 'bg-orange-400',
+  MEDIUM: 'bg-yellow-400',
+  LOW: 'bg-blue-400',
+}
+
+function getSnapshotRisk(snapTime: string, events: any[]): string | null {
+  const t = new Date(snapTime).getTime()
+  const nearby = events.filter((e: any) => Math.abs(new Date(e.occurredAt).getTime() - t) <= 30_000)
+  if (nearby.some((e: any) => e.severity === 'CRITICAL')) return 'CRITICAL'
+  if (nearby.some((e: any) => e.severity === 'HIGH')) return 'HIGH'
+  if (nearby.some((e: any) => e.severity === 'MEDIUM')) return 'MEDIUM'
+  if (nearby.some((e: any) => e.severity === 'LOW')) return 'LOW'
+  return null
+}
+
 function EventIcon({ type }: { type: string }) {
   const cls = 'h-4 w-4 shrink-0 mt-0.5'
   switch (type) {
@@ -119,6 +143,7 @@ export function ResultDetailPage() {
   const [activeTab, setActiveTab] = useState<'answers' | 'proctoring'>('answers')
   const [expandedShot, setExpandedShot] = useState<{ id: string; url: string } | null>(null)
   const [linkedSnapshotId, setLinkedSnapshotId] = useState<string | null>(null)
+  const [panelSnap, setPanelSnap] = useState<{ id: string; url: string } | null>(null)
   const snapshotRefs = useRef<Record<string, HTMLButtonElement | null>>({})
 
   const { data: session, isLoading } = useQuery({
@@ -182,9 +207,11 @@ export function ResultDetailPage() {
     setActiveTab('proctoring')
     const snap = findNearestSnapshot(evt.occurredAt)
     if (!snap) return
+    const url = `/api/proctoring/${sessionId}/media/snapshot/${snap.id}`
     setLinkedSnapshotId(snap.id)
+    setPanelSnap({ id: snap.id, url })
     setTimeout(() => {
-      snapshotRefs.current[snap.id]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      snapshotRefs.current[snap.id]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
     }, 50)
   }
 
@@ -307,188 +334,278 @@ export function ResultDetailPage() {
       ))}
 
       {/* Proctoring tab */}
-      {activeTab === 'proctoring' && (
-        <div className="space-y-4">
-          {!proctoringData ? (
-            <Card><CardContent className="py-8 text-center text-muted-foreground">No proctoring data available</CardContent></Card>
-          ) : (
-            <>
-              {/* Severity counts */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {[
-                  { label: 'Critical', count: proctoringData.summary.critical, color: 'text-red-600' },
-                  { label: 'High', count: proctoringData.summary.high, color: 'text-orange-600' },
-                  { label: 'Medium', count: proctoringData.summary.medium, color: 'text-yellow-600' },
-                  { label: 'Low', count: proctoringData.summary.low, color: 'text-blue-600' },
-                ].map(item => (
-                  <Card key={item.label}>
-                    <CardContent className="p-3 text-center">
-                      <p className={`text-2xl font-bold ${item.color}`}>{item.count}</p>
-                      <p className="text-xs text-muted-foreground">{item.label}</p>
+      {activeTab === 'proctoring' && (() => {
+        const hasSnapshots = (snapshotsData?.snapshots?.length ?? 0) > 0
+        return (
+          <div className="space-y-4">
+            {!proctoringData ? (
+              <Card><CardContent className="py-8 text-center text-muted-foreground">No proctoring data available</CardContent></Card>
+            ) : (
+              <>
+                {/* Severity counts */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { label: 'Critical', count: proctoringData.summary.critical, color: 'text-red-600' },
+                    { label: 'High', count: proctoringData.summary.high, color: 'text-orange-600' },
+                    { label: 'Medium', count: proctoringData.summary.medium, color: 'text-yellow-600' },
+                    { label: 'Low', count: proctoringData.summary.low, color: 'text-blue-600' },
+                  ].map(item => (
+                    <Card key={item.label}>
+                      <CardContent className="p-3 text-center">
+                        <p className={`text-2xl font-bold ${item.color}`}>{item.count}</p>
+                        <p className="text-xs text-muted-foreground">{item.label}</p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+
+                {/* Screen recording */}
+                {snapshotsData?.screenRecording && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <MonitorPlay className="h-4 w-4" />
+                        Screen Recording
+                        {snapshotsData.screenRecording.fileSize && (
+                          <span className="text-xs font-normal text-muted-foreground ml-1">
+                            ({(snapshotsData.screenRecording.fileSize / 1024 / 1024).toFixed(1)} MB)
+                          </span>
+                        )}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <video
+                        src={`/api/proctoring/${sessionId}/media/recording`}
+                        controls
+                        className="w-full rounded-md border max-h-72 bg-black"
+                      />
                     </CardContent>
                   </Card>
-                ))}
-              </div>
+                )}
 
-              {/* Screen recording */}
-              {snapshotsData?.screenRecording && (
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <MonitorPlay className="h-4 w-4" />
-                      Screen Recording
-                      {snapshotsData.screenRecording.fileSize && (
-                        <span className="text-xs font-normal text-muted-foreground ml-1">
-                          ({(snapshotsData.screenRecording.fileSize / 1024 / 1024).toFixed(1)} MB)
-                        </span>
+                {/* Event timeline + snapshot panel side by side */}
+                <div className={cn('grid gap-4', hasSnapshots ? 'lg:grid-cols-5' : '')}>
+                  {/* Event timeline */}
+                  <Card className={cn(hasSnapshots && 'lg:col-span-3')}>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        Event Timeline
+                        {hasSnapshots && (
+                          <span className="text-xs font-normal text-muted-foreground">— click to preview snapshot</span>
+                        )}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {nonScreenshotEvents.length === 0 ? (
+                        <div className="py-8 text-center">
+                          <ShieldCheck className="h-10 w-10 text-green-500 mx-auto mb-2" />
+                          <p className="text-sm text-muted-foreground">No violations detected</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5 max-h-[420px] overflow-y-auto pr-1">
+                          {nonScreenshotEvents.map((evt: any) => {
+                            const nearestSnap = findNearestSnapshot(evt.occurredAt)
+                            const snapUrl = nearestSnap
+                              ? `/api/proctoring/${sessionId}/media/snapshot/${nearestSnap.id}`
+                              : null
+                            const isActive = panelSnap?.id === nearestSnap?.id
+                            return (
+                              <button
+                                key={evt.id}
+                                onClick={() => handleEventClick(evt)}
+                                className={cn(
+                                  'w-full flex items-start gap-2 p-2 rounded-md border text-sm text-left transition-all',
+                                  SEVERITY_COLOR[evt.severity],
+                                  nearestSnap ? 'hover:brightness-95 cursor-pointer' : 'cursor-default',
+                                  isActive && 'ring-1 ring-inset ring-primary/40'
+                                )}
+                              >
+                                <EventIcon type={evt.type} />
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-semibold text-xs">
+                                      {EVENT_LABELS[evt.type] ?? evt.type.replace(/_/g, ' ')}
+                                    </span>
+                                    <Badge variant="outline" className="text-[10px] py-0 h-4 font-normal">
+                                      {evt.severity}
+                                    </Badge>
+                                  </div>
+                                  {evt.description && (
+                                    <p className="text-[11px] mt-0.5 opacity-75 truncate">{evt.description}</p>
+                                  )}
+                                  <p className="text-[10px] opacity-50 mt-0.5">{formatDateTime(evt.occurredAt)}</p>
+                                </div>
+                                {/* Inline snapshot thumbnail */}
+                                {snapUrl && (
+                                  <div className={cn(
+                                    'shrink-0 w-16 h-11 rounded overflow-hidden border bg-gray-100 transition-all',
+                                    isActive ? 'ring-2 ring-primary opacity-100' : 'opacity-60 group-hover:opacity-100'
+                                  )}>
+                                    <SecureImage src={snapUrl} alt="snapshot" className="w-full h-full" />
+                                  </div>
+                                )}
+                              </button>
+                            )
+                          })}
+                        </div>
                       )}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <video
-                      src={`/api/proctoring/${sessionId}/media/recording`}
-                      controls
-                      className="w-full rounded-md border max-h-72 bg-black"
-                    />
-                  </CardContent>
-                </Card>
-              )}
+                    </CardContent>
+                  </Card>
 
-              {/* Event timeline */}
-              {nonScreenshotEvents.length === 0 ? (
-                <Card>
-                  <CardContent className="py-8 text-center">
-                    <ShieldCheck className="h-10 w-10 text-green-500 mx-auto mb-2" />
-                    <p className="text-sm text-muted-foreground">No violations detected</p>
-                  </CardContent>
-                </Card>
-              ) : (
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base flex items-center gap-2">
-                      Event Timeline
-                      <span className="text-xs font-normal text-muted-foreground">— click any event to find nearest snapshot</span>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-1.5 max-h-96 overflow-y-auto pr-1">
-                      {nonScreenshotEvents.map((evt: any) => {
-                        const nearestSnap = findNearestSnapshot(evt.occurredAt)
-                        const hasSnap = !!nearestSnap
-                        return (
-                          <button
-                            key={evt.id}
-                            onClick={() => handleEventClick(evt)}
-                            className={cn(
-                              'w-full flex items-start gap-3 p-2.5 rounded-md border text-sm text-left transition-all',
-                              SEVERITY_COLOR[evt.severity],
-                              hasSnap ? 'hover:brightness-95 cursor-pointer' : 'cursor-default'
-                            )}
-                          >
-                            <EventIcon type={evt.type} />
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-semibold">{EVENT_LABELS[evt.type] ?? evt.type.replace(/_/g, ' ')}</span>
-                                <Badge variant="outline" className="text-xs py-0 font-normal">{evt.severity}</Badge>
-                              </div>
-                              {evt.description && <p className="text-xs mt-0.5 opacity-80">{evt.description}</p>}
-                            </div>
-                            <div className="shrink-0 text-right">
-                              <span className="text-xs opacity-70 block">{formatDateTime(evt.occurredAt)}</span>
-                              {hasSnap && <span className="text-[10px] opacity-50">📷 view snapshot</span>}
-                            </div>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Webcam snapshot gallery */}
-              {(snapshotsData?.snapshots?.length ?? 0) > 0 && (
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <Camera className="h-4 w-4" />
-                      Webcam Snapshots ({snapshotsData!.snapshots.length})
-                      {linkedSnapshotId && (
-                        <button
-                          className="ml-auto text-xs text-muted-foreground hover:text-foreground"
-                          onClick={() => setLinkedSnapshotId(null)}
-                        >
-                          Clear highlight ✕
-                        </button>
-                      )}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-                      {snapshotsData!.snapshots.map((snap: any) => {
-                        const isLinked = linkedSnapshotId === snap.id
-                        const imgSrc = `/api/proctoring/${sessionId}/media/snapshot/${snap.id}`
-                        return (
-                          <button
-                            key={snap.id}
-                            ref={el => { snapshotRefs.current[snap.id] = el }}
-                            onClick={() => setExpandedShot({ id: snap.id, url: imgSrc })}
-                            className={cn(
-                              'relative group aspect-video overflow-hidden rounded-md border transition-all',
-                              isLinked
-                                ? 'ring-2 ring-orange-400 border-orange-400 shadow-md'
-                                : 'hover:ring-2 hover:ring-primary'
-                            )}
+                  {/* Snapshot preview panel */}
+                  {hasSnapshots && (
+                    <Card className="lg:col-span-2">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <Camera className="h-4 w-4" />
+                          Snapshot Preview
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        {panelSnap ? (
+                          <div
+                            className="aspect-video rounded-lg overflow-hidden border cursor-zoom-in bg-black"
+                            onClick={() => setExpandedShot(panelSnap)}
                           >
                             <SecureImage
-                              src={imgSrc}
-                              alt={`Snapshot ${formatDateTime(snap.occurredAt)}`}
-                              className="w-full h-full"
+                              src={panelSnap.url}
+                              alt="Selected snapshot"
+                              className="w-full h-full object-contain"
                             />
-                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors" />
-                            <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/60 to-transparent p-1">
-                              <span className="text-[9px] text-white font-mono leading-none">
-                                {new Date(snap.occurredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                              </span>
-                            </div>
-                            {isLinked && (
-                              <div className="absolute top-1 right-1 bg-orange-400 rounded-full p-0.5">
-                                <ZoomIn className="h-2.5 w-2.5 text-white" />
-                              </div>
-                            )}
-                          </button>
-                        )
-                      })}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-2">Click a timeline event to highlight the nearest snapshot. Click a snapshot to expand it.</p>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Expanded snapshot lightbox */}
-              {expandedShot && (
-                <div
-                  className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
-                  onClick={() => setExpandedShot(null)}
-                >
-                  <div className="relative max-w-3xl w-full" onClick={e => e.stopPropagation()}>
-                    <SecureImage
-                      src={expandedShot.url}
-                      alt="Snapshot"
-                      className="w-full rounded-lg shadow-2xl"
-                    />
-                    <button
-                      className="absolute top-3 right-3 bg-black/50 hover:bg-black/80 text-white rounded-full w-8 h-8 flex items-center justify-center text-lg font-bold transition-colors"
-                      onClick={() => setExpandedShot(null)}
-                    >
-                      ✕
-                    </button>
-                  </div>
+                          </div>
+                        ) : (
+                          <div className="aspect-video rounded-lg bg-gray-50 border border-dashed flex flex-col items-center justify-center gap-2">
+                            <Camera className="h-8 w-8 text-gray-300" />
+                            <p className="text-xs text-muted-foreground text-center px-4">
+                              Click any timeline event to preview the nearest snapshot
+                            </p>
+                          </div>
+                        )}
+                        {panelSnap && (
+                          <p className="text-[11px] text-muted-foreground text-center mt-1.5">
+                            Click to expand fullscreen
+                          </p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
                 </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
+
+                {/* Webcam snapshot gallery with risk color-coding */}
+                {hasSnapshots && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <Camera className="h-4 w-4" />
+                          Webcam Snapshots ({snapshotsData!.snapshots.length})
+                        </CardTitle>
+                        {linkedSnapshotId && (
+                          <button
+                            className="text-xs text-muted-foreground hover:text-foreground"
+                            onClick={() => { setLinkedSnapshotId(null); setPanelSnap(null) }}
+                          >
+                            Clear highlight ✕
+                          </button>
+                        )}
+                      </div>
+                      {/* Risk legend */}
+                      <div className="flex items-center gap-3 pt-1 flex-wrap">
+                        {[
+                          { dot: 'bg-red-500', label: 'Critical' },
+                          { dot: 'bg-orange-400', label: 'High' },
+                          { dot: 'bg-yellow-400', label: 'Medium' },
+                          { dot: 'bg-blue-400', label: 'Low' },
+                          { dot: 'bg-gray-200', label: 'No nearby event' },
+                        ].map(item => (
+                          <span key={item.label} className="flex items-center gap-1">
+                            <span className={cn('w-2 h-2 rounded-full', item.dot)} />
+                            <span className="text-[10px] text-muted-foreground">{item.label}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                        {snapshotsData!.snapshots.map((snap: any) => {
+                          const isLinked = linkedSnapshotId === snap.id
+                          const imgSrc = `/api/proctoring/${sessionId}/media/snapshot/${snap.id}`
+                          const riskLevel = getSnapshotRisk(snap.occurredAt, nonScreenshotEvents)
+                          return (
+                            <button
+                              key={snap.id}
+                              ref={el => { snapshotRefs.current[snap.id] = el }}
+                              onClick={() => {
+                                setExpandedShot({ id: snap.id, url: imgSrc })
+                                setLinkedSnapshotId(snap.id)
+                                setPanelSnap({ id: snap.id, url: imgSrc })
+                              }}
+                              className={cn(
+                                'relative group aspect-video overflow-hidden rounded-md border transition-all',
+                                isLinked
+                                  ? 'ring-2 ring-orange-400 border-orange-400 shadow-md scale-105'
+                                  : riskLevel
+                                    ? RISK_BORDER[riskLevel]
+                                    : 'border-gray-200 hover:ring-2 hover:ring-primary'
+                              )}
+                            >
+                              <SecureImage
+                                src={imgSrc}
+                                alt={`Snapshot ${formatDateTime(snap.occurredAt)}`}
+                                className="w-full h-full"
+                              />
+                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+                              <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent p-1">
+                                <span className="text-[9px] text-white font-mono leading-none">
+                                  {new Date(snap.occurredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                </span>
+                              </div>
+                              {/* Risk dot indicator */}
+                              {riskLevel && !isLinked && (
+                                <div className={cn(
+                                  'absolute top-1 left-1 w-2.5 h-2.5 rounded-full shadow',
+                                  RISK_DOT[riskLevel]
+                                )} />
+                              )}
+                              {isLinked && (
+                                <div className="absolute top-1 right-1 bg-orange-400 rounded-full p-0.5">
+                                  <ZoomIn className="h-2.5 w-2.5 text-white" />
+                                </div>
+                              )}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Lightbox */}
+                {expandedShot && (
+                  <div
+                    className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+                    onClick={() => setExpandedShot(null)}
+                  >
+                    <div className="relative max-w-3xl w-full" onClick={e => e.stopPropagation()}>
+                      <SecureImage
+                        src={expandedShot.url}
+                        alt="Snapshot"
+                        className="w-full rounded-lg shadow-2xl"
+                      />
+                      <button
+                        className="absolute top-3 right-3 bg-black/50 hover:bg-black/80 text-white rounded-full w-8 h-8 flex items-center justify-center text-lg font-bold transition-colors"
+                        onClick={() => setExpandedShot(null)}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )
+      })()}
     </div>
   )
 }

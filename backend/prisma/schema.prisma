@@ -350,6 +350,7 @@ model Session {
   deviceFingerprint String?
   currentQuestion Int          @default(0)
   questionOrder  Json?         // { sectionId: questionId[] } stored at session start when shuffleQuestions=true
+  lastHeartbeatAt DateTime?    // set every 30s during active test
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 

@@ -269,6 +269,12 @@ export async function sessionRoutes(server: FastifyInstance) {
       return sendError(reply, 410, 'Time has expired')
     }
 
+    // Verify the submitted question belongs to this session's test
+    const validQuestion = await prisma.testQuestion.findFirst({
+      where: { testId: session.testId, questionId: result.data.questionId },
+    })
+    if (!validQuestion) return sendError(reply, 403, 'Question does not belong to this assessment')
+
     const answer = await prisma.answer.upsert({
       where: { sessionId_questionId: { sessionId, questionId: result.data.questionId } },
       create: { sessionId, ...result.data, selectedOptions: result.data.selectedOptions ?? [] },
@@ -276,6 +282,34 @@ export async function sessionRoutes(server: FastifyInstance) {
     })
 
     return sendSuccess(reply, answer)
+  })
+
+  // POST /api/sessions/:sessionId/heartbeat — periodic liveness ping from candidate
+  server.post('/:sessionId/heartbeat', async (request, reply) => {
+    const { sessionId } = request.params as { sessionId: string }
+    const { token } = request.body as { token: string }
+
+    const session = await prisma.session.findFirst({
+      where: { id: sessionId, invitation: { token }, status: 'IN_PROGRESS' },
+      select: { id: true, timeoutAt: true },
+    })
+    if (!session) return sendError(reply, 404, 'Session not active')
+    if (session.timeoutAt && session.timeoutAt < new Date()) {
+      await autoSubmit(sessionId)
+      return sendError(reply, 410, 'Time has expired')
+    }
+
+    await prisma.session.update({
+      where: { id: sessionId },
+      data: { lastHeartbeatAt: new Date() },
+    })
+
+    return sendSuccess(reply, {
+      ok: true,
+      timeRemaining: session.timeoutAt
+        ? Math.max(0, Math.floor((session.timeoutAt.getTime() - Date.now()) / 1000))
+        : null,
+    })
   })
 
   // POST /api/sessions/:sessionId/submit — final submit

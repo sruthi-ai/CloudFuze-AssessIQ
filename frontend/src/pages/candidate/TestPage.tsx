@@ -110,6 +110,24 @@ export function TestPage() {
     return () => clearInterval(timer)
   }, [timeRemaining])
 
+  // Server-side heartbeat — keeps session alive and syncs server time
+  useEffect(() => {
+    if (testStep !== 'test' || !sessionId) return
+    const send = async () => {
+      try {
+        const res = await api.post(`/sessions/${sessionId}/heartbeat`, { token })
+        if (res.data?.data?.timeRemaining !== undefined && res.data.data.timeRemaining !== null) {
+          setTimeRemaining(res.data.data.timeRemaining)
+        }
+      } catch {
+        // silently ignore — session may have expired, which the normal timer handles
+      }
+    }
+    send()
+    const interval = setInterval(send, 30_000)
+    return () => clearInterval(interval)
+  }, [testStep, sessionId, token])
+
   const handleSetupReady = useCallback(() => {
     setTestStep('test')
     if (proctoring) requestFullscreen()

@@ -34,7 +34,7 @@ function signTokens(server: FastifyInstance, payload: JWTPayload) {
 
 export async function authRoutes(server: FastifyInstance) {
   // POST /api/auth/register — create company + admin user
-  server.post('/register', async (request, reply) => {
+  server.post('/register', { config: { rateLimit: { max: 5, timeWindow: '1 hour' } } }, async (request, reply) => {
     const result = registerSchema.safeParse(request.body)
     if (!result.success) return sendError(reply, 400, 'Validation error', result.error.flatten())
 
@@ -95,7 +95,7 @@ export async function authRoutes(server: FastifyInstance) {
   })
 
   // POST /api/auth/login
-  server.post('/login', async (request, reply) => {
+  server.post('/login', { config: { rateLimit: { max: 10, timeWindow: '15 minutes' } } }, async (request, reply) => {
     const result = loginSchema.safeParse(request.body)
     if (!result.success) return sendError(reply, 400, 'Validation error', result.error.flatten())
 
@@ -193,7 +193,7 @@ export async function authRoutes(server: FastifyInstance) {
   })
 
   // POST /api/auth/forgot-password — send reset email
-  server.post('/forgot-password', async (request, reply) => {
+  server.post('/forgot-password', { config: { rateLimit: { max: 5, timeWindow: '15 minutes' } } }, async (request, reply) => {
     const { email, tenantSlug } = request.body as { email: string; tenantSlug: string }
     if (!email || !tenantSlug) return sendError(reply, 400, 'email and tenantSlug required')
 

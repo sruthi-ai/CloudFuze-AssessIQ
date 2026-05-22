@@ -6,7 +6,7 @@ import jwt from '@fastify/jwt'
 import rateLimit from '@fastify/rate-limit'
 import multipart from '@fastify/multipart'
 import { createReadStream, existsSync } from 'fs'
-import { extname, join } from 'path'
+import { extname, join, resolve, sep } from 'path'
 import { UPLOADS_DIR, initUploads } from './uploads'
 
 import { authRoutes } from './routes/auth'
@@ -21,6 +21,27 @@ import { proctoringRoutes } from './routes/proctoring'
 import { codeRoutes } from './routes/code'
 import { analyticsRoutes } from './routes/analytics'
 
+// ── Startup security validation ───────────────────────────────────────────────
+const JWT_SECRET = process.env.JWT_SECRET
+const INSECURE_DEFAULTS = ['dev-secret-change-in-production', 'change-in-production', 'secret', '']
+if (!JWT_SECRET || INSECURE_DEFAULTS.some(d => JWT_SECRET.includes(d))) {
+  if (process.env.NODE_ENV === 'production') {
+    console.error('FATAL: JWT_SECRET is not set to a secure value. Refusing to start.')
+    process.exit(1)
+  } else {
+    console.warn('⚠  WARNING: JWT_SECRET is insecure — set a strong random value before production')
+  }
+}
+
+const REQUIRED_IN_PROD = ['DATABASE_URL', 'JWT_SECRET', 'FRONTEND_URL']
+if (process.env.NODE_ENV === 'production') {
+  const missing = REQUIRED_IN_PROD.filter(k => !process.env[k])
+  if (missing.length) {
+    console.error(`FATAL: Missing required environment variables: ${missing.join(', ')}`)
+    process.exit(1)
+  }
+}
+
 const server = Fastify({
   logger: {
     level: process.env.NODE_ENV === 'production' ? 'warn' : 'info',
@@ -30,7 +51,20 @@ const server = Fastify({
 async function bootstrap() {
   initUploads()
   // Security
-  await server.register(helmet, { contentSecurityPolicy: false })
+  await server.register(helmet, {
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'blob:'],
+        connectSrc: ["'self'"],
+        mediaSrc: ["'self'", 'blob:'],
+        workerSrc: ["'self'", 'blob:'],
+      },
+    },
+    crossOriginEmbedderPolicy: false,
+  })
   await server.register(cors, {
     origin: process.env.FRONTEND_URL || 'http://localhost:5173',
     credentials: true,
@@ -40,7 +74,7 @@ async function bootstrap() {
 
   // JWT
   await server.register(jwt, {
-    secret: process.env.JWT_SECRET || 'dev-secret-change-in-production',
+    secret: JWT_SECRET ?? 'dev-secret-change-in-production',
   })
 
   // Routes
@@ -59,11 +93,16 @@ async function bootstrap() {
   // Health check
   server.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }))
 
-  // Static file serving for uploads (snapshots, screen recordings)
+  // Static file serving for uploads — safe path resolution prevents traversal
   server.get('/uploads/*', async (request, reply) => {
     const wildcard = (request.params as { '*': string })['*']
     const safePath = wildcard.replace(/\.\./g, '').replace(/^\/+/, '')
-    const fullPath = join(UPLOADS_DIR, safePath)
+    const resolvedUploads = resolve(UPLOADS_DIR)
+    const fullPath = resolve(resolvedUploads, safePath)
+    // Ensure resolved path is within UPLOADS_DIR
+    if (!fullPath.startsWith(resolvedUploads + sep)) {
+      return reply.status(403).send({ error: 'Forbidden' })
+    }
     if (!existsSync(fullPath)) return reply.status(404).send({ error: 'File not found' })
     const ext = extname(fullPath).toLowerCase()
     const mime =

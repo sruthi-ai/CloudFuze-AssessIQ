@@ -238,11 +238,12 @@ model Test {
   showResults      Boolean    @default(false) // show results to candidate after submission
   allowedAttempts  Int        @default(1)
   negativeMarking  Float?     // fraction of points deducted per wrong MCQ answer (e.g. 0.25)
-  proctoring           Boolean    @default(true)
-  roomScanEnabled      Boolean    @default(false)
-  roomScanIntervalMins Int        @default(20)
-  openAt               DateTime?  // null = always open
-  closeAt              DateTime?  // null = no close deadline
+  proctoring               Boolean    @default(true)
+  roomScanEnabled          Boolean    @default(false)
+  roomScanIntervalMins     Int        @default(20)
+  requireIdVerification    Boolean    @default(false)
+  openAt                   DateTime?  // null = always open
+  closeAt                  DateTime?  // null = no close deadline
   createdAt            DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 
@@ -359,7 +360,9 @@ model Session {
   userAgent      String?
   deviceFingerprint String?
   currentQuestion Int          @default(0)
-  questionOrder  Json?         // { sectionId: questionId[] } stored at session start when shuffleQuestions=true
+  questionOrder          Json?         // { sectionId: questionId[] } stored at session start when shuffleQuestions=true
+  idVerified             Boolean    @default(false)
+  idVerificationPhoto    String?    // URL of uploaded ID photo
   lastHeartbeatAt DateTime?    // set every 30s during active test
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt

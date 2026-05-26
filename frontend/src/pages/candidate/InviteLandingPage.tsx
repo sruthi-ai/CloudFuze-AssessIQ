@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { Brain, Clock, Monitor, Shield, AlertCircle, Loader2, ChevronRight, CalendarClock, CalendarX } from 'lucide-react'
+import { Brain, Clock, Monitor, Shield, AlertCircle, Loader2, ChevronRight, CalendarClock, CalendarX, CreditCard, Camera, RefreshCw, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -29,11 +29,132 @@ function fmtCountdown(secs: number): string {
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`
 }
 
+function IdVerificationStep({
+  sessionId, token, brandColor, onVerified,
+}: {
+  sessionId: string; token: string; brandColor: string; onVerified: () => void
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const [captured, setCaptured] = useState<Blob | null>(null)
+  const [capturedUrl, setCapturedUrl] = useState<string | null>(null)
+  const [cameraError, setCameraError] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
+      .then(stream => {
+        if (!active) { stream.getTracks().forEach(t => t.stop()); return }
+        streamRef.current = stream
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+          videoRef.current.play()
+        }
+      })
+      .catch(() => setCameraError('Camera access is required for ID verification. Please allow camera access and try again.'))
+    return () => {
+      active = false
+      streamRef.current?.getTracks().forEach(t => t.stop())
+    }
+  }, [])
+
+  const capture = () => {
+    if (!videoRef.current || !canvasRef.current) return
+    const v = videoRef.current
+    const c = canvasRef.current
+    c.width = v.videoWidth
+    c.height = v.videoHeight
+    c.getContext('2d')!.drawImage(v, 0, 0)
+    c.toBlob(blob => {
+      if (!blob) return
+      if (capturedUrl) URL.revokeObjectURL(capturedUrl)
+      setCaptured(blob)
+      setCapturedUrl(URL.createObjectURL(blob))
+    }, 'image/jpeg', 0.85)
+  }
+
+  const retake = () => {
+    if (capturedUrl) URL.revokeObjectURL(capturedUrl)
+    setCaptured(null)
+    setCapturedUrl(null)
+  }
+
+  const confirm = async () => {
+    if (!captured) return
+    setUploading(true)
+    try {
+      const form = new FormData()
+      form.append('file', captured, 'id-photo.jpg')
+      await api.post(`/sessions/${sessionId}/id-verify?token=${token}`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      onVerified()
+    } catch {
+      toast({ title: 'Upload failed', description: 'Could not upload your photo. Please try again.', variant: 'destructive' })
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <Card className="w-full max-w-lg mx-auto">
+      <CardContent className="p-6 space-y-4">
+        <div className="text-center space-y-1">
+          <CreditCard className="h-8 w-8 mx-auto" style={{ color: brandColor }} />
+          <h2 className="text-lg font-bold">Identity Verification</h2>
+          <p className="text-sm text-muted-foreground">
+            Hold your photo ID next to your face and take a clear photo to verify your identity before starting.
+          </p>
+        </div>
+
+        {cameraError ? (
+          <div className="rounded-lg bg-destructive/10 p-4 text-sm text-destructive text-center">{cameraError}</div>
+        ) : capturedUrl ? (
+          <div className="space-y-3">
+            <img src={capturedUrl} alt="Captured ID verification" className="w-full rounded-lg object-cover max-h-64" />
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={retake} disabled={uploading}>
+                <RefreshCw className="h-4 w-4 mr-2" /> Retake
+              </Button>
+              <Button
+                className="flex-1 border-0"
+                style={{ backgroundColor: brandColor }}
+                onClick={confirm}
+                disabled={uploading}
+              >
+                {uploading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
+                Confirm & Continue
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="relative rounded-lg overflow-hidden bg-black aspect-video">
+              <video ref={videoRef} className="w-full h-full object-cover" muted playsInline />
+            </div>
+            <canvas ref={canvasRef} className="hidden" />
+            <Button className="w-full border-0" style={{ backgroundColor: brandColor }} onClick={capture}>
+              <Camera className="h-4 w-4 mr-2" /> Take Photo
+            </Button>
+          </div>
+        )}
+
+        <p className="text-xs text-center text-muted-foreground">
+          Your photo will be securely stored and reviewed by the assessment organizer.
+        </p>
+      </CardContent>
+    </Card>
+  )
+}
+
 export function InviteLandingPage() {
   const { token } = useParams()
   const navigate = useNavigate()
   const [systemChecked, setSystemChecked] = useState(false)
   const [checking, setChecking] = useState(false)
+  const [idVerifySession, setIdVerifySession] = useState<{ sessionId: string } | null>(null)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['invite', token],
@@ -67,8 +188,13 @@ export function InviteLandingPage() {
   const startMutation = useMutation({
     mutationFn: () => api.post('/sessions/start', { token, userAgent: navigator.userAgent }),
     onSuccess: res => {
-      const sessionId = res.data.data.sessionId
-      navigate(`/take/${token}/test`, { state: { sessionId, inviteData: data } })
+      const { sessionId, idVerified } = res.data.data
+      const needsIdVerify = data?.test?.requireIdVerification && !idVerified
+      if (needsIdVerify) {
+        setIdVerifySession({ sessionId })
+      } else {
+        navigate(`/take/${token}/test`, { state: { sessionId, inviteData: data } })
+      }
     },
     onError: err => toast({ title: 'Unable to start', description: getErrorMessage(err), variant: 'destructive' }),
   })
@@ -91,6 +217,23 @@ export function InviteLandingPage() {
     } finally {
       setChecking(false)
     }
+  }
+
+  // After session creation, show ID verification step if required and not yet verified
+  if (idVerifySession) {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center p-4"
+        style={{ background: `linear-gradient(135deg, ${brandColor}10 0%, #ffffff 100%)` }}
+      >
+        <IdVerificationStep
+          sessionId={idVerifySession.sessionId}
+          token={token!}
+          brandColor={brandColor}
+          onVerified={() => navigate(`/take/${token}/test`, { state: { sessionId: idVerifySession.sessionId, inviteData: data } })}
+        />
+      </div>
+    )
   }
 
   if (isLoading) {

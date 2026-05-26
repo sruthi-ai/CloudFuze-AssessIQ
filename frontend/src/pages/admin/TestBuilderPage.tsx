@@ -34,6 +34,7 @@ const testSchema = z.object({
   proctoring: z.boolean().optional(),
   roomScanEnabled: z.boolean().optional(),
   roomScanIntervalMins: z.coerce.number().int().min(5).max(120).optional(),
+  requireIdVerification: z.boolean().optional(),
   negativeMarking: z.coerce.number().min(0).max(1).optional().nullable(),
   openAt: z.string().optional().nullable(),
   closeAt: z.string().optional().nullable(),
@@ -803,6 +804,7 @@ export function TestBuilderPage() {
       proctoring: true,
       roomScanEnabled: false,
       roomScanIntervalMins: 20,
+      requireIdVerification: false,
       shuffleQuestions: false,
       shuffleOptions: false,
       showResults: false,
@@ -827,6 +829,7 @@ export function TestBuilderPage() {
         proctoring: testData.proctoring,
         roomScanEnabled: testData.roomScanEnabled ?? false,
         roomScanIntervalMins: testData.roomScanIntervalMins ?? 20,
+        requireIdVerification: testData.requireIdVerification ?? false,
         negativeMarking: testData.negativeMarking ?? null,
         openAt: testData.openAt ? toLocalDatetimeString(testData.openAt) : null,
         closeAt: testData.closeAt ? toLocalDatetimeString(testData.closeAt) : null,
@@ -1200,6 +1203,10 @@ export function TestBuilderPage() {
                 ))}
                 {proctoringOn && (
                   <div className="ml-6 pl-3 border-l-2 border-gray-200 space-y-3 pt-1">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input type="checkbox" className="rounded" {...register('requireIdVerification')} />
+                      <span className="text-sm">Require ID verification (candidate photographs themselves with photo ID before starting)</span>
+                    </label>
                     <label className="flex items-center gap-3 cursor-pointer">
                       <input type="checkbox" className="rounded" {...register('roomScanEnabled')} />
                       <span className="text-sm">Enable room scan (60-second video of environment)</span>

@@ -498,6 +498,34 @@ export function ResultDetailPage() {
                   )
                 })()}
 
+                {/* ID verification photo */}
+                {session.idVerificationPhoto && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <ShieldCheck className="h-4 w-4 text-green-600" />
+                        Identity Verification
+                        <Badge variant="success" className="text-xs ml-1">Verified</Badge>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <SecureImage
+                        src={`/api${session.idVerificationPhoto}`}
+                        alt="ID verification photo"
+                        className="max-h-56 rounded-lg object-contain w-full bg-gray-50"
+                      />
+                    </CardContent>
+                  </Card>
+                )}
+                {!session.idVerificationPhoto && session.test?.requireIdVerification && (
+                  <Card className="border-amber-200 bg-amber-50">
+                    <CardContent className="p-4 text-sm text-amber-800 flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 shrink-0" />
+                      ID verification was required but no photo was captured for this session.
+                    </CardContent>
+                  </Card>
+                )}
+
                 {/* Severity counts */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {[

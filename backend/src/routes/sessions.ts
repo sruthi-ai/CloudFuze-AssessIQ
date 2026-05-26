@@ -1,9 +1,13 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import { createWriteStream } from 'fs'
+import { join } from 'path'
+import { pipeline } from 'stream/promises'
 import { prisma } from '../db'
 import { sendError, sendSuccess } from '../utils/errors'
 import { scoreSession } from '../services/scoring'
 import { sendSubmissionNotification } from '../utils/email'
+import { UPLOADS_DIR } from '../uploads'
 
 function fisherYates<T>(arr: T[]): T[] {
   const a = [...arr]
@@ -105,6 +109,7 @@ export async function sessionRoutes(server: FastifyInstance) {
         proctoring: invitation.test.proctoring,
         roomScanEnabled: invitation.test.roomScanEnabled,
         roomScanIntervalMins: invitation.test.roomScanIntervalMins,
+        requireIdVerification: invitation.test.requireIdVerification,
         openAt: invitation.test.openAt,
         closeAt: invitation.test.closeAt,
         questionCount: invitation.test.sections.reduce((a, s) => a + s.testQuestions.length, 0),
@@ -156,7 +161,7 @@ export async function sessionRoutes(server: FastifyInstance) {
       }
     }
     if (existing && existing.status === 'IN_PROGRESS') {
-      return sendSuccess(reply, { sessionId: existing.id, status: existing.status, startedAt: existing.startedAt, timeoutAt: existing.timeoutAt })
+      return sendSuccess(reply, { sessionId: existing.id, status: existing.status, startedAt: existing.startedAt, timeoutAt: existing.timeoutAt, idVerified: existing.idVerified })
     }
     if (existing && existing.status === 'SUBMITTED') {
       return sendError(reply, 409, 'Assessment already submitted')
@@ -200,7 +205,33 @@ export async function sessionRoutes(server: FastifyInstance) {
 
     await prisma.invitation.update({ where: { id: invitation.id }, data: { status: 'STARTED' } })
 
-    return sendSuccess(reply, { sessionId: session.id, status: session.status, startedAt: session.startedAt, timeoutAt })
+    return sendSuccess(reply, { sessionId: session.id, status: session.status, startedAt: session.startedAt, timeoutAt, idVerified: false })
+  })
+
+  // POST /api/sessions/:sessionId/id-verify — upload ID photo (token-validated, candidate-facing)
+  server.post('/:sessionId/id-verify', async (request, reply) => {
+    const { sessionId } = request.params as { sessionId: string }
+    const { token } = request.query as { token?: string }
+
+    const session = await prisma.session.findFirst({
+      where: { id: sessionId, invitation: { token } },
+      select: { id: true, idVerified: true },
+    })
+    if (!session) return sendError(reply, 404, 'Session not found')
+
+    const data = await request.file()
+    if (!data) return sendError(reply, 400, 'No file uploaded')
+
+    const filename = `${sessionId}_idphoto_${Date.now()}.jpg`
+    const filePath = join(UPLOADS_DIR, 'id-photos', filename)
+    await pipeline(data.file, createWriteStream(filePath))
+
+    await prisma.session.update({
+      where: { id: sessionId },
+      data: { idVerified: true, idVerificationPhoto: `/uploads/id-photos/${filename}` },
+    })
+
+    return sendSuccess(reply, { verified: true })
   })
 
   // GET /api/sessions/:sessionId/questions — get full test questions for the session

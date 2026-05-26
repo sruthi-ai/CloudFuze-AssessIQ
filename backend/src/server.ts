@@ -23,6 +23,7 @@ import { codeRoutes } from './routes/code'
 import { analyticsRoutes } from './routes/analytics'
 import { startReminderJob } from './jobs/reminders'
 import { startSessionTimeoutJob } from './jobs/sessionTimeout'
+import { startRetentionJob } from './jobs/retention'
 
 // ── Startup security validation ───────────────────────────────────────────────
 const JWT_SECRET = process.env.JWT_SECRET
@@ -43,6 +44,13 @@ if (process.env.NODE_ENV === 'production') {
     console.error(`FATAL: Missing required environment variables: ${missing.join(', ')}`)
     process.exit(1)
   }
+}
+
+if (!process.env.JUDGE0_API_KEY) {
+  console.warn('⚠  WARNING: JUDGE0_API_KEY not set — code execution questions will run in mock mode')
+}
+if (!process.env.OPENAI_API_KEY) {
+  console.warn('⚠  WARNING: OPENAI_API_KEY not set — essay/short-answer questions will use heuristic grading')
 }
 
 const server = Fastify({
@@ -68,8 +76,13 @@ async function bootstrap() {
     },
     crossOriginEmbedderPolicy: false,
   })
+  const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
+    .split(',').map(s => s.trim()).filter(Boolean)
   await server.register(cors, {
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    origin: (origin, cb) => {
+      if (!origin || allowedOrigins.includes(origin)) return cb(null, true)
+      cb(new Error(`Origin ${origin} not allowed`), false)
+    },
     credentials: true,
   })
   await server.register(rateLimit, { max: 100, timeWindow: '1 minute' })
@@ -159,6 +172,7 @@ async function bootstrap() {
   console.log(`AssessIQ backend running at http://${host}:${port}`)
   startReminderJob()
   startSessionTimeoutJob()
+  startRetentionJob()
 }
 
 bootstrap().catch(err => {

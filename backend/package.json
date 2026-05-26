@@ -20,6 +20,7 @@
     "@fastify/jwt": "^8.0.1",
     "@fastify/multipart": "^8.3.0",
     "@fastify/rate-limit": "^9.1.0",
+    "@node-saml/node-saml": "^5.1.0",
     "@prisma/client": "^5.14.0",
     "bcryptjs": "^2.4.3",
     "dotenv": "^17.4.2",

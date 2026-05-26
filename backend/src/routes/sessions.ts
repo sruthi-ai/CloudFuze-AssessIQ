@@ -9,6 +9,27 @@ import { scoreSession } from '../services/scoring'
 import { sendSubmissionNotification } from '../utils/email'
 import { UPLOADS_DIR } from '../uploads'
 
+function ipToInt(ip: string): number {
+  const parts = ip.split('.').map(Number)
+  if (parts.length !== 4 || parts.some(isNaN)) return 0
+  return ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0
+}
+
+function ipMatchesList(rawIp: string, list: string[]): boolean {
+  if (!list || list.length === 0) return true
+  const ip = rawIp.startsWith('::ffff:') ? rawIp.slice(7) : rawIp
+  return list.some(entry => {
+    const e = entry.trim()
+    if (!e) return false
+    if (!e.includes('/')) return ip === e
+    const [network, bitsStr] = e.split('/')
+    const bits = parseInt(bitsStr)
+    if (isNaN(bits) || bits < 0 || bits > 32) return false
+    const mask = bits === 0 ? 0 : (~((1 << (32 - bits)) - 1)) >>> 0
+    return (ipToInt(ip) & mask) === (ipToInt(network) & mask)
+  })
+}
+
 function fisherYates<T>(arr: T[]): T[] {
   const a = [...arr]
   for (let i = a.length - 1; i > 0; i--) {
@@ -110,6 +131,7 @@ export async function sessionRoutes(server: FastifyInstance) {
         roomScanEnabled: invitation.test.roomScanEnabled,
         roomScanIntervalMins: invitation.test.roomScanIntervalMins,
         requireIdVerification: invitation.test.requireIdVerification,
+        allowedIPs: invitation.test.allowedIPs as string[] | null,
         openAt: invitation.test.openAt,
         closeAt: invitation.test.closeAt,
         questionCount: invitation.test.sections.reduce((a, s) => a + s.testQuestions.length, 0),
@@ -158,6 +180,14 @@ export async function sessionRoutes(server: FastifyInstance) {
       }
       if (invitation.test.closeAt && invitation.test.closeAt < now) {
         return sendError(reply, 410, 'Test window has closed', { closeAt: invitation.test.closeAt })
+      }
+      // IP restriction check
+      const allowedIPs = invitation.test.allowedIPs as string[] | null
+      if (allowedIPs && allowedIPs.length > 0) {
+        const clientIp = request.ip ?? ''
+        if (!ipMatchesList(clientIp, allowedIPs)) {
+          return sendError(reply, 403, 'This test is not accessible from your network', { ip: clientIp })
+        }
       }
     }
     if (existing && existing.status === 'IN_PROGRESS') {

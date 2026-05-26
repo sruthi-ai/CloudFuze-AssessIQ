@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import {
   Settings, Building2, Mail, Palette, Shield, Loader2,
-  Eye, EyeOff, CheckCircle2, AlertCircle, Send, Webhook
+  Eye, EyeOff, CheckCircle2, AlertCircle, Send, Webhook, FileText,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,7 +12,7 @@ import { api, getErrorMessage } from '@/lib/api'
 import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 
-type Tab = 'company' | 'email' | 'appearance' | 'integrations'
+type Tab = 'company' | 'email' | 'appearance' | 'integrations' | 'templates'
 
 interface TenantSettings {
   name: string
@@ -31,6 +31,11 @@ interface TenantSettings {
   smtpPassSet: boolean
   defaultExpiryDays: number
   completionWebhookUrl: string | null
+  emailSubject: string | null
+  emailHeaderText: string | null
+  emailFooterText: string | null
+  emailBrandColor: string | null
+  emailSignature: string | null
 }
 
 export function SettingsPage() {
@@ -131,9 +136,40 @@ export function SettingsPage() {
     setWebhookDirty(false)
   }
 
+  const [templateForm, setTemplateForm] = useState({
+    emailSubject: '',
+    emailHeaderText: '',
+    emailFooterText: '',
+    emailBrandColor: '',
+    emailSignature: '',
+  })
+  const [templateDirty, setTemplateDirty] = useState(false)
+
+  if (settings && !templateDirty && templateForm.emailSubject === '' && settings.emailSubject) {
+    setTemplateForm({
+      emailSubject: settings.emailSubject ?? '',
+      emailHeaderText: settings.emailHeaderText ?? '',
+      emailFooterText: settings.emailFooterText ?? '',
+      emailBrandColor: settings.emailBrandColor ?? '',
+      emailSignature: settings.emailSignature ?? '',
+    })
+  }
+
+  const saveTemplate = () => {
+    saveMutation.mutate({
+      emailSubject: templateForm.emailSubject.trim() || null,
+      emailHeaderText: templateForm.emailHeaderText.trim() || null,
+      emailFooterText: templateForm.emailFooterText.trim() || null,
+      emailBrandColor: templateForm.emailBrandColor.match(/^#[0-9a-fA-F]{6}$/) ? templateForm.emailBrandColor : null,
+      emailSignature: templateForm.emailSignature.trim() || null,
+    })
+    setTemplateDirty(false)
+  }
+
   const tabs = [
     { id: 'company' as Tab, label: 'Company Profile', icon: Building2 },
     { id: 'email' as Tab, label: 'Email / SMTP', icon: Mail },
+    { id: 'templates' as Tab, label: 'Email Template', icon: FileText },
     { id: 'appearance' as Tab, label: 'Appearance', icon: Palette },
     { id: 'integrations' as Tab, label: 'Integrations', icon: Webhook },
   ]
@@ -565,6 +601,77 @@ export function SettingsPage() {
             </Button>
           </CardContent>
         </Card>
+      )}
+
+      {/* Email Template */}
+      {tab === 'templates' && (
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Invite Email Template</CardTitle>
+              <CardDescription>
+                Customize the invitation email sent to candidates. Use <code className="bg-gray-100 px-1 rounded">{'{{candidateName}}'}</code>, <code className="bg-gray-100 px-1 rounded">{'{{testTitle}}'}</code>, <code className="bg-gray-100 px-1 rounded">{'{{companyName}}'}</code> as placeholders. Leave fields blank to use the default template.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Subject line</Label>
+                <Input
+                  value={templateForm.emailSubject}
+                  onChange={e => { setTemplateForm(f => ({ ...f, emailSubject: e.target.value })); setTemplateDirty(true) }}
+                  placeholder="You're invited: {{testTitle}} — {{companyName}}"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Email body (above button)</Label>
+                <textarea
+                  className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary resize-none h-28"
+                  value={templateForm.emailHeaderText}
+                  onChange={e => { setTemplateForm(f => ({ ...f, emailHeaderText: e.target.value })); setTemplateDirty(true) }}
+                  placeholder={`Hi {{candidateName}},\n\n{{companyName}} has invited you to complete {{testTitle}}. Please click the button below to start.`}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Footer text (below button)</Label>
+                <Input
+                  value={templateForm.emailFooterText}
+                  onChange={e => { setTemplateForm(f => ({ ...f, emailFooterText: e.target.value })); setTemplateDirty(true) }}
+                  placeholder="If you didn't expect this, you can ignore this email."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Email signature</Label>
+                <Input
+                  value={templateForm.emailSignature}
+                  onChange={e => { setTemplateForm(f => ({ ...f, emailSignature: e.target.value })); setTemplateDirty(true) }}
+                  placeholder="The {{companyName}} Talent Team"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Button / header color</Label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="color"
+                    className="h-9 w-16 rounded border cursor-pointer"
+                    value={templateForm.emailBrandColor || settings?.primaryColor || '#6366f1'}
+                    onChange={e => { setTemplateForm(f => ({ ...f, emailBrandColor: e.target.value })); setTemplateDirty(true) }}
+                  />
+                  <Input
+                    className="w-32"
+                    value={templateForm.emailBrandColor}
+                    onChange={e => { setTemplateForm(f => ({ ...f, emailBrandColor: e.target.value })); setTemplateDirty(true) }}
+                    placeholder="#6366f1"
+                  />
+                  <p className="text-xs text-muted-foreground">Defaults to your brand color if blank</p>
+                </div>
+              </div>
+              <Button onClick={saveTemplate} disabled={saveMutation.isPending || !templateDirty}>
+                {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                Save Template
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   )

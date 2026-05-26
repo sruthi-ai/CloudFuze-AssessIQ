@@ -79,6 +79,57 @@ type TenantEmailSettings = {
   smtpFrom?: string
   smtpSecure?: boolean
   resendApiKey?: string
+  // Custom template fields
+  emailSubject?: string | null
+  emailHeaderText?: string | null
+  emailFooterText?: string | null
+  emailBrandColor?: string | null
+  emailSignature?: string | null
+}
+
+function interpolate(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? '')
+}
+
+function buildInvitationHtml(params: {
+  candidateName: string; testTitle: string; companyName: string
+  url: string; expiry: string; message?: string; settings?: TenantEmailSettings
+}): string {
+  const s = params.settings
+  const color = s?.emailBrandColor ?? '#6366f1'
+  const vars = { candidateName: params.candidateName, testTitle: params.testTitle, companyName: params.companyName }
+
+  const headerHtml = s?.emailHeaderText
+    ? `<p>${interpolate(s.emailHeaderText, vars)}</p>`
+    : `<p>Hi ${params.candidateName},</p>
+       <p><strong>${params.companyName}</strong> has invited you to complete the following assessment:</p>
+       <h3 style="color:#1f2937;">${params.testTitle}</h3>`
+
+  const footerHtml = s?.emailFooterText
+    ? `<p style="color:#6b7280;font-size:13px;">${interpolate(s.emailFooterText, vars)}</p>`
+    : `<p style="color:#6b7280;font-size:13px;">If you didn't expect this, you can ignore this email.</p>`
+
+  const signatureHtml = s?.emailSignature
+    ? `<p style="color:#6b7280;font-size:12px;border-top:1px solid #e5e7eb;margin-top:24px;padding-top:12px;">${s.emailSignature}</p>`
+    : ''
+
+  return `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;color:#1f2937;">
+      <div style="background:${color};padding:20px 24px;border-radius:8px 8px 0 0;">
+        <h2 style="color:#fff;margin:0;font-size:20px;">You've been invited to take an assessment</h2>
+      </div>
+      <div style="padding:24px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px;">
+        ${headerHtml}
+        ${params.message ? `<p style="background:#f3f4f6;padding:12px;border-radius:6px;">${params.message}</p>` : ''}
+        <p>This link expires on <strong>${params.expiry}</strong>.</p>
+        <a href="${params.url}" style="display:inline-block;background:${color};color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;margin:16px 0;">
+          Start Assessment
+        </a>
+        ${footerHtml}
+        ${signatureHtml}
+      </div>
+    </div>
+  `
 }
 
 export async function sendInvitationEmail(params: {
@@ -94,22 +145,19 @@ export async function sendInvitationEmail(params: {
   const url = `${FRONTEND_URL}/take/${params.token}`
   const expiry = params.expiresAt.toLocaleDateString('en-US', { dateStyle: 'long' })
 
-  const html = `
-    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #6366f1;">You've been invited to take an assessment</h2>
-      <p>Hi ${params.candidateName},</p>
-      <p><strong>${params.companyName}</strong> has invited you to complete the following assessment:</p>
-      <h3 style="color: #1f2937;">${params.testTitle}</h3>
-      ${params.message ? `<p style="background:#f3f4f6;padding:12px;border-radius:6px;">${params.message}</p>` : ''}
-      <p>This link expires on <strong>${expiry}</strong>.</p>
-      <a href="${url}" style="display:inline-block;background:#6366f1;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;margin:16px 0;">
-        Start Assessment
-      </a>
-      <p style="color:#6b7280;font-size:13px;">If you didn't expect this, you can ignore this email.</p>
-    </div>
-  `
+  const html = buildInvitationHtml({
+    candidateName: params.candidateName,
+    testTitle: params.testTitle,
+    companyName: params.companyName,
+    url, expiry,
+    message: params.message,
+    settings: params.tenantSettings,
+  })
 
-  const subject = `You're invited: ${params.testTitle} — ${params.companyName}`
+  const vars = { candidateName: params.candidateName, testTitle: params.testTitle, companyName: params.companyName }
+  const subject = params.tenantSettings?.emailSubject
+    ? interpolate(params.tenantSettings.emailSubject, vars)
+    : `You're invited: ${params.testTitle} — ${params.companyName}`
 
   // 1. Azure Graph (env vars)
   if (process.env.AZURE_TENANT_ID && process.env.AZURE_CLIENT_ID && process.env.AZURE_CLIENT_SECRET) {

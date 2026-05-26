@@ -196,7 +196,14 @@ export function InviteLandingPage() {
         navigate(`/take/${token}/test`, { state: { sessionId, inviteData: data } })
       }
     },
-    onError: err => toast({ title: 'Unable to start', description: getErrorMessage(err), variant: 'destructive' }),
+    onError: (err: any) => {
+      const status = err?.response?.status
+      if (status === 403) {
+        toast({ title: 'Network not allowed', description: 'This assessment is restricted to specific IP addresses. Contact the organizer if you believe this is an error.', variant: 'destructive' })
+      } else {
+        toast({ title: 'Unable to start', description: getErrorMessage(err), variant: 'destructive' })
+      }
+    },
   })
 
   const runSystemCheck = async () => {

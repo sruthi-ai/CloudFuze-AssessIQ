@@ -26,6 +26,13 @@ const settingsSchema = z.object({
 
   // Integrations
   completionWebhookUrl: z.string().url().optional().nullable(),
+
+  // Email template
+  emailSubject: z.string().max(200).optional().nullable(),
+  emailHeaderText: z.string().max(2000).optional().nullable(),
+  emailFooterText: z.string().max(2000).optional().nullable(),
+  emailBrandColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().nullable(),
+  emailSignature: z.string().max(500).optional().nullable(),
 })
 
 export async function settingsRoutes(server: FastifyInstance) {
@@ -60,6 +67,12 @@ export async function settingsRoutes(server: FastifyInstance) {
       resendApiKeySet: !!(settings.resendApiKey),
       smtpPassSet: !!(settings.smtpPass),
       completionWebhookUrl: (settings.completionWebhookUrl as string) ?? null,
+      // Email template
+      emailSubject: (settings.emailSubject as string) ?? null,
+      emailHeaderText: (settings.emailHeaderText as string) ?? null,
+      emailFooterText: (settings.emailFooterText as string) ?? null,
+      emailBrandColor: (settings.emailBrandColor as string) ?? null,
+      emailSignature: (settings.emailSignature as string) ?? null,
     })
   })
 
@@ -114,6 +127,11 @@ export async function settingsRoutes(server: FastifyInstance) {
       resendApiKeySet: !!(settings.resendApiKey),
       smtpPassSet: !!(settings.smtpPass),
       completionWebhookUrl: (settings.completionWebhookUrl as string) ?? null,
+      emailSubject: (settings.emailSubject as string) ?? null,
+      emailHeaderText: (settings.emailHeaderText as string) ?? null,
+      emailFooterText: (settings.emailFooterText as string) ?? null,
+      emailBrandColor: (settings.emailBrandColor as string) ?? null,
+      emailSignature: (settings.emailSignature as string) ?? null,
     })
   })
 

@@ -242,6 +242,7 @@ model Test {
   roomScanEnabled          Boolean    @default(false)
   roomScanIntervalMins     Int        @default(20)
   requireIdVerification    Boolean    @default(false)
+  allowedIPs               Json?      // Array of IPs/CIDR ranges; null = no restriction
   openAt                   DateTime?  // null = always open
   closeAt                  DateTime?  // null = no close deadline
   createdAt            DateTime   @default(now())

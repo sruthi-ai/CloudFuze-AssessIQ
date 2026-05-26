@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import { Prisma } from '@prisma/client'
 import { prisma } from '../db'
 import { sendError, sendSuccess } from '../utils/errors'
 import { authenticate, requireRole } from '../middleware/authenticate'
@@ -20,6 +21,7 @@ const createTestSchema = z.object({
   roomScanEnabled: z.boolean().optional(),
   roomScanIntervalMins: z.number().int().min(5).max(120).optional(),
   requireIdVerification: z.boolean().optional(),
+  allowedIPs: z.array(z.string()).optional().nullable(),
   negativeMarking: z.number().min(0).max(1).optional().nullable(),
   openAt: z.string().datetime().optional().nullable(),
   closeAt: z.string().datetime().optional().nullable(),
@@ -99,9 +101,11 @@ export async function testRoutes(server: FastifyInstance) {
     const result = createTestSchema.safeParse(request.body)
     if (!result.success) return sendError(reply, 400, 'Validation error', result.error.flatten())
 
+    const { allowedIPs, ...restData } = result.data
     const test = await prisma.test.create({
       data: {
-        ...result.data,
+        ...restData,
+        ...(allowedIPs !== undefined && { allowedIPs: (allowedIPs ?? undefined) as Prisma.InputJsonValue | undefined }),
         tenantId: request.user.tenantId,
         createdById: request.user.sub,
         sections: {
@@ -122,7 +126,14 @@ export async function testRoutes(server: FastifyInstance) {
     const test = await prisma.test.findFirst({ where: { id, tenantId: request.user.tenantId } })
     if (!test) return sendError(reply, 404, 'Test not found')
 
-    const updated = await prisma.test.update({ where: { id }, data: result.data })
+    const { allowedIPs, ...restData } = result.data
+    const updated = await prisma.test.update({
+      where: { id },
+      data: {
+        ...restData,
+        ...(allowedIPs !== undefined && { allowedIPs: (allowedIPs ?? undefined) as Prisma.InputJsonValue | undefined }),
+      },
+    })
     return sendSuccess(reply, updated)
   })
 
@@ -174,6 +185,7 @@ export async function testRoutes(server: FastifyInstance) {
           roomScanEnabled: original.roomScanEnabled,
           roomScanIntervalMins: original.roomScanIntervalMins,
           requireIdVerification: original.requireIdVerification,
+          allowedIPs: original.allowedIPs as any ?? undefined,
           status: 'DRAFT',
           tenantId: request.user.tenantId,
           createdById: request.user.sub,

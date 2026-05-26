@@ -35,6 +35,7 @@ const testSchema = z.object({
   roomScanEnabled: z.boolean().optional(),
   roomScanIntervalMins: z.coerce.number().int().min(5).max(120).optional(),
   requireIdVerification: z.boolean().optional(),
+  allowedIPs: z.array(z.string()).optional().nullable(),
   negativeMarking: z.coerce.number().min(0).max(1).optional().nullable(),
   openAt: z.string().optional().nullable(),
   closeAt: z.string().optional().nullable(),
@@ -414,6 +415,64 @@ function TimeLimitEditor({ sectionId, testId, initialTimeLimit }: {
         : <span className="opacity-60">· set time limit</span>
       }
     </button>
+  )
+}
+
+// ─── Allowed IPs Editor ───────────────────────────────────────────────────────
+
+function AllowedIPsEditor({ testId, initialIPs }: { testId: string; initialIPs: string[] | null }) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState((initialIPs ?? []).join('\n'))
+  const qc = useQueryClient()
+
+  const mutation = useMutation({
+    mutationFn: (allowedIPs: string[] | null) =>
+      api.patch(`/tests/${testId}`, { allowedIPs }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['test', testId] }); setEditing(false) },
+    onError: err => { toast({ title: 'Error', description: getErrorMessage(err), variant: 'destructive' }) },
+  })
+
+  const save = () => {
+    const ips = value.split('\n').map(s => s.trim()).filter(Boolean)
+    mutation.mutate(ips.length ? ips : null)
+  }
+
+  const activeCount = (initialIPs ?? []).length
+
+  if (editing) {
+    return (
+      <div className="space-y-2">
+        <Label className="text-sm">Allowed IPs / CIDR ranges (one per line)</Label>
+        <textarea
+          className="w-full h-28 border rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          placeholder={"192.168.1.0/24\n10.0.0.1"}
+        />
+        <p className="text-xs text-muted-foreground">Leave empty to allow all IPs. Supports exact IPs and CIDR notation.</p>
+        <div className="flex gap-2">
+          <Button size="sm" onClick={save} disabled={mutation.isPending}>
+            {mutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
+            Save
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setEditing(false)}>Cancel</Button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex-1 text-sm text-muted-foreground">
+        {activeCount > 0
+          ? <span className="bg-orange-100 text-orange-800 px-2 py-0.5 rounded text-xs font-medium">{activeCount} IP rule{activeCount > 1 ? 's' : ''} active</span>
+          : <span className="text-xs opacity-60">No IP restrictions (open to all networks)</span>
+        }
+      </div>
+      <Button size="sm" variant="outline" onClick={() => { setValue((initialIPs ?? []).join('\n')); setEditing(true) }}>
+        {activeCount > 0 ? 'Edit IPs' : 'Restrict by IP'}
+      </Button>
+    </div>
   )
 }
 
@@ -1284,6 +1343,16 @@ export function TestBuilderPage() {
                   </div>
                 )}
               </div>
+
+              {testId && (
+                <div className="pt-3 border-t space-y-2">
+                  <Label className="text-sm font-medium">IP / Network Restriction</Label>
+                  <AllowedIPsEditor
+                    testId={testId}
+                    initialIPs={(testData?.allowedIPs as string[] | null) ?? null}
+                  />
+                </div>
+              )}
             </CardContent>
           </Card>
 

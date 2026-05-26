@@ -33,6 +33,17 @@ const settingsSchema = z.object({
   emailFooterText: z.string().max(2000).optional().nullable(),
   emailBrandColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().nullable(),
   emailSignature: z.string().max(500).optional().nullable(),
+
+  // SSO / SAML
+  ssoEnabled: z.boolean().optional(),
+  samlEntryPoint: z.string().url().optional().nullable(),
+  samlIssuer: z.string().optional().nullable(),
+  samlIdpCert: z.string().optional().nullable(),
+  samlEmailAttr: z.string().optional().nullable(),
+  samlFirstNameAttr: z.string().optional().nullable(),
+  samlLastNameAttr: z.string().optional().nullable(),
+  samlAutoProvision: z.boolean().optional(),
+  samlDefaultRole: z.enum(['RECRUITER', 'VIEWER']).optional(),
 })
 
 export async function settingsRoutes(server: FastifyInstance) {
@@ -73,6 +84,16 @@ export async function settingsRoutes(server: FastifyInstance) {
       emailFooterText: (settings.emailFooterText as string) ?? null,
       emailBrandColor: (settings.emailBrandColor as string) ?? null,
       emailSignature: (settings.emailSignature as string) ?? null,
+      // SSO / SAML
+      ssoEnabled: (settings.ssoEnabled as boolean) ?? false,
+      samlEntryPoint: (settings.samlEntryPoint as string) ?? null,
+      samlIssuer: (settings.samlIssuer as string) ?? null,
+      samlIdpCertSet: !!(settings.samlIdpCert),
+      samlEmailAttr: (settings.samlEmailAttr as string) ?? null,
+      samlFirstNameAttr: (settings.samlFirstNameAttr as string) ?? null,
+      samlLastNameAttr: (settings.samlLastNameAttr as string) ?? null,
+      samlAutoProvision: (settings.samlAutoProvision as boolean) ?? false,
+      samlDefaultRole: (settings.samlDefaultRole as string) ?? 'VIEWER',
     })
   })
 

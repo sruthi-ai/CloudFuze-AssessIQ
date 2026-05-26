@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Brain, Loader2 } from 'lucide-react'
+import { Brain, Loader2, KeyRound } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -19,12 +19,16 @@ const schema = z.object({
 })
 type FormValues = z.infer<typeof schema>
 
+const API_BASE = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : '/api'
+
 export function LoginPage() {
   const [loading, setLoading] = useState(false)
+  const [ssoSlug, setSsoSlug] = useState('')
+  const [showSso, setShowSso] = useState(false)
   const navigate = useNavigate()
   const login = useAuthStore(s => s.login)
 
-  const { register, handleSubmit, formState: { errors } } = useForm<FormValues>({
+  const { register, handleSubmit, getValues, formState: { errors } } = useForm<FormValues>({
     resolver: zodResolver(schema),
   })
 
@@ -39,6 +43,15 @@ export function LoginPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleSsoLogin = () => {
+    const slug = ssoSlug.trim() || getValues('tenantSlug').trim()
+    if (!slug) {
+      toast({ title: 'Enter your company workspace first', variant: 'destructive' })
+      return
+    }
+    window.location.href = `${API_BASE}/sso/login?tenant=${encodeURIComponent(slug)}`
   }
 
   return (
@@ -85,6 +98,44 @@ export function LoginPage() {
                 Sign in
               </Button>
             </form>
+
+            <div className="relative my-4">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-200" />
+              </div>
+              <div className="relative flex justify-center text-xs text-muted-foreground">
+                <span className="bg-white px-2">or</span>
+              </div>
+            </div>
+
+            {!showSso ? (
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => setShowSso(true)}
+              >
+                <KeyRound className="h-4 w-4 mr-2" />
+                Sign in with SSO
+              </Button>
+            ) : (
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label>Company workspace (for SSO)</Label>
+                  <Input
+                    placeholder="your-company"
+                    value={ssoSlug}
+                    onChange={e => setSsoSlug(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleSsoLogin()}
+                  />
+                  <p className="text-xs text-muted-foreground">Your workspace slug — leave blank to use the one above</p>
+                </div>
+                <Button variant="outline" className="w-full" onClick={handleSsoLogin}>
+                  <KeyRound className="h-4 w-4 mr-2" />
+                  Continue with SSO
+                </Button>
+              </div>
+            )}
+
             <p className="mt-4 text-center text-sm text-muted-foreground">
               New to NeutaraAssessments?{' '}
               <Link to="/register" className="text-primary hover:underline font-medium">Create an account</Link>

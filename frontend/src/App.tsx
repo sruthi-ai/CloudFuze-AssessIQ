@@ -7,6 +7,7 @@ import { LoginPage } from '@/pages/auth/LoginPage'
 import { RegisterPage } from '@/pages/auth/RegisterPage'
 import { ForgotPasswordPage } from '@/pages/auth/ForgotPasswordPage'
 import { ResetPasswordPage } from '@/pages/auth/ResetPasswordPage'
+import { SsoCallbackPage } from '@/pages/auth/SsoCallbackPage'
 
 // Admin pages
 import { AdminLayout } from '@/components/layout/AdminLayout'
@@ -43,6 +44,7 @@ export default function App() {
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/sso/callback" element={<SsoCallbackPage />} />
 
         {/* Admin — protected */}
         <Route path="/admin" element={<RequireAuth><AdminLayout /></RequireAuth>}>

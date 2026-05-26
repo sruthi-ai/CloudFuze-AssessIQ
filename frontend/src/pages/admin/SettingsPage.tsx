@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import {
   Settings, Building2, Mail, Palette, Shield, Loader2,
-  Eye, EyeOff, CheckCircle2, AlertCircle, Send, Webhook, FileText,
+  Eye, EyeOff, CheckCircle2, AlertCircle, Send, Webhook, FileText, KeyRound,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,7 +12,7 @@ import { api, getErrorMessage } from '@/lib/api'
 import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 
-type Tab = 'company' | 'email' | 'appearance' | 'integrations' | 'templates'
+type Tab = 'company' | 'email' | 'appearance' | 'integrations' | 'templates' | 'sso'
 
 interface TenantSettings {
   name: string
@@ -36,6 +36,15 @@ interface TenantSettings {
   emailFooterText: string | null
   emailBrandColor: string | null
   emailSignature: string | null
+  ssoEnabled: boolean
+  samlEntryPoint: string | null
+  samlIssuer: string | null
+  samlIdpCertSet: boolean
+  samlEmailAttr: string | null
+  samlFirstNameAttr: string | null
+  samlLastNameAttr: string | null
+  samlAutoProvision: boolean
+  samlDefaultRole: string
 }
 
 export function SettingsPage() {
@@ -155,6 +164,51 @@ export function SettingsPage() {
     })
   }
 
+  const [ssoForm, setSsoForm] = useState({
+    ssoEnabled: false,
+    samlEntryPoint: '',
+    samlIssuer: '',
+    samlIdpCert: '',
+    samlEmailAttr: '',
+    samlFirstNameAttr: '',
+    samlLastNameAttr: '',
+    samlAutoProvision: false,
+    samlDefaultRole: 'VIEWER',
+  })
+  const [ssoDirty, setSsoDirty] = useState(false)
+
+  if (settings && !ssoDirty && !ssoForm.samlEntryPoint && settings.samlEntryPoint) {
+    setSsoForm({
+      ssoEnabled: settings.ssoEnabled,
+      samlEntryPoint: settings.samlEntryPoint ?? '',
+      samlIssuer: settings.samlIssuer ?? '',
+      samlIdpCert: '',
+      samlEmailAttr: settings.samlEmailAttr ?? '',
+      samlFirstNameAttr: settings.samlFirstNameAttr ?? '',
+      samlLastNameAttr: settings.samlLastNameAttr ?? '',
+      samlAutoProvision: settings.samlAutoProvision,
+      samlDefaultRole: settings.samlDefaultRole ?? 'VIEWER',
+    })
+  }
+
+  const saveSso = () => {
+    const payload: Record<string, unknown> = {
+      ssoEnabled: ssoForm.ssoEnabled,
+      samlEntryPoint: ssoForm.samlEntryPoint.trim() || null,
+      samlIssuer: ssoForm.samlIssuer.trim() || null,
+      samlEmailAttr: ssoForm.samlEmailAttr.trim() || null,
+      samlFirstNameAttr: ssoForm.samlFirstNameAttr.trim() || null,
+      samlLastNameAttr: ssoForm.samlLastNameAttr.trim() || null,
+      samlAutoProvision: ssoForm.samlAutoProvision,
+      samlDefaultRole: ssoForm.samlDefaultRole,
+    }
+    if (ssoForm.samlIdpCert.trim()) payload.samlIdpCert = ssoForm.samlIdpCert.trim()
+    saveMutation.mutate(payload)
+    setSsoDirty(false)
+  }
+
+  const backendBase = import.meta.env.VITE_API_URL || ''
+
   const saveTemplate = () => {
     saveMutation.mutate({
       emailSubject: templateForm.emailSubject.trim() || null,
@@ -172,6 +226,7 @@ export function SettingsPage() {
     { id: 'templates' as Tab, label: 'Email Template', icon: FileText },
     { id: 'appearance' as Tab, label: 'Appearance', icon: Palette },
     { id: 'integrations' as Tab, label: 'Integrations', icon: Webhook },
+    { id: 'sso' as Tab, label: 'SSO / SAML', icon: KeyRound },
   ]
 
   if (isLoading) {
@@ -601,6 +656,182 @@ export function SettingsPage() {
             </Button>
           </CardContent>
         </Card>
+      )}
+
+      {/* SSO / SAML */}
+      {tab === 'sso' && (
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Single Sign-On (SAML 2.0)</CardTitle>
+              <CardDescription>
+                Allow your team to sign in via your identity provider (Okta, Azure AD, Google Workspace, etc.).
+                Configure your IdP with the ACS URL and SP Entity ID below, then paste the IdP settings here.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {/* Enable toggle */}
+              <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg border hover:bg-gray-50 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={ssoForm.ssoEnabled}
+                  onChange={e => { setSsoForm(f => ({ ...f, ssoEnabled: e.target.checked })); setSsoDirty(true) }}
+                  className="h-4 w-4 rounded"
+                />
+                <div>
+                  <p className="font-medium text-sm">Enable SSO for this workspace</p>
+                  <p className="text-xs text-muted-foreground">When enabled, a "Sign in with SSO" button appears on the login page</p>
+                </div>
+              </label>
+
+              {/* SP info (read-only) */}
+              <div className="p-4 rounded-lg bg-blue-50 border border-blue-100 space-y-3">
+                <p className="text-xs font-semibold text-blue-800 uppercase tracking-wide">Your Service Provider (SP) details — paste these into your IdP</p>
+                <div className="space-y-2">
+                  <div>
+                    <p className="text-xs text-muted-foreground">ACS URL (Assertion Consumer Service)</p>
+                    <code className="text-xs bg-white px-2 py-1 rounded border block mt-0.5 break-all">
+                      {backendBase}/api/sso/callback
+                    </code>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">SP Entity ID (Issuer)</p>
+                    <code className="text-xs bg-white px-2 py-1 rounded border block mt-0.5 break-all">
+                      {ssoForm.samlIssuer || `${backendBase}/api/sso/${settings?.slug}`}
+                    </code>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">SP Metadata URL</p>
+                    <code className="text-xs bg-white px-2 py-1 rounded border block mt-0.5 break-all">
+                      {backendBase}/api/sso/metadata?tenant={settings?.slug}
+                    </code>
+                  </div>
+                </div>
+              </div>
+
+              {/* IdP settings */}
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>IdP SSO URL *</Label>
+                  <Input
+                    value={ssoForm.samlEntryPoint}
+                    onChange={e => { setSsoForm(f => ({ ...f, samlEntryPoint: e.target.value })); setSsoDirty(true) }}
+                    placeholder="https://your-idp.com/sso/saml"
+                  />
+                  <p className="text-xs text-muted-foreground">The SAML 2.0 SSO URL from your identity provider</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>SP Entity ID (Issuer) override</Label>
+                  <Input
+                    value={ssoForm.samlIssuer}
+                    onChange={e => { setSsoForm(f => ({ ...f, samlIssuer: e.target.value })); setSsoDirty(true) }}
+                    placeholder={`${backendBase}/api/sso/${settings?.slug}`}
+                  />
+                  <p className="text-xs text-muted-foreground">Leave blank to use the default above</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>IdP Certificate (X.509 PEM)</Label>
+                  <textarea
+                    className="w-full border rounded-md px-3 py-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary resize-none h-28"
+                    value={ssoForm.samlIdpCert}
+                    onChange={e => { setSsoForm(f => ({ ...f, samlIdpCert: e.target.value })); setSsoDirty(true) }}
+                    placeholder="-----BEGIN CERTIFICATE-----&#10;MIIBIjANBgkqhkiG9w0BAQ...&#10;-----END CERTIFICATE-----"
+                  />
+                  {settings?.samlIdpCertSet && !ssoForm.samlIdpCert && (
+                    <p className="text-xs flex items-center gap-1 text-green-600">
+                      <CheckCircle2 className="h-3 w-3" /> Certificate is set. Paste a new one to replace it.
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground">Download from your IdP and paste the full PEM certificate</p>
+                </div>
+              </div>
+
+              {/* Attribute mapping */}
+              <div className="space-y-3">
+                <p className="text-sm font-medium">Attribute mapping</p>
+                <p className="text-xs text-muted-foreground">Map SAML assertion attribute names to user fields. Common values: <code className="bg-gray-100 px-1 rounded">email</code>, <code className="bg-gray-100 px-1 rounded">mail</code>, <code className="bg-gray-100 px-1 rounded">http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress</code></p>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Email attribute</Label>
+                    <Input
+                      value={ssoForm.samlEmailAttr}
+                      onChange={e => { setSsoForm(f => ({ ...f, samlEmailAttr: e.target.value })); setSsoDirty(true) }}
+                      placeholder="email"
+                      className="text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">First name attribute</Label>
+                    <Input
+                      value={ssoForm.samlFirstNameAttr}
+                      onChange={e => { setSsoForm(f => ({ ...f, samlFirstNameAttr: e.target.value })); setSsoDirty(true) }}
+                      placeholder="firstName"
+                      className="text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Last name attribute</Label>
+                    <Input
+                      value={ssoForm.samlLastNameAttr}
+                      onChange={e => { setSsoForm(f => ({ ...f, samlLastNameAttr: e.target.value })); setSsoDirty(true) }}
+                      placeholder="lastName"
+                      className="text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Auto-provision */}
+              <div className="space-y-3 p-4 rounded-lg border">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={ssoForm.samlAutoProvision}
+                    onChange={e => { setSsoForm(f => ({ ...f, samlAutoProvision: e.target.checked })); setSsoDirty(true) }}
+                    className="h-4 w-4 rounded"
+                  />
+                  <div>
+                    <p className="font-medium text-sm">Auto-provision new users</p>
+                    <p className="text-xs text-muted-foreground">Automatically create accounts for verified IdP users not yet in this workspace</p>
+                  </div>
+                </label>
+                {ssoForm.samlAutoProvision && (
+                  <div className="space-y-2 ml-7">
+                    <Label className="text-xs">Default role for new users</Label>
+                    <div className="flex gap-3">
+                      {['VIEWER', 'RECRUITER'].map(role => (
+                        <label key={role} className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="samlDefaultRole"
+                            value={role}
+                            checked={ssoForm.samlDefaultRole === role}
+                            onChange={() => { setSsoForm(f => ({ ...f, samlDefaultRole: role })); setSsoDirty(true) }}
+                          />
+                          <span className="text-sm">{role === 'VIEWER' ? 'Viewer (read-only)' : 'Recruiter'}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {!ssoForm.ssoEnabled && (
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200">
+                  <AlertCircle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-800">SSO is disabled. Save settings and enable the toggle above to activate it.</p>
+                </div>
+              )}
+
+              <Button onClick={saveSso} disabled={saveMutation.isPending || !ssoDirty}>
+                {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                Save SSO Settings
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* Email Template */}

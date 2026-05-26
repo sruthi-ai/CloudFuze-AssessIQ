@@ -22,6 +22,7 @@ import { proctoringRoutes } from './routes/proctoring'
 import { codeRoutes } from './routes/code'
 import { analyticsRoutes } from './routes/analytics'
 import { auditRoutes } from './routes/audit'
+import { ssoRoutes } from './routes/sso'
 import { startReminderJob } from './jobs/reminders'
 import { startSessionTimeoutJob } from './jobs/sessionTimeout'
 import { startRetentionJob } from './jobs/retention'
@@ -107,6 +108,7 @@ async function bootstrap() {
   await server.register(codeRoutes, { prefix: '/api/code' })
   await server.register(analyticsRoutes, { prefix: '/api/analytics' })
   await server.register(auditRoutes, { prefix: '/api/audit' })
+  await server.register(ssoRoutes, { prefix: '/api/sso' })
 
   // Health check
   server.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }))

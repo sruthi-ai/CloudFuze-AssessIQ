@@ -239,6 +239,8 @@ model Test {
   proctoring           Boolean    @default(true)
   roomScanEnabled      Boolean    @default(false)
   roomScanIntervalMins Int        @default(20)
+  openAt               DateTime?  // null = always open
+  closeAt              DateTime?  // null = no close deadline
   createdAt            DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 

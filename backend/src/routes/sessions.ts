@@ -70,13 +70,22 @@ export async function sessionRoutes(server: FastifyInstance) {
     if (invitation.status === 'CANCELLED') return sendError(reply, 410, 'This invitation has been cancelled')
     if (invitation.status === 'COMPLETED') return sendError(reply, 409, 'You have already completed this assessment')
 
+    // Scheduled window checks (only block if not already in-progress)
+    const existingSession = await prisma.session.findUnique({ where: { invitationId: invitation.id } })
+    const now = new Date()
+    if (!existingSession || existingSession.status === 'NOT_STARTED') {
+      if (invitation.test.openAt && invitation.test.openAt > now) {
+        return sendError(reply, 425, 'Test not yet open', { openAt: invitation.test.openAt })
+      }
+      if (invitation.test.closeAt && invitation.test.closeAt < now) {
+        return sendError(reply, 410, 'Test window has closed', { closeAt: invitation.test.closeAt })
+      }
+    }
+
     // Mark opened
     if (invitation.status === 'SENT' || invitation.status === 'PENDING') {
       await prisma.invitation.update({ where: { id: invitation.id }, data: { status: 'OPENED', openedAt: new Date() } })
     }
-
-    // Check if session already exists
-    const existingSession = await prisma.session.findUnique({ where: { invitationId: invitation.id } })
 
     return sendSuccess(reply, {
       invitation: {
@@ -94,6 +103,8 @@ export async function sessionRoutes(server: FastifyInstance) {
         proctoring: invitation.test.proctoring,
         roomScanEnabled: invitation.test.roomScanEnabled,
         roomScanIntervalMins: invitation.test.roomScanIntervalMins,
+        openAt: invitation.test.openAt,
+        closeAt: invitation.test.closeAt,
         questionCount: invitation.test.sections.reduce((a, s) => a + s.testQuestions.length, 0),
         sections: invitation.test.sections.map(s => ({
           id: s.id,
@@ -131,6 +142,17 @@ export async function sessionRoutes(server: FastifyInstance) {
 
     // Return existing in-progress session
     const existing = await prisma.session.findUnique({ where: { invitationId: invitation.id } })
+
+    // Enforce scheduled window (skip if already in-progress — don't cut off mid-test)
+    if (!existing || existing.status === 'NOT_STARTED') {
+      const now = new Date()
+      if (invitation.test.openAt && invitation.test.openAt > now) {
+        return sendError(reply, 425, 'Test not yet open', { openAt: invitation.test.openAt })
+      }
+      if (invitation.test.closeAt && invitation.test.closeAt < now) {
+        return sendError(reply, 410, 'Test window has closed', { closeAt: invitation.test.closeAt })
+      }
+    }
     if (existing && existing.status === 'IN_PROGRESS') {
       return sendSuccess(reply, { sessionId: existing.id, status: existing.status, startedAt: existing.startedAt, timeoutAt: existing.timeoutAt })
     }

@@ -18,6 +18,8 @@ const createTestSchema = z.object({
   proctoring: z.boolean().optional(),
   roomScanEnabled: z.boolean().optional(),
   roomScanIntervalMins: z.number().int().min(5).max(120).optional(),
+  openAt: z.string().datetime().optional().nullable(),
+  closeAt: z.string().datetime().optional().nullable(),
 })
 
 const addQuestionSchema = z.object({

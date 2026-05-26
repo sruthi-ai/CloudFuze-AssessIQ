@@ -8,7 +8,7 @@ import {
   ArrowLeft, Plus, Trash2, Settings, BookOpen,
   GripVertical, Loader2, Save, Eye, Pencil, X, Check,
   Users, BarChart2, Copy, RefreshCw, XCircle, Send,
-  TrendingUp, CheckCircle, Clock, RotateCcw,
+  TrendingUp, CheckCircle, Clock, RotateCcw, Calendar,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -34,6 +34,8 @@ const testSchema = z.object({
   proctoring: z.boolean().optional(),
   roomScanEnabled: z.boolean().optional(),
   roomScanIntervalMins: z.coerce.number().int().min(5).max(120).optional(),
+  openAt: z.string().optional().nullable(),
+  closeAt: z.string().optional().nullable(),
 })
 type TestFormValues = z.infer<typeof testSchema>
 
@@ -658,6 +660,13 @@ function TestResultsTab({ testId, passingScore }: { testId: string; passingScore
   )
 }
 
+// datetime-local inputs use local time; convert to/from ISO for the API
+function toLocalDatetimeString(iso: string): string {
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export function TestBuilderPage() {
@@ -717,6 +726,8 @@ export function TestBuilderPage() {
       shuffleQuestions: false,
       shuffleOptions: false,
       showResults: false,
+      openAt: null,
+      closeAt: null,
     },
   })
 
@@ -735,6 +746,8 @@ export function TestBuilderPage() {
         proctoring: testData.proctoring,
         roomScanEnabled: testData.roomScanEnabled ?? false,
         roomScanIntervalMins: testData.roomScanIntervalMins ?? 20,
+        openAt: testData.openAt ? toLocalDatetimeString(testData.openAt) : null,
+        closeAt: testData.closeAt ? toLocalDatetimeString(testData.closeAt) : null,
       })
     }
   }, [testData, reset])
@@ -743,11 +756,16 @@ export function TestBuilderPage() {
 
   const saveMutation = useMutation({
     mutationFn: async (values: TestFormValues) => {
+      const payload = {
+        ...values,
+        openAt: values.openAt ? new Date(values.openAt).toISOString() : null,
+        closeAt: values.closeAt ? new Date(values.closeAt).toISOString() : null,
+      }
       if (isNew) {
-        const { data } = await api.post('/tests', values)
+        const { data } = await api.post('/tests', payload)
         return data.data
       } else {
-        const { data } = await api.patch(`/tests/${testId}`, values)
+        const { data } = await api.patch(`/tests/${testId}`, payload)
         return data.data
       }
     },
@@ -1100,6 +1118,42 @@ export function TestBuilderPage() {
                     )}
                   </div>
                 )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Calendar className="h-4 w-4" />
+                Scheduling (optional)
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Leave both fields empty to keep the test always available. Candidates who already started will not be cut off even after the close time.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="openAt">Opens at</Label>
+                  <Input
+                    id="openAt"
+                    type="datetime-local"
+                    className="text-sm"
+                    {...register('openAt')}
+                  />
+                  <p className="text-xs text-muted-foreground">Candidates cannot start before this time</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="closeAt">Closes at</Label>
+                  <Input
+                    id="closeAt"
+                    type="datetime-local"
+                    className="text-sm"
+                    {...register('closeAt')}
+                  />
+                  <p className="text-xs text-muted-foreground">New starts blocked after this time</p>
+                </div>
               </div>
             </CardContent>
           </Card>

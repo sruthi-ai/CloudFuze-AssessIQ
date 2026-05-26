@@ -1,13 +1,33 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { Brain, Clock, Monitor, Shield, AlertCircle, Loader2, ChevronRight } from 'lucide-react'
+import { Brain, Clock, Monitor, Shield, AlertCircle, Loader2, ChevronRight, CalendarClock, CalendarX } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { api, getErrorMessage } from '@/lib/api'
 import { toast } from '@/hooks/use-toast'
 import { formatDuration } from '@/lib/utils'
+
+function useCountdown(target: Date | null) {
+  const [remaining, setRemaining] = useState<number | null>(null)
+  useEffect(() => {
+    if (!target) return
+    const tick = () => setRemaining(Math.max(0, Math.floor((target.getTime() - Date.now()) / 1000)))
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [target])
+  return remaining
+}
+
+function fmtCountdown(secs: number): string {
+  const h = Math.floor(secs / 3600)
+  const m = Math.floor((secs % 3600) / 60)
+  const s = secs % 60
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`
+}
 
 export function InviteLandingPage() {
   const { token } = useParams()
@@ -19,7 +39,20 @@ export function InviteLandingPage() {
     queryKey: ['invite', token],
     queryFn: () => api.get(`/sessions/invite/${token}`).then(r => r.data.data),
     retry: false,
+    refetchInterval: (q) => {
+      const openAt = q.state.data?.test?.openAt
+      if (!openAt) return false
+      return new Date(openAt) > new Date() ? 15_000 : false
+    },
   })
+
+  const openAt = data?.test?.openAt ? new Date(data.test.openAt) : null
+  const closeAt = data?.test?.closeAt ? new Date(data.test.closeAt) : null
+  const now = new Date()
+  const notYetOpen = openAt && openAt > now
+  const alreadyClosed = closeAt && closeAt < now && !(data?.existingSessionId && data?.sessionStatus === 'IN_PROGRESS')
+
+  const countdown = useCountdown(notYetOpen ? openAt : null)
 
   // Inject brand color CSS variable when data loads; revert on unmount
   const brandColor = data?.test?.tenant?.primaryColor ?? '#6366f1'
@@ -86,7 +119,55 @@ export function InviteLandingPage() {
 
   const { test, candidate, invitation } = data
   const proctoring = test.proctoring
-  const readyToStart = !proctoring || systemChecked
+  const readyToStart = (!proctoring || systemChecked) && !notYetOpen && !alreadyClosed
+
+  // Not-yet-open state
+  if (notYetOpen && openAt) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: `linear-gradient(135deg, ${brandColor}10 0%, #ffffff 100%)` }}>
+        <Card className="w-full max-w-md text-center">
+          <CardContent className="py-12 space-y-4">
+            <CalendarClock className="h-14 w-14 mx-auto" style={{ color: brandColor }} />
+            <div>
+              <h2 className="text-xl font-bold">{test.title}</h2>
+              <p className="text-muted-foreground mt-1">Hello, {candidate.firstName}! This assessment is not yet open.</p>
+            </div>
+            <div className="bg-gray-50 rounded-xl p-6 space-y-1">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Opens in</p>
+              <p className="text-4xl font-mono font-bold tabular-nums" style={{ color: brandColor }}>
+                {countdown !== null ? fmtCountdown(countdown) : '...'}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {openAt.toLocaleString(undefined, { dateStyle: 'full', timeStyle: 'short' })}
+              </p>
+            </div>
+            <p className="text-xs text-muted-foreground">This page will refresh automatically when the test opens.</p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  // Window closed state
+  if (alreadyClosed && closeAt) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: `linear-gradient(135deg, ${brandColor}10 0%, #ffffff 100%)` }}>
+        <Card className="w-full max-w-md text-center">
+          <CardContent className="py-12 space-y-4">
+            <CalendarX className="h-14 w-14 text-muted-foreground mx-auto" />
+            <div>
+              <h2 className="text-xl font-bold">{test.title}</h2>
+              <p className="text-muted-foreground mt-1">The assessment window has closed.</p>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              This test closed on {closeAt.toLocaleString(undefined, { dateStyle: 'full', timeStyle: 'short' })}.
+            </p>
+            <p className="text-xs text-muted-foreground">Please contact the assessment organizer if you believe this is an error.</p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -180,6 +261,20 @@ export function InviteLandingPage() {
                   </div>
                 ))}
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Scheduling window info */}
+        {(openAt || closeAt) && (
+          <Card className="border-blue-200 bg-blue-50">
+            <CardContent className="p-4 space-y-1">
+              <h3 className="font-semibold text-blue-900 flex items-center gap-2 mb-1">
+                <CalendarClock className="h-4 w-4" />
+                Assessment window
+              </h3>
+              {openAt && <p className="text-sm text-blue-800">Opens: {openAt.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</p>}
+              {closeAt && <p className="text-sm text-blue-800">Closes: {closeAt.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</p>}
             </CardContent>
           </Card>
         )}

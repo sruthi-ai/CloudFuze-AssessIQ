@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams, Link } from 'react-router-dom'
 import {
   Users, Send, Search, Loader2, Copy, Check, Trash2, Ban, UserCheck,
-  ChevronDown, ChevronRight, RefreshCw, XCircle, ChevronLeft,
+  ChevronDown, ChevronRight, RefreshCw, XCircle, ChevronLeft, Upload,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -175,7 +175,34 @@ export function CandidatesPage() {
                 </select>
               </div>
               <div className="space-y-2">
-                <Label>Candidates (one per line)</Label>
+                <div className="flex items-center justify-between">
+                  <Label>Candidates (one per line)</Label>
+                  <label className="cursor-pointer">
+                    <input
+                      type="file"
+                      accept=".csv,.txt"
+                      className="hidden"
+                      onChange={e => {
+                        const file = e.target.files?.[0]
+                        if (!file) return
+                        const reader = new FileReader()
+                        reader.onload = ev => {
+                          const text = ev.target?.result as string
+                          const lines = text.split(/\r?\n/).filter(l => l.trim())
+                          // Skip header row if first line looks like a header (contains "email" or "first")
+                          const start = /email|first|name/i.test(lines[0] ?? '') ? 1 : 0
+                          setInviteForm(f => ({ ...f, candidateLines: lines.slice(start).join('\n') }))
+                        }
+                        reader.readAsText(file)
+                        e.target.value = ''
+                      }}
+                    />
+                    <span className="flex items-center gap-1 text-xs text-primary hover:underline">
+                      <Upload className="h-3 w-3" />
+                      Import CSV
+                    </span>
+                  </label>
+                </div>
                 <p className="text-xs text-muted-foreground">One per line. Format: <code className="bg-gray-100 px-0.5 rounded">email, First, Last, Organization</code></p>
                 <textarea
                   rows={5}

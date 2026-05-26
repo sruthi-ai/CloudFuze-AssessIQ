@@ -34,6 +34,7 @@ const testSchema = z.object({
   proctoring: z.boolean().optional(),
   roomScanEnabled: z.boolean().optional(),
   roomScanIntervalMins: z.coerce.number().int().min(5).max(120).optional(),
+  negativeMarking: z.coerce.number().min(0).max(1).optional().nullable(),
   openAt: z.string().optional().nullable(),
   closeAt: z.string().optional().nullable(),
 })
@@ -278,6 +279,84 @@ function SectionTitleEditor({ sectionId, testId, initialTitle }: SectionTitleEdi
         <Pencil className="h-3.5 w-3.5" />
       </button>
     </div>
+  )
+}
+
+// ─── Pick Count Editor ────────────────────────────────────────────────────────
+
+interface PickCountEditorProps {
+  sectionId: string
+  testId: string
+  totalQuestions: number
+  initialPickCount: number | null
+}
+
+function PickCountEditor({ sectionId, testId, totalQuestions, initialPickCount }: PickCountEditorProps) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState(String(initialPickCount ?? ''))
+  const qc = useQueryClient()
+
+  const mutation = useMutation({
+    mutationFn: (pickCount: number | null) =>
+      api.patch(`/tests/${testId}/sections/${sectionId}`, { pickCount }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['test', testId] })
+      setEditing(false)
+    },
+    onError: err => {
+      toast({ title: 'Error', description: getErrorMessage(err), variant: 'destructive' })
+      setEditing(false)
+    },
+  })
+
+  const save = () => {
+    const trimmed = value.trim()
+    if (trimmed === '') {
+      mutation.mutate(null)
+      return
+    }
+    const n = parseInt(trimmed)
+    if (!Number.isFinite(n) || n < 1 || n > totalQuestions) return
+    mutation.mutate(n)
+  }
+
+  if (totalQuestions === 0) return null
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1 text-xs">
+        <span className="text-muted-foreground">Pick</span>
+        <input
+          type="number"
+          min="1"
+          max={totalQuestions}
+          autoFocus
+          className="w-14 border rounded px-1.5 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-primary text-xs"
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          onBlur={save}
+          onKeyDown={e => {
+            if (e.key === 'Enter') save()
+            if (e.key === 'Escape') setEditing(false)
+          }}
+          placeholder={String(totalQuestions)}
+        />
+        <span className="text-muted-foreground">of {totalQuestions}</span>
+      </div>
+    )
+  }
+
+  return (
+    <button
+      title="Click to set pool size (how many questions each candidate sees)"
+      className="text-xs text-muted-foreground hover:text-primary transition-colors shrink-0"
+      onClick={() => { setValue(String(initialPickCount ?? '')); setEditing(true) }}
+    >
+      {initialPickCount && initialPickCount < totalQuestions
+        ? <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-medium">Pool: {initialPickCount}/{totalQuestions}</span>
+        : <span className="opacity-60">{totalQuestions}q · set pool</span>
+      }
+    </button>
   )
 }
 
@@ -715,6 +794,7 @@ export function TestBuilderPage() {
     handleSubmit,
     reset,
     watch,
+    setValue,
     formState: { errors, isDirty },
   } = useForm<TestFormValues>({
     resolver: zodResolver(testSchema),
@@ -726,6 +806,7 @@ export function TestBuilderPage() {
       shuffleQuestions: false,
       shuffleOptions: false,
       showResults: false,
+      negativeMarking: null,
       openAt: null,
       closeAt: null,
     },
@@ -746,6 +827,7 @@ export function TestBuilderPage() {
         proctoring: testData.proctoring,
         roomScanEnabled: testData.roomScanEnabled ?? false,
         roomScanIntervalMins: testData.roomScanIntervalMins ?? 20,
+        negativeMarking: testData.negativeMarking ?? null,
         openAt: testData.openAt ? toLocalDatetimeString(testData.openAt) : null,
         closeAt: testData.closeAt ? toLocalDatetimeString(testData.closeAt) : null,
       })
@@ -1084,6 +1166,26 @@ export function TestBuilderPage() {
                   {...register('passingScore')}
                 />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="negativeMarking">Negative Marking</Label>
+                <div className="flex items-center gap-3">
+                  <select
+                    className="flex h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
+                    value={watch('negativeMarking') ?? ''}
+                    onChange={e => {
+                      const val = e.target.value
+                      setValue('negativeMarking', val === '' ? null : parseFloat(val))
+                    }}
+                  >
+                    <option value="">None (no deduction)</option>
+                    <option value="0.25">0.25x — deduct ¼ of question points</option>
+                    <option value="0.33">0.33x — deduct ⅓ of question points</option>
+                    <option value="0.5">0.5x — deduct ½ of question points</option>
+                    <option value="1">1x — deduct full question points</option>
+                  </select>
+                  <p className="text-xs text-muted-foreground">Applied to wrong MCQ / True-False answers</p>
+                </div>
+              </div>
               <div className="space-y-3">
                 {([
                   { name: 'shuffleQuestions', label: 'Shuffle question order' },
@@ -1234,6 +1336,12 @@ export function TestBuilderPage() {
                     sectionId={section.id}
                     testId={testId!}
                     initialTitle={section.title}
+                  />
+                  <PickCountEditor
+                    sectionId={section.id}
+                    testId={testId!}
+                    totalQuestions={section.testQuestions.length}
+                    initialPickCount={section.pickCount ?? null}
                   />
                   <div className="flex items-center gap-2 shrink-0">
                     {/* Delete section */}

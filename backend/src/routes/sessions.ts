@@ -167,12 +167,20 @@ export async function sessionRoutes(server: FastifyInstance) {
 
     const timeoutAt = new Date(Date.now() + invitation.test.duration * 60 * 1000)
 
-    // Generate per-session question order if shuffling is enabled
+    // Generate per-session question order for shuffling and/or pool randomization
     let questionOrder: Record<string, string[]> | null = null
-    if (invitation.test.shuffleQuestions) {
+    const needsOrder = invitation.test.shuffleQuestions || invitation.test.sections.some(s => s.pickCount)
+    if (needsOrder) {
       questionOrder = {}
       for (const section of invitation.test.sections) {
-        questionOrder[section.id] = fisherYates(section.testQuestions.map(tq => tq.questionId))
+        let ids = section.testQuestions.map(tq => tq.questionId)
+        if (section.pickCount && section.pickCount < ids.length) {
+          // Pool: pick a random subset of pickCount questions
+          ids = fisherYates(ids).slice(0, section.pickCount)
+        } else if (invitation.test.shuffleQuestions) {
+          ids = fisherYates(ids)
+        }
+        questionOrder[section.id] = ids
       }
     }
 
@@ -268,8 +276,10 @@ export async function sessionRoutes(server: FastifyInstance) {
           }
         })
 
-        // Apply stored question order if shuffled at session start
+        // Apply stored order — also filters to the selected subset (pool randomization)
         if (questionOrder?.[s.id]) {
+          const selectedIds = new Set(questionOrder[s.id])
+          questions = questions.filter(q => selectedIds.has(q.questionId))
           const orderMap = new Map(questionOrder[s.id].map((id, idx) => [id, idx]))
           questions = questions.sort((a, b) => (orderMap.get(a.questionId) ?? 0) - (orderMap.get(b.questionId) ?? 0))
         }

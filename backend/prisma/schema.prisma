@@ -236,6 +236,7 @@ model Test {
   shuffleOptions   Boolean    @default(false)
   showResults      Boolean    @default(false) // show results to candidate after submission
   allowedAttempts  Int        @default(1)
+  negativeMarking  Float?     // fraction of points deducted per wrong MCQ answer (e.g. 0.25)
   proctoring           Boolean    @default(true)
   roomScanEnabled      Boolean    @default(false)
   roomScanIntervalMins Int        @default(20)
@@ -263,6 +264,7 @@ model TestSection {
   description  String?
   order        Int      @default(0)
   timeLimit    Int?     // per-section time limit in seconds
+  pickCount    Int?     // if set, randomly pick this many questions per session
   createdAt    DateTime @default(now())
 
   testId       String

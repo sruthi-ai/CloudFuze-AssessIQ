@@ -18,6 +18,7 @@ const createTestSchema = z.object({
   proctoring: z.boolean().optional(),
   roomScanEnabled: z.boolean().optional(),
   roomScanIntervalMins: z.number().int().min(5).max(120).optional(),
+  negativeMarking: z.number().min(0).max(1).optional().nullable(),
   openAt: z.string().datetime().optional().nullable(),
   closeAt: z.string().datetime().optional().nullable(),
 })
@@ -34,6 +35,7 @@ const createSectionSchema = z.object({
   description: z.string().optional(),
   order: z.number().int().optional(),
   timeLimit: z.number().int().optional(),
+  pickCount: z.number().int().min(1).optional().nullable(),
 })
 
 export async function testRoutes(server: FastifyInstance) {
@@ -164,6 +166,7 @@ export async function testRoutes(server: FastifyInstance) {
           shuffleOptions: original.shuffleOptions,
           showResults: original.showResults,
           allowedAttempts: original.allowedAttempts,
+          negativeMarking: original.negativeMarking ?? undefined,
           proctoring: original.proctoring,
           roomScanEnabled: original.roomScanEnabled,
           roomScanIntervalMins: original.roomScanIntervalMins,
@@ -180,6 +183,7 @@ export async function testRoutes(server: FastifyInstance) {
             description: s.description,
             order: s.order,
             timeLimit: s.timeLimit,
+            pickCount: s.pickCount ?? undefined,
             testId: newTest.id,
             testQuestions: {
               create: s.testQuestions.map(tq => ({

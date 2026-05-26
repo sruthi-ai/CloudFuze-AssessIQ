@@ -28,11 +28,18 @@ export async function scoreSession(sessionId: string) {
   let earnedPoints = 0
   const sectionBreakdown: Record<string, { earned: number; total: number }> = {}
 
+  // Build per-section question ID sets from stored questionOrder (handles pool randomization)
+  const storedOrder = session.questionOrder as Record<string, string[]> | null
+
   for (const section of session.test.sections) {
     let sectionEarned = 0
     let sectionTotal = 0
 
+    // Filter to only the questions this candidate was assigned
+    const allowedIds = storedOrder?.[section.id] ? new Set(storedOrder[section.id]) : null
+
     for (const tq of section.testQuestions) {
+      if (allowedIds && !allowedIds.has(tq.question.id)) continue
       const q = tq.question
       const maxPoints = tq.points ?? q.points
       totalPoints += maxPoints
@@ -51,6 +58,8 @@ export async function scoreSession(sessionId: string) {
           const selected = (answer.selectedOptions as unknown as string[]) ?? []
           if (correctOption && selected.includes(correctOption.id)) {
             pointsEarned = maxPoints
+          } else if (selected.length > 0 && session.test.negativeMarking && session.test.negativeMarking > 0) {
+            pointsEarned = -(session.test.negativeMarking * maxPoints)
           }
           break
         }

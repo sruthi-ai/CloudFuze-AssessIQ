@@ -53,6 +53,7 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
   const noiseCheckRef = useRef<number | null>(null)
   const faceCheckRef = useRef<number | null>(null)
   const screenshotRef = useRef<number | null>(null)
+  const phoneCheckRef = useRef<number | null>(null)
 
   const [webcamActive, setWebcamActive] = useState(false)
   const [micActive, setMicActive] = useState(false)
@@ -179,6 +180,32 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
       } catch {}
     }
 
+    const startPhoneDetection = () => {
+      // Delay start so it doesn't compete with face model loading
+      setTimeout(async () => {
+        if (cancelled) return
+        try {
+          const { initPhoneDetection, detectPhone } = await import('@/lib/phoneDetection')
+          const loaded = await initPhoneDetection()
+          if (!loaded || cancelled) return
+
+          let consecutivePhone = 0
+
+          phoneCheckRef.current = window.setInterval(async () => {
+            if (cancelled || !videoRef.current) return
+            const found = await detectPhone(videoRef.current)
+            if (!found) { consecutivePhone = 0; return }
+            consecutivePhone++
+            if (consecutivePhone >= 2) {
+              captureViolationSnapshot()
+              pushImmediate('PHONE_DETECTED', 'Mobile phone detected in webcam view')
+              consecutivePhone = 0
+            }
+          }, 15_000)
+        } catch {}
+      }, 8000) // 8s head-start for face detection to load first
+    }
+
     const startFaceAndPoseDetection = () => {
       setTimeout(async () => {
         if (cancelled) return
@@ -280,6 +307,7 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
 
         if (stream.getAudioTracks().length > 0) startAudioMonitoring(stream)
         startFaceAndPoseDetection()
+        startPhoneDetection()
         startScreenshots()
       })
       .catch(() => {
@@ -302,6 +330,7 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
       if (noiseCheckRef.current) { clearInterval(noiseCheckRef.current); noiseCheckRef.current = null }
       if (faceCheckRef.current) { clearInterval(faceCheckRef.current); faceCheckRef.current = null }
       if (screenshotRef.current) { clearInterval(screenshotRef.current); screenshotRef.current = null }
+      if (phoneCheckRef.current) { clearInterval(phoneCheckRef.current); phoneCheckRef.current = null }
       setWebcamActive(false)
       setMicActive(false)
       setFaceCount(-1)
@@ -446,6 +475,7 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
     if (noiseCheckRef.current) { clearInterval(noiseCheckRef.current); noiseCheckRef.current = null }
     if (faceCheckRef.current) { clearInterval(faceCheckRef.current); faceCheckRef.current = null }
     if (screenshotRef.current) { clearInterval(screenshotRef.current); screenshotRef.current = null }
+    if (phoneCheckRef.current) { clearInterval(phoneCheckRef.current); phoneCheckRef.current = null }
     if (document.fullscreenElement) await document.exitFullscreen().catch(() => {})
     await flush()
   }, [flush])

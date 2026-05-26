@@ -39,9 +39,9 @@ export function TestPage() {
   const { token } = useParams()
   const location = useLocation()
   const navigate = useNavigate()
-  const { sessionId, inviteData } = location.state ?? {}
+  const { sessionId, inviteData, isPractice, practiceName } = location.state ?? {}
 
-  const [testStep, setTestStep] = useState<'setup' | 'room-scan' | 'test'>('setup')
+  const [testStep, setTestStep] = useState<'setup' | 'room-scan' | 'test'>(isPractice ? 'test' : 'setup')
   const [showMidScan, setShowMidScan] = useState(false)
   const [currentSectionIdx, setCurrentSectionIdx] = useState(0)
   const [currentQIdx, setCurrentQIdx] = useState(0)
@@ -62,7 +62,7 @@ export function TestPage() {
   const [calcJustEval, setCalcJustEval] = useState(false)
   const sectionExpireRef = useRef<(() => void) | null>(null)
 
-  const proctoring = inviteData?.test?.proctoring !== false
+  const proctoring = !isPractice && inviteData?.test?.proctoring !== false
   const roomScanEnabled = proctoring && inviteData?.test?.roomScanEnabled === true
   const roomScanIntervalMins: number = inviteData?.test?.roomScanIntervalMins ?? 20
   const brandColor = inviteData?.test?.tenant?.primaryColor ?? '#6366f1'
@@ -72,9 +72,10 @@ export function TestPage() {
     return () => { document.documentElement.style.removeProperty('--brand-primary') }
   }, [brandColor])
 
-  const candidateName = inviteData?.candidate
-    ? `${inviteData.candidate.firstName ?? ''} ${inviteData.candidate.lastName ?? ''}`.trim()
-    : undefined
+  const candidateName = practiceName
+    ?? (inviteData?.candidate
+      ? `${inviteData.candidate.firstName ?? ''} ${inviteData.candidate.lastName ?? ''}`.trim()
+      : undefined)
 
   const handleTabReturn = useCallback(() => {
     setTabWarningCount(c => c + 1)
@@ -214,7 +215,7 @@ export function TestPage() {
     },
     onSuccess: res => {
       setSubmitting(false)
-      navigate(`/take/${token}/done`, { state: { result: res.data.data }, replace: true })
+      navigate(`/take/${token}/done`, { state: { result: res.data.data, isPractice }, replace: true })
     },
     onError: err => {
       setSubmitting(false)

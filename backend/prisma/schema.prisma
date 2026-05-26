@@ -245,6 +245,8 @@ model Test {
   allowedIPs               Json?      // Array of IPs/CIDR ranges; null = no restriction
   openAt                   DateTime?  // null = always open
   closeAt                  DateTime?  // null = no close deadline
+  practiceEnabled          Boolean    @default(false)
+  practiceToken            String?    @unique
   createdAt            DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 
@@ -364,6 +366,7 @@ model Session {
   questionOrder          Json?         // { sectionId: questionId[] } stored at session start when shuffleQuestions=true
   idVerified             Boolean    @default(false)
   idVerificationPhoto    String?    // URL of uploaded ID photo
+  isPractice             Boolean    @default(false)
   lastHeartbeatAt DateTime?    // set every 30s during active test
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt

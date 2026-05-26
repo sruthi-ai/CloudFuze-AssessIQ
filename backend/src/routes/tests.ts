@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import crypto from 'crypto'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../db'
 import { sendError, sendSuccess } from '../utils/errors'
@@ -228,6 +229,30 @@ export async function testRoutes(server: FastifyInstance) {
     await prisma.test.delete({ where: { id } })
     logAudit({ tenantId: request.user.tenantId, userId: request.user.sub, action: 'TEST_DELETED', entityType: 'test', entityId: id, metadata: { title: test.title } })
     return sendSuccess(reply, { message: 'Test deleted' })
+  })
+
+  // POST /api/tests/:id/practice — enable practice mode, generate token
+  server.post('/:id/practice', { preHandler: canEdit }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const test = await prisma.test.findFirst({ where: { id, tenantId: request.user.tenantId } })
+    if (!test) return sendError(reply, 404, 'Test not found')
+
+    const practiceToken = test.practiceToken ?? crypto.randomUUID().replace(/-/g, '')
+    const updated = await prisma.test.update({
+      where: { id },
+      data: { practiceEnabled: true, practiceToken },
+    })
+    return sendSuccess(reply, { practiceToken: updated.practiceToken })
+  })
+
+  // DELETE /api/tests/:id/practice — disable practice mode
+  server.delete('/:id/practice', { preHandler: canEdit }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const test = await prisma.test.findFirst({ where: { id, tenantId: request.user.tenantId } })
+    if (!test) return sendError(reply, 404, 'Test not found')
+
+    await prisma.test.update({ where: { id }, data: { practiceEnabled: false, practiceToken: null } })
+    return sendSuccess(reply, { message: 'Practice mode disabled' })
   })
 
   // ── Sections ──────────────────────────────────────────────────────────────

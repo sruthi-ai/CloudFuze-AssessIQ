@@ -16,6 +16,7 @@ export async function resultRoutes(server: FastifyInstance) {
 
     const where: Record<string, unknown> = {
       test: { tenantId: request.user.tenantId },
+      isPractice: false,
     }
     if (query.testId) where.testId = query.testId
     if (query.status) where.status = query.status

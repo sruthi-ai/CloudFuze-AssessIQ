@@ -1,12 +1,13 @@
 import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
-import { CheckCircle, Brain } from 'lucide-react'
+import { CheckCircle, Brain, FlaskConical } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 
 export function SubmittedPage() {
   const location = useLocation()
   const result = location.state?.result
+  const isPractice: boolean = location.state?.isPractice ?? false
 
   // Prevent back-navigation to the test
   useEffect(() => {
@@ -24,17 +25,32 @@ export function SubmittedPage() {
           <span className="font-semibold text-gray-700">NeutaraAssessments</span>
         </div>
 
+        {isPractice && (
+          <div className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-indigo-50 border border-indigo-200 text-sm text-indigo-700">
+            <FlaskConical className="h-4 w-4" />
+            Practice session — results are not saved or shared
+          </div>
+        )}
+
         <Card>
           <CardContent className="py-12 space-y-4">
             <div className="flex justify-center">
-              <div className="h-16 w-16 rounded-full bg-green-100 flex items-center justify-center">
-                <CheckCircle className="h-9 w-9 text-green-600" />
+              <div className={`h-16 w-16 rounded-full flex items-center justify-center ${isPractice ? 'bg-indigo-100' : 'bg-green-100'}`}>
+                <CheckCircle className={`h-9 w-9 ${isPractice ? 'text-indigo-600' : 'text-green-600'}`} />
               </div>
             </div>
-            <h1 className="text-2xl font-bold text-gray-900">Assessment submitted!</h1>
-            <p className="text-muted-foreground">
-              Your responses have been recorded. The recruiter will review your submission and be in touch.
-            </p>
+            <h1 className="text-2xl font-bold text-gray-900">
+              {isPractice ? 'Practice complete!' : 'Assessment submitted!'}
+            </h1>
+            {isPractice ? (
+              <p className="text-muted-foreground">
+                Great job finishing the practice run. Use this to get familiar with the format before your real attempt.
+              </p>
+            ) : (
+              <p className="text-muted-foreground">
+                Your responses have been recorded. The recruiter will review your submission and be in touch.
+              </p>
+            )}
 
             {result?.score && (
               <div className="pt-4 border-t space-y-3">
@@ -51,7 +67,7 @@ export function SubmittedPage() {
               </div>
             )}
 
-            {!result?.score && (
+            {!result?.score && !isPractice && (
               <p className="text-sm text-muted-foreground pt-2">
                 Results will be shared by the recruiter once reviewed.
               </p>

@@ -27,6 +27,7 @@ import { AuditLogPage } from '@/pages/admin/AuditLogPage'
 
 // Candidate pages
 import { InviteLandingPage } from '@/pages/candidate/InviteLandingPage'
+import { DemoLandingPage } from '@/pages/candidate/DemoLandingPage'
 import { TestPage } from '@/pages/candidate/TestPage'
 import { SubmittedPage } from '@/pages/candidate/SubmittedPage'
 
@@ -64,6 +65,9 @@ export default function App() {
           <Route path="monitor" element={<LiveMonitorPage />} />
           <Route path="audit" element={<AuditLogPage />} />
         </Route>
+
+        {/* Practice / demo mode — public */}
+        <Route path="/demo/:practiceToken" element={<DemoLandingPage />} />
 
         {/* Candidate-facing — public */}
         <Route path="/take/:token" element={<InviteLandingPage />} />

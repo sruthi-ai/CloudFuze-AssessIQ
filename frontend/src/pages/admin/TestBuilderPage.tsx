@@ -8,7 +8,7 @@ import {
   ArrowLeft, Plus, Trash2, Settings, BookOpen,
   GripVertical, Loader2, Save, Eye, Pencil, X, Check,
   Users, BarChart2, Copy, RefreshCw, XCircle, Send,
-  TrendingUp, CheckCircle, Clock, RotateCcw, Calendar,
+  TrendingUp, CheckCircle, Clock, RotateCcw, Calendar, FlaskConical, Link2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -415,6 +415,107 @@ function TimeLimitEditor({ sectionId, testId, initialTimeLimit }: {
         : <span className="opacity-60">· set time limit</span>
       }
     </button>
+  )
+}
+
+// ─── Practice Mode Card ────────────────────────────────────────────────────────
+
+const FRONTEND_URL = window.location.origin
+
+function PracticeModeCard({ testId, practiceEnabled, practiceToken }: {
+  testId: string
+  practiceEnabled: boolean
+  practiceToken: string | null
+}) {
+  const qc = useQueryClient()
+  const [token, setToken] = useState<string | null>(practiceToken)
+  const [enabled, setEnabled] = useState(practiceEnabled)
+
+  const enableMutation = useMutation({
+    mutationFn: () => api.post(`/tests/${testId}/practice`),
+    onSuccess: res => {
+      const t = res.data.data.practiceToken
+      setToken(t)
+      setEnabled(true)
+      qc.invalidateQueries({ queryKey: ['test', testId] })
+      toast({ title: 'Practice mode enabled' })
+    },
+    onError: err => toast({ title: 'Error', description: getErrorMessage(err), variant: 'destructive' }),
+  })
+
+  const disableMutation = useMutation({
+    mutationFn: () => api.delete(`/tests/${testId}/practice`),
+    onSuccess: () => {
+      setToken(null)
+      setEnabled(false)
+      qc.invalidateQueries({ queryKey: ['test', testId] })
+      toast({ title: 'Practice mode disabled' })
+    },
+    onError: err => toast({ title: 'Error', description: getErrorMessage(err), variant: 'destructive' }),
+  })
+
+  const practiceUrl = token ? `${FRONTEND_URL}/demo/${token}` : null
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <FlaskConical className="h-4 w-4" />
+          Practice Mode
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Generate a shareable practice link. Candidates can try the test without it counting as a real attempt — results are not recorded in analytics.
+        </p>
+
+        {!enabled ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => enableMutation.mutate()}
+            disabled={enableMutation.isPending}
+          >
+            {enableMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <FlaskConical className="h-4 w-4 mr-2" />}
+            Enable Practice Mode
+          </Button>
+        ) : (
+          <div className="space-y-3">
+            {practiceUrl && (
+              <div className="flex items-center gap-2">
+                <code className="flex-1 text-xs bg-gray-50 border rounded px-2 py-1.5 truncate">{practiceUrl}</code>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    navigator.clipboard.writeText(practiceUrl)
+                    toast({ title: 'Practice link copied!' })
+                  }}
+                >
+                  <Copy className="h-3.5 w-3.5 mr-1.5" />
+                  Copy
+                </Button>
+                <a href={practiceUrl} target="_blank" rel="noreferrer">
+                  <Button size="sm" variant="outline">
+                    <Link2 className="h-3.5 w-3.5" />
+                  </Button>
+                </a>
+              </div>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:text-destructive"
+              onClick={() => disableMutation.mutate()}
+              disabled={disableMutation.isPending}
+            >
+              {disableMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : null}
+              Disable Practice Mode
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 
@@ -1355,6 +1456,14 @@ export function TestBuilderPage() {
               )}
             </CardContent>
           </Card>
+
+          {testId && (
+            <PracticeModeCard
+              testId={testId}
+              practiceEnabled={testData?.practiceEnabled ?? false}
+              practiceToken={(testData as any)?.practiceToken ?? null}
+            />
+          )}
 
           <Card>
             <CardHeader>

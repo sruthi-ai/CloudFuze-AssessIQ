@@ -23,19 +23,21 @@ async function timeoutExpiredSessions() {
       status: 'IN_PROGRESS',
       timeoutAt: { lt: now },
     },
-    select: { id: true },
+    select: { id: true, invitationId: true },
   })
 
   if (expired.length === 0) return
   console.log(`[sessionTimeout] timing out ${expired.length} expired session(s)`)
 
-  for (const { id } of expired) {
+  for (const { id, invitationId } of expired) {
     try {
       await prisma.session.update({
         where: { id },
         data: { status: 'TIMED_OUT', submittedAt: now },
       })
-      // Score whatever answers exist — same flow as a manual submit
+      if (invitationId) {
+        await prisma.invitation.update({ where: { id: invitationId }, data: { status: 'COMPLETED' } })
+      }
       await scoreSession(id)
       console.log(`[sessionTimeout] timed out session ${id}`)
     } catch (err) {

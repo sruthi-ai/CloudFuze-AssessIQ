@@ -153,7 +153,7 @@ export async function sendInvitationEmail(params: {
     return
   }
 
-  console.log(`[EMAIL] No provider configured — would send invite to ${params.to}: ${url}`)
+  throw new Error('No email provider configured — set RESEND_API_KEY or configure SMTP/Azure in Settings')
 }
 
 export async function sendPasswordResetEmail(params: {
@@ -190,7 +190,7 @@ export async function sendPasswordResetEmail(params: {
     const resend = new Resend(s.resendApiKey)
     await resend.emails.send({ from: s.smtpFrom || FROM_EMAIL, to: params.to, subject, html }); return
   }
-  console.log(`[EMAIL] No provider — password reset for ${params.to}: ${url}`)
+  throw new Error('No email provider configured — set RESEND_API_KEY or configure SMTP/Azure in Settings')
 }
 
 export async function sendSubmissionNotification(params: {
@@ -234,7 +234,8 @@ export async function sendSubmissionNotification(params: {
     const resend = new Resend(s.resendApiKey)
     await resend.emails.send({ from: s.smtpFrom || FROM_EMAIL, to: params.to, subject, html }); return
   }
-  console.log(`[EMAIL] No provider — submission notify for ${params.to}`)
+  // Submission notification is best-effort — log and continue if no provider
+  console.warn(`[EMAIL] No provider configured — skipping submission notification to ${params.to}`)
 }
 
 export { sendViaGraph }

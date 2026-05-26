@@ -137,6 +137,9 @@ export async function sessionRoutes(server: FastifyInstance) {
     if (existing && existing.status === 'SUBMITTED') {
       return sendError(reply, 409, 'Assessment already submitted')
     }
+    if (existing && existing.status === 'TIMED_OUT') {
+      return sendError(reply, 409, 'Your session timed out — the assessment has been auto-submitted')
+    }
 
     const timeoutAt = new Date(Date.now() + invitation.test.duration * 60 * 1000)
 

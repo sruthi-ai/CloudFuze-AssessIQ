@@ -33,7 +33,7 @@ export function CandidatesPage() {
 
   const { data: candidatesData, isLoading } = useQuery({
     queryKey: ['candidates', search, page],
-    queryFn: () => api.get(`/candidates?search=${encodeURIComponent(search)}&limit=${PAGE_SIZE}&offset=${(page - 1) * PAGE_SIZE}`).then(r => r.data.data),
+    queryFn: () => api.get(`/candidates?search=${encodeURIComponent(search)}&limit=${PAGE_SIZE}&page=${page}`).then(r => r.data.data),
   })
 
   const { data: testsData } = useQuery({
@@ -76,7 +76,12 @@ export function CandidatesPage() {
       const summary = res.data.data.summary
       const sent = summary.filter((s: any) => s.status === 'invited').length
       const skipped = summary.filter((s: any) => s.status === 'skipped').length
-      toast({ title: `${sent} invitation${sent !== 1 ? 's' : ''} sent${skipped > 0 ? `, ${skipped} skipped (already invited)` : ''}` })
+      const errors = summary.filter((s: any) => s.status === 'error')
+      const errorMsg = errors.length > 0 ? ` — ${errors.length} failed to send email` : ''
+      toast({
+        title: `${sent} invitation${sent !== 1 ? 's' : ''} sent${skipped > 0 ? `, ${skipped} skipped (already invited)` : ''}${errorMsg}`,
+        ...(errors.length > 0 ? { description: errors[0].reason, variant: 'destructive' as const } : {}),
+      })
       qc.invalidateQueries({ queryKey: ['candidates'] })
       setShowInvite(false)
       setInviteForm({ testId: '', candidateLines: '', expiresInDays: 7, message: '' })

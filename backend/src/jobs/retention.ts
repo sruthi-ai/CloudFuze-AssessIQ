@@ -6,6 +6,7 @@ import { UPLOADS_DIR } from '../uploads'
 
 const PROCTORING_RETENTION_DAYS = parseInt(process.env.PROCTORING_RETENTION_DAYS || '90')
 const ROOM_SCAN_RETENTION_DAYS = parseInt(process.env.ROOM_SCAN_RETENTION_DAYS || '90')
+const SNAPSHOT_RETENTION_DAYS = parseInt(process.env.SNAPSHOT_RETENTION_DAYS || '90')
 
 // Runs daily at 02:00. Deletes old proctoring events and room scan files.
 export function startRetentionJob() {
@@ -16,7 +17,7 @@ export function startRetentionJob() {
       console.error('[retention] job error:', err)
     }
   })
-  console.log(`[retention] daily cleanup job started (proctoring=${PROCTORING_RETENTION_DAYS}d, room-scans=${ROOM_SCAN_RETENTION_DAYS}d)`)
+  console.log(`[retention] daily cleanup job started (proctoring=${PROCTORING_RETENTION_DAYS}d, snapshots=${SNAPSHOT_RETENTION_DAYS}d, room-scans=${ROOM_SCAN_RETENTION_DAYS}d)`)
 }
 
 async function runRetention() {
@@ -29,6 +30,27 @@ async function runRetention() {
   })
   if (deletedEvents > 0) {
     console.log(`[retention] deleted ${deletedEvents} proctoring event(s) older than ${PROCTORING_RETENTION_DAYS} days`)
+  }
+
+  // ── Webcam snapshots ──────────────────────────────────────────────────────
+  const snapshotCutoff = new Date(now - SNAPSHOT_RETENTION_DAYS * 86_400_000)
+  const oldSnapshots = await prisma.webcamSnapshot.findMany({
+    where: { occurredAt: { lt: snapshotCutoff } },
+    select: { id: true, url: true },
+  })
+
+  let deletedSnapshotFiles = 0
+  for (const snap of oldSnapshots) {
+    const relativePath = snap.url.replace(/^\/uploads\//, '')
+    const filePath = join(UPLOADS_DIR, relativePath)
+    if (existsSync(filePath)) {
+      try { unlinkSync(filePath); deletedSnapshotFiles++ } catch { /* already gone */ }
+    }
+  }
+
+  if (oldSnapshots.length > 0) {
+    await prisma.webcamSnapshot.deleteMany({ where: { occurredAt: { lt: snapshotCutoff } } })
+    console.log(`[retention] deleted ${oldSnapshots.length} snapshot record(s), ${deletedSnapshotFiles} file(s) older than ${SNAPSHOT_RETENTION_DAYS} days`)
   }
 
   // ── Room scan files + DB records ───────────────────────────────────────────

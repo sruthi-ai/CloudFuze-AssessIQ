@@ -191,8 +191,38 @@ export function InviteLandingPage() {
             <span className="font-semibold text-gray-700">{test.tenant.name}</span>
           </div>
           <h1 className="text-2xl font-bold text-gray-900">{test.title}</h1>
-          <p className="text-muted-foreground mt-1">Hello, {candidate.firstName}! You've been invited to take this assessment.</p>
+          <p className="text-muted-foreground mt-1">
+            Hello, {candidate.firstName}!{' '}
+            {invitation.attemptNumber > 1
+              ? `This is your attempt #${invitation.attemptNumber}.`
+              : "You've been invited to take this assessment."}
+          </p>
         </div>
+
+        {/* Previous attempts */}
+        {Array.isArray(invitation.previousAttempts) && invitation.previousAttempts.length > 0 && (
+          <Card className="border-gray-200">
+            <CardContent className="p-4">
+              <h3 className="font-semibold mb-3 text-sm">Previous Attempts</h3>
+              <div className="space-y-2">
+                {(invitation.previousAttempts as any[]).map((a: any) => (
+                  <div key={a.attemptNumber} className="flex items-center gap-3 text-sm">
+                    <span className="text-muted-foreground w-20 shrink-0">Attempt {a.attemptNumber}</span>
+                    <span className="font-semibold">{Math.round(a.percentage)}%</span>
+                    {a.passed !== null && (
+                      <Badge variant={a.passed ? 'success' : 'destructive'} className="text-xs">{a.passed ? 'Pass' : 'Fail'}</Badge>
+                    )}
+                    {a.submittedAt && (
+                      <span className="text-xs text-muted-foreground ml-auto">
+                        {new Date(a.submittedAt).toLocaleDateString()}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Test info */}
         <div className="grid grid-cols-3 gap-4">

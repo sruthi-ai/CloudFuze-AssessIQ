@@ -93,6 +93,8 @@ export async function sessionRoutes(server: FastifyInstance) {
         token: invitation.token,
         expiresAt: invitation.expiresAt,
         status: invitation.status,
+        attemptNumber: invitation.attemptNumber,
+        previousAttempts: invitation.previousAttempts ?? [],
       },
       test: {
         id: invitation.test.id,

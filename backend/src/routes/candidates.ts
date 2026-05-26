@@ -75,7 +75,10 @@ export async function candidateRoutes(server: FastifyInstance) {
       where: { id, tenantId: request.user.tenantId },
       include: {
         invitations: {
-          include: { test: { select: { id: true, title: true } } },
+          include: {
+            test: { select: { id: true, title: true, allowedAttempts: true } },
+            session: { include: { score: true, _count: { select: { proctoringEvents: true } } } },
+          },
           orderBy: { createdAt: 'desc' },
         },
         sessions: {

@@ -8,6 +8,7 @@ import multipart from '@fastify/multipart'
 import { createReadStream, existsSync } from 'fs'
 import { extname, join, resolve, sep } from 'path'
 import { UPLOADS_DIR, initUploads } from './uploads'
+import { prisma } from './db'
 
 import { authRoutes } from './routes/auth'
 import { userRoutes } from './routes/users'
@@ -21,6 +22,7 @@ import { proctoringRoutes } from './routes/proctoring'
 import { codeRoutes } from './routes/code'
 import { analyticsRoutes } from './routes/analytics'
 import { startReminderJob } from './jobs/reminders'
+import { startSessionTimeoutJob } from './jobs/sessionTimeout'
 
 // ── Startup security validation ───────────────────────────────────────────────
 const JWT_SECRET = process.env.JWT_SECRET
@@ -94,16 +96,37 @@ async function bootstrap() {
   // Health check
   server.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }))
 
-  // Static file serving for uploads — safe path resolution prevents traversal
+  // Static file serving for uploads — auth + tenant isolation + path traversal guard
   server.get('/uploads/*', async (request, reply) => {
+    // Require a valid JWT
+    try { await request.jwtVerify() } catch {
+      return reply.status(401).send({ error: 'Unauthorized' })
+    }
+
     const wildcard = (request.params as { '*': string })['*']
     const safePath = wildcard.replace(/\.\./g, '').replace(/^\/+/, '')
     const resolvedUploads = resolve(UPLOADS_DIR)
     const fullPath = resolve(resolvedUploads, safePath)
+
     // Ensure resolved path is within UPLOADS_DIR
     if (!fullPath.startsWith(resolvedUploads + sep)) {
       return reply.status(403).send({ error: 'Forbidden' })
     }
+
+    // Tenant isolation: filename format is {sessionId}_{timestamp}.{ext}
+    // Verify the session belongs to the requesting user's tenant
+    const filename = fullPath.split(sep).pop() ?? ''
+    const sessionId = filename.split('_')[0]
+    if (sessionId) {
+      const session = await prisma.session.findFirst({
+        where: { id: sessionId },
+        select: { test: { select: { tenantId: true } } },
+      })
+      if (!session || session.test.tenantId !== (request.user as any).tenantId) {
+        return reply.status(403).send({ error: 'Forbidden' })
+      }
+    }
+
     if (!existsSync(fullPath)) return reply.status(404).send({ error: 'File not found' })
     const ext = extname(fullPath).toLowerCase()
     const mime =
@@ -135,6 +158,7 @@ async function bootstrap() {
   await server.listen({ port, host })
   console.log(`AssessIQ backend running at http://${host}:${port}`)
   startReminderJob()
+  startSessionTimeoutJob()
 }
 
 bootstrap().catch(err => {

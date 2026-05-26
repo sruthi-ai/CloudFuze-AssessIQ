@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams, Link } from 'react-router-dom'
 import {
   Users, Send, Search, Loader2, Copy, Check, Trash2, Ban, UserCheck,
-  ChevronDown, ChevronRight, RefreshCw, XCircle,
+  ChevronDown, ChevronRight, RefreshCw, XCircle, ChevronLeft,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -18,10 +18,13 @@ const STATUS_VARIANT: Record<string, any> = {
   STARTED: 'warning', COMPLETED: 'success', EXPIRED: 'destructive', CANCELLED: 'outline',
 }
 
+const PAGE_SIZE = 50
+
 export function CandidatesPage() {
   const [searchParams] = useSearchParams()
   const prefillTestId = searchParams.get('testId') ?? ''
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
   const [showInvite, setShowInvite] = useState(!!prefillTestId)
   const [copiedToken, setCopiedToken] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -29,8 +32,8 @@ export function CandidatesPage() {
   const qc = useQueryClient()
 
   const { data: candidatesData, isLoading } = useQuery({
-    queryKey: ['candidates', search],
-    queryFn: () => api.get(`/candidates?search=${search}&limit=100`).then(r => r.data.data),
+    queryKey: ['candidates', search, page],
+    queryFn: () => api.get(`/candidates?search=${encodeURIComponent(search)}&limit=${PAGE_SIZE}&offset=${(page - 1) * PAGE_SIZE}`).then(r => r.data.data),
   })
 
   const { data: testsData } = useQuery({
@@ -129,6 +132,8 @@ export function CandidatesPage() {
   }
 
   const candidates = candidatesData?.candidates ?? []
+  const total: number = candidatesData?.total ?? 0
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return (
     <div className="space-y-6">
@@ -239,7 +244,7 @@ export function CandidatesPage() {
 
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input className="pl-9" placeholder="Search candidates..." value={search} onChange={e => setSearch(e.target.value)} />
+        <Input className="pl-9" placeholder="Search candidates..." value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} />
       </div>
 
       {isLoading ? (
@@ -372,6 +377,32 @@ export function CandidatesPage() {
               </Card>
             )
           })}
+        </div>
+      )}
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between pt-2">
+          <p className="text-sm text-muted-foreground">
+            Page {page} of {totalPages} &middot; {total} candidates
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline" size="sm"
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+            >
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              Previous
+            </Button>
+            <Button
+              variant="outline" size="sm"
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+            >
+              Next
+              <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+          </div>
         </div>
       )}
     </div>

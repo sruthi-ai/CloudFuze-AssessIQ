@@ -22,6 +22,7 @@ import { ResultsPage } from '@/pages/admin/ResultsPage'
 import { ResultDetailPage } from '@/pages/admin/ResultDetailPage'
 import { SettingsPage } from '@/pages/admin/SettingsPage'
 import { AnalyticsPage } from '@/pages/admin/AnalyticsPage'
+import { AuditLogPage } from '@/pages/admin/AuditLogPage'
 
 // Candidate pages
 import { InviteLandingPage } from '@/pages/candidate/InviteLandingPage'
@@ -59,6 +60,7 @@ export default function App() {
           <Route path="analytics" element={<AnalyticsPage />} />
           <Route path="team" element={<TeamPage />} />
           <Route path="monitor" element={<LiveMonitorPage />} />
+          <Route path="audit" element={<AuditLogPage />} />
         </Route>
 
         {/* Candidate-facing — public */}

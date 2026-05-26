@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../db'
 import { sendError, sendSuccess } from '../utils/errors'
 import { authenticate, requireRole } from '../middleware/authenticate'
+import { logAudit } from '../utils/audit'
 
 const createTestSchema = z.object({
   title: z.string().min(1),
@@ -136,6 +137,7 @@ export async function testRoutes(server: FastifyInstance) {
     if (!test) return sendError(reply, 404, 'Test not found')
 
     const updated = await prisma.test.update({ where: { id }, data: { status: status as any } })
+    logAudit({ tenantId: request.user.tenantId, userId: request.user.sub, action: `TEST_${status}`, entityType: 'test', entityId: id, metadata: { title: test.title } })
     return sendSuccess(reply, updated)
   })
 
@@ -210,6 +212,7 @@ export async function testRoutes(server: FastifyInstance) {
     if (!test) return sendError(reply, 404, 'Test not found')
 
     await prisma.test.delete({ where: { id } })
+    logAudit({ tenantId: request.user.tenantId, userId: request.user.sub, action: 'TEST_DELETED', entityType: 'test', entityId: id, metadata: { title: test.title } })
     return sendSuccess(reply, { message: 'Test deleted' })
   })
 

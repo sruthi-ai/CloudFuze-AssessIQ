@@ -4,6 +4,7 @@ import { prisma } from '../db'
 import { sendError, sendSuccess } from '../utils/errors'
 import { requireRole } from '../middleware/authenticate'
 import { sendInvitationEmail } from '../utils/email'
+import { logAudit } from '../utils/audit'
 
 const createCandidateSchema = z.object({
   email: z.string().email().transform(v => v.toLowerCase()),
@@ -119,6 +120,7 @@ export async function candidateRoutes(server: FastifyInstance) {
     })
     if (!candidate) return sendError(reply, 404, 'Candidate not found')
     await prisma.candidate.delete({ where: { id } })
+    logAudit({ tenantId: request.user.tenantId, userId: request.user.sub, action: 'CANDIDATE_DELETED', entityType: 'candidate', entityId: id, metadata: { email: candidate.email, name: `${candidate.firstName} ${candidate.lastName}` } })
     return sendSuccess(reply, { deleted: true })
   })
 
@@ -134,6 +136,7 @@ export async function candidateRoutes(server: FastifyInstance) {
       where: { id },
       data: { isActive: body.isActive ?? !candidate.isActive },
     })
+    logAudit({ tenantId: request.user.tenantId, userId: request.user.sub, action: updated.isActive ? 'CANDIDATE_ACTIVATED' : 'CANDIDATE_SUSPENDED', entityType: 'candidate', entityId: id, metadata: { email: candidate.email } })
     return sendSuccess(reply, updated)
   })
 
@@ -189,6 +192,7 @@ export async function candidateRoutes(server: FastifyInstance) {
           tenantSettings: (test.tenant.settings ?? undefined) as any,
         })
 
+        logAudit({ tenantId: request.user.tenantId, userId: request.user.sub, action: 'INVITATION_SENT', entityType: 'invitation', entityId: invitation.id, metadata: { candidateEmail: c.email, testTitle: test.title, testId } })
         return { email: c.email, status: 'invited', invitationId: invitation.id, token: invitation.token }
       })
     )
@@ -226,6 +230,7 @@ export async function candidateRoutes(server: FastifyInstance) {
       tenantSettings: (invitation.test.tenant.settings ?? undefined) as any,
     })
 
+    logAudit({ tenantId: request.user.tenantId, userId: request.user.sub, action: 'INVITATION_RESENT', entityType: 'invitation', entityId: invitationId, metadata: { candidateEmail: invitation.candidate.email, testTitle: invitation.test.title } })
     return sendSuccess(reply, { resent: true })
   })
 
@@ -300,6 +305,7 @@ export async function candidateRoutes(server: FastifyInstance) {
       tenantSettings: (invitation.test.tenant.settings ?? undefined) as any,
     })
 
+    logAudit({ tenantId: request.user.tenantId, userId: request.user.sub, action: 'RETAKE_GRANTED', entityType: 'invitation', entityId: invitationId, metadata: { candidateEmail: invitation.candidate.email, testTitle: invitation.test.title, attemptNumber: nextAttempt } })
     return sendSuccess(reply, { retakeScheduled: true, attemptNumber: nextAttempt, attemptsRemaining: MAX_ATTEMPTS - nextAttempt })
   })
 
@@ -317,7 +323,7 @@ export async function candidateRoutes(server: FastifyInstance) {
       where: { id: invitationId },
       data: { status: 'CANCELLED' },
     })
-
+    logAudit({ tenantId: request.user.tenantId, userId: request.user.sub, action: 'INVITATION_CANCELLED', entityType: 'invitation', entityId: invitationId, metadata: { testTitle: invitation.test.title } })
     return sendSuccess(reply, { cancelled: true })
   })
 

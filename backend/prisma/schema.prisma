@@ -120,6 +120,7 @@ model User {
   passwordResetTokens PasswordResetToken[]
   createdTests        Test[]         @relation("TestCreator")
   sentInvitations     Invitation[]   @relation("InvitationSender")
+  auditLogs           AuditLog[]
 
   @@unique([email, tenantId])
   @@map("users")
@@ -509,6 +510,25 @@ model RoomScan {
 
   @@index([sessionId])
   @@map("room_scans")
+}
+
+// ─── Audit Log ────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  action     String   // e.g. INVITATION_SENT, TEST_PUBLISHED, CANDIDATE_DELETED
+  entityType String   // test | candidate | invitation | session | question | settings
+  entityId   String?
+  metadata   Json?    // human-readable context: names, emails, titles
+  createdAt  DateTime @default(now())
+
+  tenantId   String
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, entityType])
+  @@map("audit_logs")
 }
 
 // ─── Screen Recordings ────────────────────────────────────────────────────────

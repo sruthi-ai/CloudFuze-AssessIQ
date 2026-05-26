@@ -5,7 +5,7 @@ import {
   ShieldAlert, ShieldCheck, AlertTriangle, Trophy,
   Camera, CameraOff, TabletSmartphone, Minimize2, Copy,
   MousePointer2, Code2, Users, UserX, Volume2, Smartphone,
-  Navigation, MonitorPlay, ZoomIn, Video,
+  Navigation, MonitorPlay, ZoomIn, Video, Printer,
 } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
@@ -251,6 +251,72 @@ export function ResultDetailPage() {
 
   const answerMap = new Map(session.answers.map((a: any) => [a.questionId, a]))
   const hasPendingAnswers = session.answers.some((a: any) => a.gradingStatus === 'PENDING')
+
+  const printReport = () => {
+    const score = session.score
+    const candidate = session.candidate
+    const byType = proctoringData?.summary?.byType ?? {}
+    const riskScore = proctoringData?.summary?.riskScore ?? 0
+    const proctoringParts: string[] = []
+    if (byType.TAB_SWITCH) proctoringParts.push(`${byType.TAB_SWITCH} tab switch${byType.TAB_SWITCH > 1 ? 'es' : ''}`)
+    if (byType.PHONE_DETECTED) proctoringParts.push(`${byType.PHONE_DETECTED} phone detection${byType.PHONE_DETECTED > 1 ? 's' : ''}`)
+    if (byType.MULTIPLE_FACES) proctoringParts.push(`${byType.MULTIPLE_FACES} multiple-face alert${byType.MULTIPLE_FACES > 1 ? 's' : ''}`)
+    if (byType.NO_FACE_DETECTED) proctoringParts.push(`${byType.NO_FACE_DETECTED} no-face period${byType.NO_FACE_DETECTED > 1 ? 's' : ''}`)
+    if (byType.HEAD_TURNED) proctoringParts.push(`${byType.HEAD_TURNED} head turn${byType.HEAD_TURNED > 1 ? 's' : ''}`)
+    if (byType.COPY_PASTE) proctoringParts.push(`${byType.COPY_PASTE} copy/paste attempt${byType.COPY_PASTE > 1 ? 's' : ''}`)
+    if (byType.NOISE_DETECTED) proctoringParts.push(`${byType.NOISE_DETECTED} noise event${byType.NOISE_DETECTED > 1 ? 's' : ''}`)
+
+    const answersHtml = session.test.sections.flatMap((sec: any) =>
+      sec.testQuestions.map((tq: any) => {
+        const ans = answerMap.get(tq.question.id) as any
+        const pts = ans?.pointsEarned ?? null
+        const max = tq.points ?? tq.question.points
+        const response = ans?.responseText ?? (ans?.selectedOptions?.length > 0 ? `Options: ${ans.selectedOptions.join(', ')}` : ans?.codeSubmission ? '[code submitted]' : '[no answer]')
+        return `<tr>
+          <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;max-width:300px">${tq.question.title}</td>
+          <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;color:#6b7280;max-width:200px;word-break:break-word">${response}</td>
+          <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;text-align:right;white-space:nowrap">${pts != null ? `${pts.toFixed(1)}/${max}` : `—/${max}`}</td>
+        </tr>`
+      })
+    ).join('')
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+      <title>Assessment Report — ${candidate.firstName} ${candidate.lastName}</title>
+      <style>
+        body{font-family:system-ui,sans-serif;color:#111827;margin:0;padding:32px;font-size:13px}
+        h1{font-size:20px;margin:0 0 4px}h2{font-size:14px;margin:16px 0 8px;color:#374151}
+        .meta{color:#6b7280;font-size:12px;margin-bottom:24px}
+        .scores{display:flex;gap:16px;margin-bottom:24px}
+        .score-box{border:1px solid #e5e7eb;border-radius:8px;padding:12px 20px;text-align:center;min-width:90px}
+        .score-box .val{font-size:24px;font-weight:700;color:#6366f1}
+        .score-box .lbl{font-size:11px;color:#6b7280;margin-top:2px}
+        table{width:100%;border-collapse:collapse;font-size:12px}
+        th{text-align:left;padding:6px 8px;background:#f9fafb;border-bottom:2px solid #e5e7eb;font-weight:600}
+        .risk{padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:16px;
+          background:${riskScore>=70?'#fef2f2':riskScore>=35?'#fffbeb':'#f0fdf4'};
+          color:${riskScore>=70?'#991b1b':riskScore>=35?'#92400e':'#166534'};
+          border:1px solid ${riskScore>=70?'#fecaca':riskScore>=35?'#fde68a':'#bbf7d0'}}
+        @media print{body{padding:16px}}
+      </style></head><body>
+      <h1>${candidate.firstName} ${candidate.lastName}</h1>
+      <div class="meta">${candidate.email}${candidate.organization ? ` · ${candidate.organization}` : ''} · ${session.test.title} · Submitted ${session.submittedAt ? new Date(session.submittedAt).toLocaleString() : '—'}</div>
+      <div class="scores">
+        <div class="score-box"><div class="val">${score ? `${Math.round(score.percentage)}%` : '—'}</div><div class="lbl">Score</div></div>
+        <div class="score-box"><div class="val">${score ? `${score.earnedPoints.toFixed(1)}/${score.totalPoints}` : '—'}</div><div class="lbl">Points</div></div>
+        <div class="score-box"><div class="val">${score?.passed === true ? '✓ Pass' : score?.passed === false ? '✗ Fail' : '—'}</div><div class="lbl">Result</div></div>
+        <div class="score-box"><div class="val">${score?.percentile != null ? `${score.percentile}th` : '—'}</div><div class="lbl">Percentile</div></div>
+      </div>
+      <h2>Answers</h2>
+      <table><thead><tr><th>Question</th><th>Response</th><th style="text-align:right">Points</th></tr></thead>
+      <tbody>${answersHtml}</tbody></table>
+      <h2>Proctoring</h2>
+      <div class="risk"><strong>Risk ${riskScore >= 70 ? 'HIGH' : riskScore >= 35 ? 'MEDIUM' : 'LOW'} (${riskScore}/100)</strong> — ${proctoringParts.length ? proctoringParts.join(', ') + '.' : 'No suspicious activity detected.'}</div>
+      <script>window.onload=()=>{window.print();setTimeout(()=>window.close(),500)}</script>
+    </body></html>`
+
+    const w = window.open('', '_blank', 'width=900,height=700')
+    if (w) { w.document.write(html); w.document.close() }
+  }
   const riskScore = proctoringData?.summary?.riskScore ?? 0
 
   const findNearestSnapshot = (isoTime: string) => {
@@ -303,6 +369,10 @@ export function ResultDetailPage() {
             AI Grade Pending
           </Button>
         )}
+        <Button variant="outline" size="sm" onClick={printReport}>
+          <Printer className="h-4 w-4 mr-2" />
+          Print Report
+        </Button>
       </div>
 
       {/* Summary cards */}

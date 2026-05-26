@@ -64,6 +64,7 @@ export async function questionRoutes(server: FastifyInstance) {
     if (query.difficulty) where.difficulty = query.difficulty
     if (query.domain) where.domain = query.domain
     if (query.search) where.title = { contains: query.search, mode: 'insensitive' }
+    if (query.tags) where.tags = { array_contains: query.tags.trim() }
 
     const [questions, total] = await Promise.all([
       prisma.question.findMany({

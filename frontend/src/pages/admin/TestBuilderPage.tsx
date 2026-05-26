@@ -673,6 +673,7 @@ export function TestBuilderPage() {
   // Picker filters
   const [pickerSearch, setPickerSearch] = useState('')
   const [pickerTypeFilter, setPickerTypeFilter] = useState<string>('ALL')
+  const [pickerTagFilter, setPickerTagFilter] = useState<string>('')
 
   // Preview modal
   const [previewQuestion, setPreviewQuestion] = useState<any | null>(null)
@@ -848,6 +849,10 @@ export function TestBuilderPage() {
     ) ?? []
   )
 
+  const allPickerTags = Array.from(new Set(
+    (questionsData?.questions ?? []).flatMap((q: any) => q.tags ?? [])
+  )).sort() as string[]
+
   const filteredPickerQuestions = (questionsData?.questions ?? []).filter((q: any) => {
     const matchesType = pickerTypeFilter === 'ALL' || q.type === pickerTypeFilter
     const searchLower = pickerSearch.toLowerCase()
@@ -855,7 +860,8 @@ export function TestBuilderPage() {
       !pickerSearch ||
       (q.title ?? '').toLowerCase().includes(searchLower) ||
       (q.body ?? '').toLowerCase().includes(searchLower)
-    return matchesType && matchesSearch
+    const matchesTag = !pickerTagFilter || (q.tags ?? []).includes(pickerTagFilter)
+    return matchesType && matchesSearch && matchesTag
   })
 
   // ── Drag-and-drop handlers ─────────────────────────────────────────────────
@@ -1336,6 +1342,16 @@ export function TestBuilderPage() {
                     <option key={t} value={t}>{QUESTION_TYPE_LABELS[t]}</option>
                   ))}
                 </select>
+                {allPickerTags.length > 0 && (
+                  <select
+                    value={pickerTagFilter}
+                    onChange={e => setPickerTagFilter(e.target.value)}
+                    className="h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  >
+                    <option value="">All tags</option>
+                    {allPickerTags.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                )}
               </div>
 
               {questionsData && (

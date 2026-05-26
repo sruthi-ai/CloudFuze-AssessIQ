@@ -153,11 +153,12 @@ export async function analyticsRoutes(server: FastifyInstance) {
       prisma.session.findMany({
         where: { testId, status: { in: ['SUBMITTED', 'TIMED_OUT'] } },
         include: { score: true },
+        take: 5000,
       }),
-      prisma.score.findMany({ where: { session: { testId } } }),
-      // All answers for this test with question info
+      prisma.score.findMany({ where: { session: { testId } }, take: 5000 }),
       prisma.answer.findMany({
         where: { session: { testId, status: { in: ['SUBMITTED', 'TIMED_OUT'] } } },
+        take: 50000,
         select: {
           questionId: true,
           gradingStatus: true,

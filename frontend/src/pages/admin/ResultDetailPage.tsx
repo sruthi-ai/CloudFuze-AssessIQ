@@ -407,6 +407,27 @@ export function ResultDetailPage() {
               <Card><CardContent className="py-8 text-center text-muted-foreground">No proctoring data available</CardContent></Card>
             ) : (
               <>
+                {/* Risk narrative */}
+                {(() => {
+                  const { byType = {}, riskScore: rs = 0 } = proctoringData.summary
+                  const parts: string[] = []
+                  if (byType.TAB_SWITCH) parts.push(`${byType.TAB_SWITCH} tab switch${byType.TAB_SWITCH > 1 ? 'es' : ''}`)
+                  if (byType.PHONE_DETECTED) parts.push(`${byType.PHONE_DETECTED} phone detection${byType.PHONE_DETECTED > 1 ? 's' : ''}`)
+                  if (byType.MULTIPLE_FACES) parts.push(`${byType.MULTIPLE_FACES} multiple-face alert${byType.MULTIPLE_FACES > 1 ? 's' : ''}`)
+                  if (byType.NO_FACE_DETECTED) parts.push(`${byType.NO_FACE_DETECTED} no-face period${byType.NO_FACE_DETECTED > 1 ? 's' : ''}`)
+                  if (byType.HEAD_TURNED) parts.push(`${byType.HEAD_TURNED} head turn${byType.HEAD_TURNED > 1 ? 's' : ''}`)
+                  if (byType.COPY_PASTE) parts.push(`${byType.COPY_PASTE} copy/paste attempt${byType.COPY_PASTE > 1 ? 's' : ''}`)
+                  if (byType.NOISE_DETECTED) parts.push(`${byType.NOISE_DETECTED} noise event${byType.NOISE_DETECTED > 1 ? 's' : ''}`)
+                  const level = rs >= 70 ? 'HIGH' : rs >= 35 ? 'MEDIUM' : 'LOW'
+                  const color = rs >= 70 ? 'bg-red-50 border-red-200 text-red-800' : rs >= 35 ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-green-50 border-green-200 text-green-800'
+                  const text = parts.length === 0 ? 'No suspicious activity detected.' : `Detected: ${parts.join(', ')}.`
+                  return (
+                    <div className={`rounded-md border px-4 py-3 text-sm ${color}`}>
+                      <span className="font-semibold">Risk {level} ({rs}/100) — </span>{text}
+                    </div>
+                  )
+                })()}
+
                 {/* Severity counts */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {[

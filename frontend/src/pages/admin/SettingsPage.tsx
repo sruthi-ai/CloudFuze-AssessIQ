@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import {
   Settings, Building2, Mail, Palette, Shield, Loader2,
-  Eye, EyeOff, CheckCircle2, AlertCircle, Send
+  Eye, EyeOff, CheckCircle2, AlertCircle, Send, Webhook
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,7 +12,7 @@ import { api, getErrorMessage } from '@/lib/api'
 import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 
-type Tab = 'company' | 'email' | 'appearance'
+type Tab = 'company' | 'email' | 'appearance' | 'integrations'
 
 interface TenantSettings {
   name: string
@@ -30,6 +30,7 @@ interface TenantSettings {
   smtpSecure: boolean
   smtpPassSet: boolean
   defaultExpiryDays: number
+  completionWebhookUrl: string | null
 }
 
 export function SettingsPage() {
@@ -122,10 +123,19 @@ export function SettingsPage() {
     saveMutation.mutate(payload)
   }
 
+  const [webhookUrl, setWebhookUrl] = useState(settings?.completionWebhookUrl ?? '')
+  const [webhookDirty, setWebhookDirty] = useState(false)
+
+  const saveWebhook = () => {
+    saveMutation.mutate({ completionWebhookUrl: webhookUrl.trim() || null })
+    setWebhookDirty(false)
+  }
+
   const tabs = [
     { id: 'company' as Tab, label: 'Company Profile', icon: Building2 },
     { id: 'email' as Tab, label: 'Email / SMTP', icon: Mail },
     { id: 'appearance' as Tab, label: 'Appearance', icon: Palette },
+    { id: 'integrations' as Tab, label: 'Integrations', icon: Webhook },
   ]
 
   if (isLoading) {
@@ -513,6 +523,45 @@ export function SettingsPage() {
             <Button onClick={saveCompany} disabled={saveMutation.isPending || !companyDirty}>
               {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               Save Appearance
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Integrations */}
+      {tab === 'integrations' && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Completion Webhook</CardTitle>
+            <CardDescription>
+              POST a JSON payload to this URL every time a candidate submits an assessment.
+              Use it to trigger ATS updates, Slack notifications, or Zapier workflows.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label>Webhook URL</Label>
+              <Input
+                value={webhookUrl}
+                onChange={e => { setWebhookUrl(e.target.value); setWebhookDirty(true) }}
+                placeholder="https://hooks.zapier.com/..."
+              />
+              <p className="text-xs text-muted-foreground">Leave blank to disable. Must be HTTPS.</p>
+            </div>
+            <div className="rounded-md bg-gray-50 border p-3 text-xs font-mono text-gray-600 space-y-1">
+              <p className="font-semibold text-gray-700 font-sans mb-2">Payload sent on each completion:</p>
+              <pre>{`{
+  "event": "assessment.completed",
+  "sessionId": "...",
+  "candidate": { "id", "firstName", "lastName", "email" },
+  "test": { "id", "title" },
+  "score": { "percentage", "passed" },
+  "submittedAt": "ISO 8601"
+}`}</pre>
+            </div>
+            <Button onClick={saveWebhook} disabled={saveMutation.isPending || !webhookDirty}>
+              {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Save Webhook
             </Button>
           </CardContent>
         </Card>

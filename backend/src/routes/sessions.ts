@@ -337,6 +337,7 @@ export async function sessionRoutes(server: FastifyInstance) {
 
     // Notify recruiters/admins asynchronously (fire-and-forget)
     notifyRecruitersOnSubmission(sessionId, score).catch(() => {})
+    fireCompletionWebhook(sessionId, score).catch(() => {})
 
     return sendSuccess(reply, {
       message: 'Assessment submitted successfully',
@@ -414,6 +415,36 @@ async function notifyRecruitersOnSubmission(
       })
     )
   )
+}
+
+async function fireCompletionWebhook(
+  sessionId: string,
+  score: { percentage: number; passed?: boolean | null } | null
+) {
+  const session = await prisma.session.findUnique({
+    where: { id: sessionId },
+    include: {
+      candidate: { select: { id: true, firstName: true, lastName: true, email: true } },
+      test: { select: { id: true, title: true, tenant: { select: { settings: true } } } },
+    },
+  })
+  if (!session) return
+  const webhookUrl = ((session.test.tenant.settings ?? {}) as Record<string, unknown>).completionWebhookUrl as string | undefined
+  if (!webhookUrl) return
+
+  await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      event: 'assessment.completed',
+      sessionId,
+      candidate: session.candidate,
+      test: { id: session.test.id, title: session.test.title },
+      score: score ? { percentage: score.percentage, passed: score.passed } : null,
+      submittedAt: new Date().toISOString(),
+    }),
+    signal: AbortSignal.timeout(10_000),
+  })
 }
 
 async function autoSubmit(sessionId: string) {

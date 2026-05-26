@@ -216,6 +216,7 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
 
           let consecutiveNoFace = 0
           let consecutiveHeadTurn = 0
+          let consecutiveMultiFace = 0
 
           const check = async () => {
             if (cancelled || !videoRef.current) return
@@ -226,6 +227,7 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
 
             if (count === 0) {
               consecutiveNoFace++
+              consecutiveMultiFace = 0
               if (consecutiveNoFace >= 2) {
                 captureViolationSnapshot()
                 pushImmediate('NO_FACE_DETECTED', 'No face visible in webcam for extended period')
@@ -234,7 +236,14 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
             } else {
               consecutiveNoFace = 0
               if (count > 1) {
-                pushImmediate('MULTIPLE_FACES', `${count} faces detected in webcam`)
+                consecutiveMultiFace++
+                if (consecutiveMultiFace >= 2) {
+                  captureViolationSnapshot()
+                  pushImmediate('MULTIPLE_FACES', `${count} faces detected in webcam`, { faceCount: count })
+                  consecutiveMultiFace = 0
+                }
+              } else {
+                consecutiveMultiFace = 0
               }
             }
 

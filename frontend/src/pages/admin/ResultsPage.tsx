@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { BarChart3, Search, Loader2, ChevronRight, Trash2, Download, ArrowUpDown } from 'lucide-react'
+import { toast } from '@/hooks/use-toast'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -51,6 +52,7 @@ export function ResultsPage() {
   const [sortKey, setSortKey] = useState<SortKey>('submittedAt')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [exporting, setExporting] = useState(false)
   const queryClient = useQueryClient()
 
   const { data, isLoading } = useQuery({
@@ -113,8 +115,18 @@ export function ResultsPage() {
           <p className="text-muted-foreground">All candidate assessment sessions</p>
         </div>
         {sessions.length > 0 && (
-          <Button variant="outline" size="sm" onClick={() => exportCSV(sessions)}>
-            <Download className="h-4 w-4 mr-2" />
+          <Button variant="outline" size="sm" disabled={exporting} onClick={async () => {
+            setExporting(true)
+            try {
+              const res = await api.get('/results?limit=5000')
+              exportCSV(res.data.data.sessions)
+            } catch {
+              toast({ title: 'Export failed', variant: 'destructive' })
+            } finally {
+              setExporting(false)
+            }
+          }}>
+            {exporting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Download className="h-4 w-4 mr-2" />}
             Export CSV
           </Button>
         )}

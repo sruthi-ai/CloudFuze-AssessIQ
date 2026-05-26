@@ -23,6 +23,9 @@ const settingsSchema = z.object({
 
   // Invite defaults
   defaultExpiryDays: z.number().int().min(1).max(90).optional(),
+
+  // Integrations
+  completionWebhookUrl: z.string().url().optional().nullable(),
 })
 
 export async function settingsRoutes(server: FastifyInstance) {
@@ -56,6 +59,7 @@ export async function settingsRoutes(server: FastifyInstance) {
       // Never send sensitive keys back — just indicate if set
       resendApiKeySet: !!(settings.resendApiKey),
       smtpPassSet: !!(settings.smtpPass),
+      completionWebhookUrl: (settings.completionWebhookUrl as string) ?? null,
     })
   })
 
@@ -109,6 +113,7 @@ export async function settingsRoutes(server: FastifyInstance) {
       defaultExpiryDays: (settings.defaultExpiryDays as number) ?? 7,
       resendApiKeySet: !!(settings.resendApiKey),
       smtpPassSet: !!(settings.smtpPass),
+      completionWebhookUrl: (settings.completionWebhookUrl as string) ?? null,
     })
   })
 

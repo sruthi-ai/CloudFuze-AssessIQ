@@ -247,14 +247,15 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
               }
             }
 
-            // Head pose: yaw > 0.45 = looking significantly left/right
-            if (headPose && (Math.abs(headPose.yaw) > 0.45 || headPose.pitch < -0.5)) {
+            // Head pose: yaw > 0.35 (~20°) or pitch out of range = gaze deviation
+            if (headPose && (Math.abs(headPose.yaw) > 0.35 || headPose.pitch < -0.4 || headPose.pitch > 0.4)) {
               consecutiveHeadTurn++
               if (consecutiveHeadTurn >= 2) {
-                const dir = Math.abs(headPose.yaw) > 0.45
+                const dir = Math.abs(headPose.yaw) > 0.35
                   ? (headPose.yaw > 0 ? 'right' : 'left')
-                  : 'up'
-                pushImmediate('HEAD_TURNED', `Candidate looking ${dir} (yaw=${headPose.yaw.toFixed(2)})`, {
+                  : headPose.pitch > 0.4 ? 'down' : 'up'
+                captureViolationSnapshot()
+                pushImmediate('HEAD_TURNED', `Candidate looking ${dir} (yaw=${headPose.yaw.toFixed(2)}, pitch=${headPose.pitch.toFixed(2)})`, {
                   yaw: headPose.yaw,
                   pitch: headPose.pitch,
                   direction: dir,
@@ -268,7 +269,7 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
 
           await check()
           if (!cancelled) {
-            faceCheckRef.current = window.setInterval(check, 10_000)
+            faceCheckRef.current = window.setInterval(check, 3_000)
           }
         } catch {}
       }, 2500)

@@ -361,6 +361,62 @@ function PickCountEditor({ sectionId, testId, totalQuestions, initialPickCount }
   )
 }
 
+// ─── Section Time Limit Editor ────────────────────────────────────────────────
+
+function TimeLimitEditor({ sectionId, testId, initialTimeLimit }: {
+  sectionId: string; testId: string; initialTimeLimit: number | null
+}) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState(initialTimeLimit ? String(Math.round(initialTimeLimit / 60)) : '')
+  const qc = useQueryClient()
+
+  const mutation = useMutation({
+    mutationFn: (timeLimit: number | null) =>
+      api.patch(`/tests/${testId}/sections/${sectionId}`, { timeLimit }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['test', testId] }); setEditing(false) },
+    onError: err => { toast({ title: 'Error', description: getErrorMessage(err), variant: 'destructive' }); setEditing(false) },
+  })
+
+  const save = () => {
+    const trimmed = value.trim()
+    if (trimmed === '') { mutation.mutate(null); return }
+    const mins = parseInt(trimmed)
+    if (!Number.isFinite(mins) || mins < 1 || mins > 180) return
+    mutation.mutate(mins * 60)
+  }
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1 text-xs">
+        <span className="text-muted-foreground">Limit</span>
+        <input
+          type="number" min="1" max="180" autoFocus
+          className="w-14 border rounded px-1.5 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-primary text-xs"
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          onBlur={save}
+          onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false) }}
+          placeholder="mins"
+        />
+        <span className="text-muted-foreground">min</span>
+      </div>
+    )
+  }
+
+  return (
+    <button
+      title="Set a per-section time limit. When time runs out, candidates are auto-moved to the next section."
+      className="text-xs text-muted-foreground hover:text-primary transition-colors shrink-0"
+      onClick={() => { setValue(initialTimeLimit ? String(Math.round(initialTimeLimit / 60)) : ''); setEditing(true) }}
+    >
+      {initialTimeLimit
+        ? <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-medium">{Math.round(initialTimeLimit / 60)}m limit</span>
+        : <span className="opacity-60">· set time limit</span>
+      }
+    </button>
+  )
+}
+
 // ─── Candidates Tab ───────────────────────────────────────────────────────────
 
 const INV_STATUS_VARIANT: Record<string, any> = {
@@ -1349,6 +1405,11 @@ export function TestBuilderPage() {
                     testId={testId!}
                     totalQuestions={section.testQuestions.length}
                     initialPickCount={section.pickCount ?? null}
+                  />
+                  <TimeLimitEditor
+                    sectionId={section.id}
+                    testId={testId!}
+                    initialTimeLimit={section.timeLimit ?? null}
                   />
                   <div className="flex items-center gap-2 shrink-0">
                     {/* Delete section */}

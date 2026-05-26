@@ -3,7 +3,7 @@ import { useParams, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import {
   Clock, ChevronLeft, ChevronRight, Send, Loader2,
-  Camera, CameraOff, Maximize, Video,
+  Camera, CameraOff, Maximize, Video, FileText, CalculatorIcon, X as XIcon,
 } from 'lucide-react'
 import MonacoEditor from '@monaco-editor/react'
 import { Button } from '@/components/ui/button'
@@ -52,6 +52,15 @@ export function TestPage() {
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
   const [tabWarningCount, setTabWarningCount] = useState(0)
   const [showTabWarning, setShowTabWarning] = useState(false)
+  const [sectionTimeRemaining, setSectionTimeRemaining] = useState<number | null>(null)
+  const [showTools, setShowTools] = useState(false)
+  const [toolsTab, setToolsTab] = useState<'notes' | 'calc'>('notes')
+  const [scratchpad, setScratchpad] = useState('')
+  const [calcDisplay, setCalcDisplay] = useState('0')
+  const [calcPrev, setCalcPrev] = useState('')
+  const [calcOp, setCalcOp] = useState<string | null>(null)
+  const [calcJustEval, setCalcJustEval] = useState(false)
+  const sectionExpireRef = useRef<(() => void) | null>(null)
 
   const proctoring = inviteData?.test?.proctoring !== false
   const roomScanEnabled = proctoring && inviteData?.test?.roomScanEnabled === true
@@ -130,6 +139,36 @@ export function TestPage() {
     const interval = setInterval(send, 30_000)
     return () => clearInterval(interval)
   }, [testStep, sessionId, token])
+
+  // Keep a stable ref to the section-expire handler so the countdown effect doesn't go stale
+  useEffect(() => {
+    const secs = testData?.sections ?? []
+    sectionExpireRef.current = () => {
+      if (currentSectionIdx < secs.length - 1) {
+        setCurrentSectionIdx(i => i + 1)
+        setCurrentQIdx(0)
+      } else {
+        handleSubmit()
+      }
+    }
+  })
+
+  // Reset section timer whenever the section changes
+  useEffect(() => {
+    const secs = testData?.sections ?? []
+    const limit = secs[currentSectionIdx]?.timeLimit ?? null
+    setSectionTimeRemaining(limit)
+  }, [currentSectionIdx, testData])
+
+  // Count down section timer; auto-advance on expiry
+  useEffect(() => {
+    if (sectionTimeRemaining === null || sectionTimeRemaining <= 0) {
+      if (sectionTimeRemaining === 0) sectionExpireRef.current?.()
+      return
+    }
+    const t = setInterval(() => setSectionTimeRemaining(s => s !== null ? Math.max(0, s - 1) : null), 1000)
+    return () => clearInterval(t)
+  }, [sectionTimeRemaining])
 
   const handleSetupReady = useCallback(() => {
     if (roomScanEnabled) {
@@ -337,6 +376,15 @@ export function TestPage() {
             </div>
           )}
 
+          {sectionTimeRemaining !== null && (
+            <div className={cn(
+              'flex items-center gap-1 font-mono text-sm font-semibold shrink-0 px-2 py-1 rounded-md',
+              sectionTimeRemaining < 60 ? 'bg-red-100 text-red-700 animate-pulse' : 'bg-amber-50 text-amber-700'
+            )}>
+              <span className="text-xs font-normal mr-0.5">§</span>
+              {formatSeconds(sectionTimeRemaining)}
+            </div>
+          )}
           <div className={cn(
             'flex items-center gap-1.5 font-mono font-semibold shrink-0 px-3 py-1 rounded-md',
             timeRemaining !== null && timeRemaining < 300 ? 'bg-red-100 text-red-700 animate-pulse' : 'bg-gray-100 text-gray-700'
@@ -345,6 +393,13 @@ export function TestPage() {
             {timeRemaining !== null ? formatSeconds(timeRemaining) : '--:--'}
           </div>
           <div className="text-sm text-muted-foreground shrink-0">{answeredCount}/{totalQuestions}</div>
+          <button
+            onClick={() => setShowTools(s => !s)}
+            title="Scratch pad & calculator"
+            className="shrink-0 p-1.5 rounded hover:bg-gray-100 text-gray-500"
+          >
+            <FileText className="h-4 w-4" />
+          </button>
         </div>
       </header>
 
@@ -360,14 +415,69 @@ export function TestPage() {
         />
       )}
 
+      {/* Scratch pad + calculator panel */}
+      {showTools && (
+        <div className="fixed bottom-32 right-4 w-72 bg-white rounded-xl shadow-2xl border z-40 overflow-hidden">
+          <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b">
+            <div className="flex gap-1">
+              <button
+                onClick={() => setToolsTab('notes')}
+                className={cn('px-3 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1',
+                  toolsTab === 'notes' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                )}
+              >
+                <FileText className="h-3 w-3" />Notes
+              </button>
+              <button
+                onClick={() => setToolsTab('calc')}
+                className={cn('px-3 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1',
+                  toolsTab === 'calc' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                )}
+              >
+                <CalculatorIcon className="h-3 w-3" />Calc
+              </button>
+            </div>
+            <button onClick={() => setShowTools(false)} className="text-gray-400 hover:text-gray-600">
+              <XIcon className="h-4 w-4" />
+            </button>
+          </div>
+
+          {toolsTab === 'notes' ? (
+            <textarea
+              className="w-full h-48 p-3 text-sm resize-none focus:outline-none font-mono"
+              placeholder="Scratch pad — notes are not saved"
+              value={scratchpad}
+              onChange={e => setScratchpad(e.target.value)}
+            />
+          ) : (
+            <Calculator
+              display={calcDisplay} prev={calcPrev} op={calcOp} justEval={calcJustEval}
+              setDisplay={setCalcDisplay} setPrev={setCalcPrev} setOp={setCalcOp} setJustEval={setCalcJustEval}
+            />
+          )}
+        </div>
+      )}
+
       <div className="flex flex-1 max-w-5xl mx-auto w-full px-4 py-6 gap-6">
         {/* Question panel */}
         <main className="flex-1 space-y-4 min-w-0">
           {currentSection && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <span className="font-medium">{currentSection.title}</span>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
+              <span className="font-medium text-gray-800">{currentSection.title}</span>
               <span>·</span>
               <span>Question {currentQIdx + 1} of {questions.length}</span>
+              {currentSection.timeLimit && sectionTimeRemaining !== null && (
+                <>
+                  <span>·</span>
+                  <span className={cn(
+                    'flex items-center gap-1',
+                    sectionTimeRemaining < 60 ? 'text-red-600 font-semibold' : 'text-amber-600'
+                  )}>
+                    <Clock className="h-3 w-3" />
+                    {formatSeconds(sectionTimeRemaining)} left in section
+                  </span>
+                </>
+              )}
             </div>
           )}
 
@@ -430,7 +540,12 @@ export function TestPage() {
             <p className="text-sm font-medium text-gray-700">Questions</p>
             {sections.map((section: any, sIdx: number) => (
               <div key={section.id}>
-                {sections.length > 1 && <p className="text-xs text-muted-foreground mb-1">{section.title}</p>}
+                {sections.length > 1 && (
+                  <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                    {section.title}
+                    {section.timeLimit && <Clock className="h-2.5 w-2.5 text-amber-500" />}
+                  </p>
+                )}
                 <div className="grid grid-cols-5 gap-1">
                   {section.questions.map((q: any, qIdx: number) => {
                     const ans = answers[q.questionId]
@@ -462,6 +577,78 @@ export function TestPage() {
 
           </div>
         </aside>
+      </div>
+    </div>
+  )
+}
+
+function Calculator({
+  display, prev, op, justEval,
+  setDisplay, setPrev, setOp, setJustEval,
+}: {
+  display: string; prev: string; op: string | null; justEval: boolean
+  setDisplay: (v: string) => void; setPrev: (v: string) => void
+  setOp: (v: string | null) => void; setJustEval: (v: boolean) => void
+}) {
+  const handleDigit = (d: string) => {
+    if (justEval) { setDisplay(d); setJustEval(false); return }
+    setDisplay(display === '0' && d !== '.' ? d : display.includes('.') && d === '.' ? display : display + d)
+  }
+  const handleOp = (o: string) => {
+    setPrev(display); setOp(o); setJustEval(false)
+  }
+  const handleEquals = () => {
+    if (!op || !prev) return
+    const a = parseFloat(prev), b = parseFloat(display)
+    let r = op === '+' ? a + b : op === '-' ? a - b : op === '×' ? a * b : b !== 0 ? a / b : NaN
+    const res = isNaN(r) ? 'Error' : String(parseFloat(r.toFixed(10)))
+    setDisplay(res); setPrev(''); setOp(null); setJustEval(true)
+  }
+  const handleClear = () => { setDisplay('0'); setPrev(''); setOp(null); setJustEval(false) }
+  const handleToggleSign = () => { setDisplay(String(-parseFloat(display))) }
+  const handlePercent = () => { setDisplay(String(parseFloat(display) / 100)) }
+
+  const btn = (label: string, onClick: () => void, variant: 'op' | 'fn' | 'num' | 'eq') => {
+    const colors = {
+      op: 'bg-amber-400 hover:bg-amber-300 text-white',
+      fn: 'bg-gray-300 hover:bg-gray-200 text-gray-900',
+      num: 'bg-gray-700 hover:bg-gray-600 text-white',
+      eq: 'bg-amber-400 hover:bg-amber-300 text-white',
+    }
+    return (
+      <button key={label} onClick={onClick}
+        className={cn('h-12 rounded-full text-lg font-medium transition-colors', colors[variant])}
+      >{label}</button>
+    )
+  }
+
+  return (
+    <div className="bg-black p-3 space-y-2">
+      <div className="text-right">
+        <p className="text-gray-400 text-xs h-4">{prev}{op ? ` ${op}` : ''}</p>
+        <p className="text-white text-3xl font-light truncate">{display}</p>
+      </div>
+      <div className="grid grid-cols-4 gap-1.5">
+        {btn('C', handleClear, 'fn')}
+        {btn('+/-', handleToggleSign, 'fn')}
+        {btn('%', handlePercent, 'fn')}
+        {btn('÷', () => handleOp('÷'), 'op')}
+        {btn('7', () => handleDigit('7'), 'num')}
+        {btn('8', () => handleDigit('8'), 'num')}
+        {btn('9', () => handleDigit('9'), 'num')}
+        {btn('×', () => handleOp('×'), 'op')}
+        {btn('4', () => handleDigit('4'), 'num')}
+        {btn('5', () => handleDigit('5'), 'num')}
+        {btn('6', () => handleDigit('6'), 'num')}
+        {btn('−', () => handleOp('-'), 'op')}
+        {btn('1', () => handleDigit('1'), 'num')}
+        {btn('2', () => handleDigit('2'), 'num')}
+        {btn('3', () => handleDigit('3'), 'num')}
+        {btn('+', () => handleOp('+'), 'op')}
+        <button onClick={() => handleDigit('0')}
+          className="col-span-2 h-12 rounded-full bg-gray-700 hover:bg-gray-600 text-white text-lg font-medium text-left pl-5">0</button>
+        {btn('.', () => handleDigit('.'), 'num')}
+        {btn('=', handleEquals, 'eq')}
       </div>
     </div>
   )

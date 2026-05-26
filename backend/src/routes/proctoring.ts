@@ -26,6 +26,7 @@ const SEVERITY_MAP: Record<string, 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'> = {
   SCREEN_RECORDING_STOPPED: 'HIGH',
   FACE_OBSTRUCTED: 'HIGH',
   SUSPECTED_ASSISTANCE: 'CRITICAL',
+  IDENTITY_MISMATCH: 'CRITICAL',
   CUSTOM: 'MEDIUM',
 }
 
@@ -45,6 +46,7 @@ const EVENT_RISK: Record<string, { weight: number; maxPts: number }> = {
   HEAD_TURNED:              { weight:  8, maxPts: 32  }, // looking away
   FACE_OBSTRUCTED:          { weight: 15, maxPts: 45  }, // face deliberately partially hidden
   SUSPECTED_ASSISTANCE:     { weight: 60, maxPts: 60  }, // repeated same-direction gaze pattern
+  IDENTITY_MISMATCH:        { weight: 70, maxPts: 70  }, // face during test doesn't match baseline
   WINDOW_BLUR:              { weight:  6, maxPts: 18  }, // window lost focus (can be accidental)
   RIGHT_CLICK:              { weight:  2, maxPts:  6  }, // right-click (often accidental)
   NOISE_DETECTED:           { weight:  2, maxPts:  8  }, // background noise (common)
@@ -56,7 +58,7 @@ const EVENT_TYPES = [
   'TAB_SWITCH', 'WINDOW_BLUR', 'FULLSCREEN_EXIT', 'COPY_PASTE', 'RIGHT_CLICK',
   'WEBCAM_BLOCKED', 'MULTIPLE_FACES', 'NO_FACE_DETECTED', 'NOISE_DETECTED',
   'SCREENSHOT_TAKEN', 'DEVTOOLS_OPEN', 'PHONE_DETECTED', 'HEAD_TURNED',
-  'SCREEN_RECORDING_STOPPED', 'FACE_OBSTRUCTED', 'SUSPECTED_ASSISTANCE', 'CUSTOM',
+  'SCREEN_RECORDING_STOPPED', 'FACE_OBSTRUCTED', 'SUSPECTED_ASSISTANCE', 'IDENTITY_MISMATCH', 'CUSTOM',
 ] as const
 
 const eventSchema = z.object({
@@ -261,6 +263,72 @@ export async function proctoringRoutes(server: FastifyInstance) {
       data: { sessionId, url: `/uploads/snapshots/${filename}` },
     })
     return sendSuccess(reply, snapshot, 201)
+  })
+
+  // POST /api/proctoring/:sessionId/screen-snapshot — upload periodic screenshot of shared screen
+  server.post('/:sessionId/screen-snapshot', async (request, reply) => {
+    const { sessionId } = request.params as { sessionId: string }
+    const token = (request.query as { token?: string }).token
+
+    const session = await prisma.session.findFirst({
+      where: { id: sessionId, invitation: { token } },
+      select: { id: true, test: { select: { proctoring: true } } },
+    })
+    if (!session) return sendError(reply, 404, 'Session not found')
+    if (!session.test.proctoring) return sendSuccess(reply, { skipped: true })
+
+    const data = await request.file()
+    if (!data) return sendError(reply, 400, 'No file uploaded')
+
+    const filename = `${sessionId}_screen_${Date.now()}.jpg`
+    const filePath = join(UPLOADS_DIR, 'screen-snapshots', filename)
+    await pipeline(data.file, createWriteStream(filePath))
+
+    const snapshot = await prisma.screenSnapshot.create({
+      data: { sessionId, url: `/uploads/screen-snapshots/${filename}` },
+    })
+    return sendSuccess(reply, snapshot, 201)
+  })
+
+  // GET /api/proctoring/:sessionId/screen-snapshots — list all screen snapshots (admin)
+  server.get('/:sessionId/screen-snapshots', { preHandler: canView }, async (request, reply) => {
+    const { sessionId } = request.params as { sessionId: string }
+    const session = await prisma.session.findFirst({
+      where: { id: sessionId, test: { tenantId: request.user.tenantId } },
+      select: { id: true },
+    })
+    if (!session) return sendError(reply, 404, 'Session not found')
+    const snapshots = await prisma.screenSnapshot.findMany({
+      where: { sessionId },
+      orderBy: { occurredAt: 'asc' },
+    })
+    return sendSuccess(reply, snapshots)
+  })
+
+  // GET /api/proctoring/:sessionId/media/screen-snapshot/:snapshotId — serve screen snapshot (admin)
+  server.get('/:sessionId/media/screen-snapshot/:snapshotId', { preHandler: canView }, async (request, reply) => {
+    const { sessionId, snapshotId } = request.params as { sessionId: string; snapshotId: string }
+    const snapshot = await prisma.screenSnapshot.findFirst({
+      where: { id: snapshotId, sessionId, session: { test: { tenantId: request.user.tenantId } } },
+    })
+    if (!snapshot) return sendError(reply, 404, 'Snapshot not found')
+    const filePath = join(UPLOADS_DIR, snapshot.url.replace(/^\/uploads\//, ''))
+    if (!existsSync(filePath)) return reply.status(404).send()
+    return reply.type('image/jpeg').send(createReadStream(filePath))
+  })
+
+  // GET /api/proctoring/:sessionId/latest-screen-snapshot — serve latest screen snapshot (admin, live monitor)
+  server.get('/:sessionId/latest-screen-snapshot', { preHandler: canView }, async (request, reply) => {
+    const { sessionId } = request.params as { sessionId: string }
+    const snapshot = await prisma.screenSnapshot.findFirst({
+      where: { sessionId, session: { test: { tenantId: request.user.tenantId } } },
+      orderBy: { occurredAt: 'desc' },
+    })
+    if (!snapshot) return reply.status(404).send()
+    const filePath = join(UPLOADS_DIR, snapshot.url.replace(/^\/uploads\//, ''))
+    if (!existsSync(filePath)) return reply.status(404).send()
+    reply.header('Cache-Control', 'no-store')
+    return reply.type('image/jpeg').send(createReadStream(filePath))
   })
 
   // POST /api/proctoring/:sessionId/screen-recording — upload screen recording

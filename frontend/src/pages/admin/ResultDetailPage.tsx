@@ -113,6 +113,7 @@ const EVENT_LABELS: Record<string, string> = {
   SCREEN_RECORDING_STOPPED: 'Screen recording stopped',
   FACE_OBSTRUCTED: 'Face partially hidden',
   SUSPECTED_ASSISTANCE: 'Suspected off-camera help',
+  IDENTITY_MISMATCH: 'Identity mismatch',
   CUSTOM: 'Custom event',
 }
 
@@ -173,6 +174,7 @@ function EventIcon({ type }: { type: string }) {
     case 'SCREEN_RECORDING_STOPPED': return <MonitorPlay className={cls} />
     case 'FACE_OBSTRUCTED': return <EyeOff className={cls} />
     case 'SUSPECTED_ASSISTANCE': return <ShieldAlert className={cls} />
+    case 'IDENTITY_MISMATCH': return <ShieldAlert className={cls} />
     default: return <AlertTriangle className={cls} />
   }
 }
@@ -206,6 +208,12 @@ export function ResultDetailPage() {
   const { data: roomScansData } = useQuery({
     queryKey: ['room-scans', sessionId],
     queryFn: () => api.get(`/proctoring/${sessionId}/room-scans`).then(r => r.data.data),
+    enabled: !!sessionId,
+  })
+
+  const { data: screenSnapshotsData } = useQuery({
+    queryKey: ['screen-snapshots', sessionId],
+    queryFn: () => api.get(`/proctoring/${sessionId}/screen-snapshots`).then(r => r.data.data),
     enabled: !!sessionId,
   })
 
@@ -566,6 +574,38 @@ export function ResultDetailPage() {
                         src={`/api/proctoring/${sessionId}/media/recording`}
                         className="w-full max-h-72"
                       />
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Screen snapshots */}
+                {screenSnapshotsData && screenSnapshotsData.length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <MonitorPlay className="h-4 w-4" />
+                        Screen Snapshots
+                        <span className="text-xs font-normal text-muted-foreground ml-1">
+                          ({screenSnapshotsData.length} captures every 30s)
+                        </span>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+                        {screenSnapshotsData.map((snap: any) => (
+                          <div key={snap.id} className="space-y-0.5">
+                            <SecureImage
+                              src={`/api/proctoring/${sessionId}/media/screen-snapshot/${snap.id}`}
+                              alt="Screen snapshot"
+                              className="w-full aspect-video rounded cursor-pointer hover:opacity-90"
+                              onClick={() => setExpandedShot({ id: snap.id, url: `/api/proctoring/${sessionId}/media/screen-snapshot/${snap.id}` })}
+                            />
+                            <p className="text-[9px] text-muted-foreground text-center">
+                              {new Date(snap.occurredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
                     </CardContent>
                   </Card>
                 )}
@@ -937,9 +977,18 @@ function AnswerReview({ index, question, answer, maxPoints, onGrade }: {
               {answer.codeSubmission}
             </pre>
           )}
-          {answer.timeSpent && (
-            <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-              <Clock className="h-3 w-3" />{formatSeconds(answer.timeSpent)} spent
+          {answer.timeSpent != null && (
+            <p className={cn(
+              'text-xs flex items-center gap-1 mt-1',
+              answer.timeSpent < 5 ? 'text-red-600 font-medium' : 'text-muted-foreground'
+            )}>
+              <Clock className="h-3 w-3" />
+              {formatSeconds(answer.timeSpent)} spent
+              {answer.timeSpent < 5 && (
+                <span className="ml-1 px-1.5 py-0.5 rounded bg-red-100 text-red-700 text-[10px] font-semibold">
+                  suspiciously fast
+                </span>
+              )}
             </p>
           )}
         </div>

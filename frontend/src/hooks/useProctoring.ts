@@ -6,7 +6,7 @@ export type ProctoringEventType =
   | 'RIGHT_CLICK' | 'WEBCAM_BLOCKED' | 'MULTIPLE_FACES' | 'NO_FACE_DETECTED'
   | 'NOISE_DETECTED' | 'SCREENSHOT_TAKEN' | 'DEVTOOLS_OPEN' | 'PHONE_DETECTED'
   | 'HEAD_TURNED' | 'SCREEN_RECORDING_STOPPED' | 'CUSTOM'
-  | 'FACE_OBSTRUCTED' | 'SUSPECTED_ASSISTANCE'
+  | 'FACE_OBSTRUCTED' | 'SUSPECTED_ASSISTANCE' | 'IDENTITY_MISMATCH'
 
 interface QueuedEvent {
   type: ProctoringEventType
@@ -215,6 +215,21 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
           const loaded = await initFaceDetection()
           if (!loaded || cancelled) return
 
+          // ── Face re-verification: load recognition model in background ──────
+          // Loads after the test starts so it doesn't block the setup screen.
+          // Captures a baseline face descriptor from the first 3 good frames,
+          // then compares every 60s (every 20th check at 3s interval).
+          let baselineDescriptors: Float32Array[] = []
+          let baselineAvg: Float32Array | null = null
+          let verifyCheckCount = 0
+          const VERIFY_EVERY = 20 // every 60s at 3s interval
+          const MISMATCH_THRESHOLD = 0.55
+
+          ;(async () => {
+            const { initFaceRecognition } = await import('@/lib/faceDetection')
+            await initFaceRecognition()
+          })()
+
           let consecutiveNoFace = 0
           let consecutiveHeadTurn = 0
           let consecutiveMultiFace = 0
@@ -303,6 +318,38 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
               }
             } else {
               consecutiveHeadTurn = 0
+            }
+
+            // ── Face re-verification ──────────────────────────────────────────
+            if (count === 1) {
+              verifyCheckCount++
+              const { getFaceDescriptor, faceDistance } = await import('@/lib/faceDetection')
+
+              // Build baseline from first 3 high-quality frames
+              if (baselineDescriptors.length < 3) {
+                const desc = await getFaceDescriptor(videoRef.current!)
+                if (desc) {
+                  baselineDescriptors.push(desc)
+                  if (baselineDescriptors.length === 3) {
+                    // Average the 3 descriptors for a more stable baseline
+                    const avg = new Float32Array(128)
+                    for (const d of baselineDescriptors) d.forEach((v, i) => { avg[i] += v / 3 })
+                    baselineAvg = avg
+                  }
+                }
+              } else if (baselineAvg && verifyCheckCount % VERIFY_EVERY === 0) {
+                const desc = await getFaceDescriptor(videoRef.current!)
+                if (desc && !cancelled) {
+                  const dist = faceDistance(baselineAvg, desc)
+                  if (dist > MISMATCH_THRESHOLD) {
+                    captureViolationSnapshot()
+                    pushImmediate('IDENTITY_MISMATCH',
+                      `Face does not match the person who started the test (distance: ${dist.toFixed(2)})`,
+                      { distance: dist, threshold: MISMATCH_THRESHOLD }
+                    )
+                  }
+                }
+              }
             }
           }
 

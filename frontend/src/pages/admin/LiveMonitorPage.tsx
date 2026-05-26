@@ -54,6 +54,7 @@ const EVENT_LABELS: Record<string, string> = {
   RIGHT_CLICK: 'Right-click',
   FACE_OBSTRUCTED: 'Face partially hidden',
   SUSPECTED_ASSISTANCE: 'Suspected off-camera help',
+  IDENTITY_MISMATCH: 'Identity mismatch',
 }
 
 function EventTypeIcon({ type }: { type: string }) {
@@ -70,6 +71,7 @@ function EventTypeIcon({ type }: { type: string }) {
     case 'HEAD_TURNED': return <Navigation className={cls} />
     case 'FACE_OBSTRUCTED': return <EyeOff className={cls} />
     case 'SUSPECTED_ASSISTANCE': return <ShieldAlert className={cls} />
+    case 'IDENTITY_MISMATCH': return <ShieldAlert className={cls} />
     default: return <AlertTriangle className={cls} />
   }
 }

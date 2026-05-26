@@ -83,7 +83,7 @@ export function TestPage() {
   }, [])
 
   const {
-    pushEvent, stopProctoring, requestFullscreen, flush,
+    pushEvent, pushImmediate, stopProctoring, requestFullscreen, flush,
     attachVideoRef,
     webcamActive, micActive, faceCount,
     violationCounts,
@@ -103,6 +103,7 @@ export function TestPage() {
     sessionId: sessionId ?? '',
     token: token ?? '',
     enabled: proctoring,
+    onStopped: () => pushImmediate('SCREEN_RECORDING_STOPPED', 'Candidate stopped screen sharing during the test'),
   })
 
   const { data: testData, isLoading } = useQuery({

@@ -382,6 +382,7 @@ model Session {
   score              Score?
   proctoringEvents   ProctoringEvent[]
   webcamSnapshots    WebcamSnapshot[]
+  screenSnapshots    ScreenSnapshot[]
   screenRecording    ScreenRecording?
   roomScans          RoomScan[]
 
@@ -440,6 +441,7 @@ enum ProctoringEventType {
   SCREEN_RECORDING_STOPPED
   FACE_OBSTRUCTED
   SUSPECTED_ASSISTANCE
+  IDENTITY_MISMATCH
   CUSTOM
 }
 
@@ -497,6 +499,20 @@ model WebcamSnapshot {
 
   @@index([sessionId])
   @@map("webcam_snapshots")
+}
+
+// ─── Screen Snapshots (periodic screenshots from shared screen) ───────────────
+
+model ScreenSnapshot {
+  id         String   @id @default(cuid())
+  url        String
+  occurredAt DateTime @default(now())
+
+  sessionId  String
+  session    Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("screen_snapshots")
 }
 
 // ─── Room Scans ───────────────────────────────────────────────────────────────

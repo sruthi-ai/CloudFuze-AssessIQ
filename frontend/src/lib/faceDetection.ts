@@ -39,6 +39,43 @@ export async function countFaces(videoEl: HTMLVideoElement): Promise<number> {
   return dets.length
 }
 
+// Face recognition — loaded lazily after the test starts so it doesn't block setup
+let _recognitionReady = false
+let recognitionInitPromise: Promise<boolean> | null = null
+
+export async function initFaceRecognition(): Promise<boolean> {
+  if (_recognitionReady) return true
+  if (!initPromise) return false // base models not loaded yet
+  if (!recognitionInitPromise) {
+    recognitionInitPromise = (async () => {
+      try {
+        const faceapi = _faceapi ?? await import('@vladmandic/face-api')
+        await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+        _recognitionReady = true
+        return true
+      } catch {
+        recognitionInitPromise = null
+        return false
+      }
+    })()
+  }
+  return recognitionInitPromise
+}
+
+export async function getFaceDescriptor(videoEl: HTMLVideoElement): Promise<Float32Array | null> {
+  if (!_faceapi || !_recognitionReady || videoEl.readyState < 2 || videoEl.videoWidth === 0) return null
+  const result = await _faceapi
+    .detectSingleFace(videoEl, new _faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.75 }))
+    .withFaceLandmarks(true)
+    .withFaceDescriptor()
+  return result?.descriptor ?? null
+}
+
+export function faceDistance(a: Float32Array, b: Float32Array): number {
+  if (!_faceapi) return 1
+  return _faceapi.euclideanDistance(a, b)
+}
+
 // Minimum detection confidence and face size required before trusting landmark-based head pose.
 const POSE_MIN_SCORE = 0.75
 const POSE_MIN_FACE_FRACTION = 0.12 // face width must be ≥12% of video width

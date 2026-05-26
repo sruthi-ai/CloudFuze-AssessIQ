@@ -5,7 +5,7 @@ import {
   MonitorPlay, RefreshCw, Clock, ShieldAlert, FileText,
   AlertTriangle, Loader2, Radio, Bell, BellOff, Wifi, WifiOff,
   TabletSmartphone, Eye, Copy, Code2, CameraOff, Users, UserX,
-  Volume2, Smartphone, Navigation,
+  Volume2, Smartphone, Navigation, EyeOff,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -52,6 +52,8 @@ const EVENT_LABELS: Record<string, string> = {
   SCREEN_RECORDING_STOPPED: 'Screen recording stopped',
   NOISE_DETECTED: 'Background noise',
   RIGHT_CLICK: 'Right-click',
+  FACE_OBSTRUCTED: 'Face partially hidden',
+  SUSPECTED_ASSISTANCE: 'Suspected off-camera help',
 }
 
 function EventTypeIcon({ type }: { type: string }) {
@@ -66,6 +68,8 @@ function EventTypeIcon({ type }: { type: string }) {
     case 'NOISE_DETECTED': return <Volume2 className={cls} />
     case 'PHONE_DETECTED': return <Smartphone className={cls} />
     case 'HEAD_TURNED': return <Navigation className={cls} />
+    case 'FACE_OBSTRUCTED': return <EyeOff className={cls} />
+    case 'SUSPECTED_ASSISTANCE': return <ShieldAlert className={cls} />
     default: return <AlertTriangle className={cls} />
   }
 }
@@ -77,51 +81,61 @@ const SEVERITY_COLOR: Record<string, string> = {
   LOW: 'text-blue-700 bg-blue-100 border-blue-200',
 }
 
-// Shows latest webcam snapshot for a live session, auto-refreshes every 30s
+// Polls the latest-snapshot-image endpoint every 5s for real-time webcam view
 function LiveSnapshot({ sessionId, snapshot }: { sessionId: string; snapshot: { id: string; occurredAt: string } | null }) {
   const [src, setSrc] = useState<string | null>(null)
-  const [failed, setFailed] = useState(false)
+  const [noSnapshot, setNoSnapshot] = useState(!snapshot)
   const prevSrc = useRef<string | null>(null)
 
   useEffect(() => {
-    if (!snapshot) return
-    setFailed(false)
     let active = true
-    const token = localStorage.getItem('accessToken')
-    fetch(`/api/proctoring/${sessionId}/media/snapshot/${snapshot.id}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    }).then(r => {
-      if (!r.ok) throw new Error(`${r.status}`)
-      return r.blob()
-    }).then(blob => {
-      if (!active) return
-      if (prevSrc.current) URL.revokeObjectURL(prevSrc.current)
-      const url = URL.createObjectURL(blob)
-      prevSrc.current = url
-      setSrc(url)
-    }).catch(() => { if (active) setFailed(true) })
-    return () => { active = false }
-  }, [sessionId, snapshot?.id])
 
-  if (!snapshot) return (
+    const fetchLatest = () => {
+      const token = localStorage.getItem('accessToken')
+      fetch(`/api/proctoring/${sessionId}/latest-snapshot-image?t=${Date.now()}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+        .then(r => {
+          if (r.status === 404) { if (active) setNoSnapshot(true); return Promise.reject(null) }
+          if (!r.ok) return Promise.reject(null)
+          return r.blob()
+        })
+        .then(blob => {
+          if (!active || !blob) return
+          setNoSnapshot(false)
+          if (prevSrc.current) URL.revokeObjectURL(prevSrc.current)
+          const url = URL.createObjectURL(blob)
+          prevSrc.current = url
+          setSrc(url)
+        })
+        .catch(() => {})
+    }
+
+    fetchLatest()
+    const interval = setInterval(fetchLatest, 5_000)
+
+    return () => {
+      active = false
+      clearInterval(interval)
+      if (prevSrc.current) { URL.revokeObjectURL(prevSrc.current); prevSrc.current = null }
+    }
+  }, [sessionId])
+
+  if (noSnapshot && !src) return (
     <div className="w-full h-28 rounded bg-gray-100 flex flex-col items-center justify-center gap-1 text-gray-400">
       <CameraOff className="h-5 w-5" />
       <span className="text-[10px]">No snapshot yet</span>
-    </div>
-  )
-  if (failed) return (
-    <div className="w-full h-28 rounded bg-gray-100 flex flex-col items-center justify-center gap-1 text-gray-400">
-      <CameraOff className="h-5 w-5" />
-      <span className="text-[10px]">Snapshot unavailable</span>
     </div>
   )
   if (!src) return <div className="w-full h-28 rounded bg-gray-200 animate-pulse" />
   return (
     <div className="relative">
       <img src={src} alt="Latest webcam snapshot" className="w-full h-28 object-cover rounded" />
-      <span className="absolute bottom-1 right-1 bg-black/60 text-white text-[9px] px-1 rounded">
-        {new Date(snapshot.occurredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-      </span>
+      {snapshot && (
+        <span className="absolute bottom-1 right-1 bg-black/60 text-white text-[9px] px-1 rounded">
+          {new Date(snapshot.occurredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+        </span>
+      )}
     </div>
   )
 }

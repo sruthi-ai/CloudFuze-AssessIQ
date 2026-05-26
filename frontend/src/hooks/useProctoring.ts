@@ -6,6 +6,7 @@ export type ProctoringEventType =
   | 'RIGHT_CLICK' | 'WEBCAM_BLOCKED' | 'MULTIPLE_FACES' | 'NO_FACE_DETECTED'
   | 'NOISE_DETECTED' | 'SCREENSHOT_TAKEN' | 'DEVTOOLS_OPEN' | 'PHONE_DETECTED'
   | 'HEAD_TURNED' | 'SCREEN_RECORDING_STOPPED' | 'CUSTOM'
+  | 'FACE_OBSTRUCTED' | 'SUSPECTED_ASSISTANCE'
 
 interface QueuedEvent {
   type: ProctoringEventType
@@ -217,10 +218,14 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
           let consecutiveNoFace = 0
           let consecutiveHeadTurn = 0
           let consecutiveMultiFace = 0
+          let consecutivePartialFace = 0
+          // Rolling window: track gaze directions to detect repeated off-camera attention
+          const gazeHistory: Array<{ dir: string; ts: number }> = []
+          const GAZE_WINDOW_MS = 3 * 60 * 1000
 
           const check = async () => {
             if (cancelled || !videoRef.current) return
-            const { count, headPose } = await detectFacesWithPose(videoRef.current)
+            const { count, headPose, partialFace } = await detectFacesWithPose(videoRef.current)
             if (cancelled) return
 
             // count === -1 means video frame wasn't ready — skip this tick entirely
@@ -231,6 +236,7 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
             if (count === 0) {
               consecutiveNoFace++
               consecutiveMultiFace = 0
+              consecutivePartialFace = 0
               if (consecutiveNoFace >= 2) {
                 captureViolationSnapshot()
                 pushImmediate('NO_FACE_DETECTED', 'No face visible in webcam for extended period')
@@ -248,6 +254,18 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
               } else {
                 consecutiveMultiFace = 0
               }
+
+              // Partial face: face bounding box near/past the frame edge for 3 consecutive checks (~9s)
+              if (partialFace) {
+                consecutivePartialFace++
+                if (consecutivePartialFace >= 3) {
+                  captureViolationSnapshot()
+                  pushImmediate('FACE_OBSTRUCTED', 'Face partially outside camera frame — possible deliberate positioning', { partialFace: true })
+                  consecutivePartialFace = 0
+                }
+              } else {
+                consecutivePartialFace = 0
+              }
             }
 
             // Head pose: yaw > 0.35 (~20°) or pitch out of range = gaze deviation
@@ -264,6 +282,24 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
                   direction: dir,
                 })
                 consecutiveHeadTurn = 0
+
+                // Gaze pattern: if the same direction appears 3+ times in a 3-min rolling window,
+                // it suggests a stationary off-camera reference (person, notes, phone on desk).
+                const now = Date.now()
+                // Evict entries older than the window
+                while (gazeHistory.length > 0 && now - gazeHistory[0].ts > GAZE_WINDOW_MS) {
+                  gazeHistory.shift()
+                }
+                gazeHistory.push({ dir, ts: now })
+                const sameDirCount = gazeHistory.filter(g => g.dir === dir).length
+                if (sameDirCount >= 3) {
+                  pushImmediate(
+                    'SUSPECTED_ASSISTANCE',
+                    `Repeated gaze toward ${dir} (${sameDirCount}× in 3 min) — possible off-camera assistance`,
+                    { direction: dir, count: sameDirCount }
+                  )
+                  gazeHistory.length = 0 // reset so it doesn't fire again until another streak builds
+                }
               }
             } else {
               consecutiveHeadTurn = 0
@@ -304,7 +340,7 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
           uploadSnapshot(blob)
           pushEventRef.current('SCREENSHOT_TAKEN', 'Periodic webcam snapshot captured')
         }, 'image/jpeg', 0.7)
-      }, 30_000)
+      }, 10_000)
     }
 
     const acquire = () =>

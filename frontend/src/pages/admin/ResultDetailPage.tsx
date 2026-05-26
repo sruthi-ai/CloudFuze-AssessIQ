@@ -5,7 +5,7 @@ import {
   ShieldAlert, ShieldCheck, AlertTriangle, Trophy,
   Camera, CameraOff, TabletSmartphone, Minimize2, Copy,
   MousePointer2, Code2, Users, UserX, Volume2, Smartphone,
-  Navigation, MonitorPlay, ZoomIn, Video, Printer,
+  Navigation, MonitorPlay, ZoomIn, Video, Printer, EyeOff,
 } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
@@ -111,6 +111,8 @@ const EVENT_LABELS: Record<string, string> = {
   PHONE_DETECTED: 'Mobile device detected',
   HEAD_TURNED: 'Head turned away',
   SCREEN_RECORDING_STOPPED: 'Screen recording stopped',
+  FACE_OBSTRUCTED: 'Face partially hidden',
+  SUSPECTED_ASSISTANCE: 'Suspected off-camera help',
   CUSTOM: 'Custom event',
 }
 
@@ -169,6 +171,8 @@ function EventIcon({ type }: { type: string }) {
     case 'PHONE_DETECTED': return <Smartphone className={cls} />
     case 'HEAD_TURNED': return <Navigation className={cls} />
     case 'SCREEN_RECORDING_STOPPED': return <MonitorPlay className={cls} />
+    case 'FACE_OBSTRUCTED': return <EyeOff className={cls} />
+    case 'SUSPECTED_ASSISTANCE': return <ShieldAlert className={cls} />
     default: return <AlertTriangle className={cls} />
   }
 }

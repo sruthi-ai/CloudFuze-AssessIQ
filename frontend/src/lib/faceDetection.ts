@@ -15,7 +15,6 @@ export async function initFaceDetection(): Promise<boolean> {
     initPromise = (async () => {
       try {
         const faceapi = await import('@vladmandic/face-api')
-        // Load tiny face detector + 68-point landmark model for head pose
         await Promise.all([
           faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
           faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL),
@@ -40,66 +39,78 @@ export async function countFaces(videoEl: HTMLVideoElement): Promise<number> {
   return dets.length
 }
 
-// Minimum detection confidence and face size (relative to frame width) required
-// before we trust landmark-based head pose. Below these thresholds the landmark
-// geometry is too noisy to produce reliable yaw/pitch values.
+// Minimum detection confidence and face size required before trusting landmark-based head pose.
 const POSE_MIN_SCORE = 0.75
 const POSE_MIN_FACE_FRACTION = 0.12 // face width must be ≥12% of video width
+
+// Face bounding box edge within this fraction of the frame = partial face
+const EDGE_MARGIN = 0.08
 
 export async function detectFacesWithPose(videoEl: HTMLVideoElement): Promise<{
   count: number
   headPose: HeadPose | null
+  partialFace: boolean
 }> {
   if (!_faceapi || videoEl.readyState < 2 || videoEl.videoWidth === 0) {
-    return { count: -1, headPose: null }
+    return { count: -1, headPose: null, partialFace: false }
   }
 
   const results = await _faceapi
     .detectAllFaces(videoEl, new _faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 }))
     .withFaceLandmarks(true)
 
-  if (results.length === 0) return { count: 0, headPose: null }
+  if (results.length === 0) return { count: 0, headPose: null, partialFace: false }
 
-  // Use first face for head pose, but only when detection is high-confidence
-  // and the face is large enough that landmark geometry is reliable.
+  const frameW = videoEl.videoWidth
+  const frameH = videoEl.videoHeight
+
+  // Partial face: any detected face whose bounding box touches or crosses a frame edge.
+  // Fires even at lower confidence — a half-in-frame face naturally scores lower.
+  const partialFace = results.some(r => {
+    const { x, y, width, height } = r.detection.box
+    return (
+      x < frameW * EDGE_MARGIN ||
+      y < frameH * EDGE_MARGIN ||
+      x + width > frameW * (1 - EDGE_MARGIN) ||
+      y + height > frameH * (1 - EDGE_MARGIN)
+    )
+  })
+
+  // Head pose: only from the primary face if it meets quality thresholds.
+  // Below these thresholds the landmark geometry is too noisy for reliable yaw/pitch.
   const best = results[0]
   const detectionScore: number = (best.detection as { score: number }).score ?? 1
   const faceBoxWidth: number = best.detection.box.width
-  const minFacePixels = videoEl.videoWidth * POSE_MIN_FACE_FRACTION
 
-  if (detectionScore < POSE_MIN_SCORE || faceBoxWidth < minFacePixels) {
-    return { count: results.length, headPose: null }
+  if (detectionScore < POSE_MIN_SCORE || faceBoxWidth < frameW * POSE_MIN_FACE_FRACTION) {
+    return { count: results.length, headPose: null, partialFace }
   }
 
   const pts = best.landmarks.positions
 
   // Key landmark indices (68-point model):
   // 36: left eye outer, 45: right eye outer, 30: nose tip, 8: chin
-  const leftEye = pts[36]
+  const leftEye  = pts[36]
   const rightEye = pts[45]
-  const noseTip = pts[30]
-  const chin = pts[8]
+  const noseTip  = pts[30]
+  const chin     = pts[8]
 
   const eyeCenterX = (leftEye.x + rightEye.x) / 2
   const eyeCenterY = (leftEye.y + rightEye.y) / 2
-  const faceWidth = rightEye.x - leftEye.x
+  const faceWidth  = rightEye.x - leftEye.x
   const faceHeight = chin.y - eyeCenterY
 
-  // Guard against degenerate geometry (collapsed face box, profile view)
+  // Guard against degenerate geometry (collapsed box, extreme profile view)
   if (faceWidth < 10 || faceHeight < 10) {
-    return { count: results.length, headPose: null }
+    return { count: results.length, headPose: null, partialFace }
   }
 
-  // Yaw: how far nose is horizontally offset from eye center, normalized by face width
+  // Yaw: nose horizontal offset from eye center, normalized by face width
   const yaw = (noseTip.x - eyeCenterX) / (faceWidth * 0.6)
 
-  // Pitch: vertical position of nose relative to face height
-  // When looking straight: nose is ~0.5 down from eye center to chin
+  // Pitch: normalized nose position between eye center and chin (0 = straight, ±1 = extreme)
   const rawPitch = (noseTip.y - eyeCenterY) / faceHeight
-  const pitch = (rawPitch - 0.5) * 2 // normalize around 0
+  const pitch = (rawPitch - 0.5) * 2
 
-  return {
-    count: results.length,
-    headPose: { yaw, pitch },
-  }
+  return { count: results.length, headPose: { yaw, pitch }, partialFace }
 }

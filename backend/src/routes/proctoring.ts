@@ -24,6 +24,8 @@ const SEVERITY_MAP: Record<string, 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'> = {
   PHONE_DETECTED: 'CRITICAL',
   HEAD_TURNED: 'HIGH',
   SCREEN_RECORDING_STOPPED: 'HIGH',
+  FACE_OBSTRUCTED: 'HIGH',
+  SUSPECTED_ASSISTANCE: 'CRITICAL',
   CUSTOM: 'MEDIUM',
 }
 
@@ -41,6 +43,8 @@ const EVENT_RISK: Record<string, { weight: number; maxPts: number }> = {
   FULLSCREEN_EXIT:          { weight: 12, maxPts: 36  }, // exited fullscreen
   NO_FACE_DETECTED:         { weight: 4, maxPts: 40  }, // face not visible
   HEAD_TURNED:              { weight:  8, maxPts: 32  }, // looking away
+  FACE_OBSTRUCTED:          { weight: 15, maxPts: 45  }, // face deliberately partially hidden
+  SUSPECTED_ASSISTANCE:     { weight: 60, maxPts: 60  }, // repeated same-direction gaze pattern
   WINDOW_BLUR:              { weight:  6, maxPts: 18  }, // window lost focus (can be accidental)
   RIGHT_CLICK:              { weight:  2, maxPts:  6  }, // right-click (often accidental)
   NOISE_DETECTED:           { weight:  2, maxPts:  8  }, // background noise (common)
@@ -52,7 +56,7 @@ const EVENT_TYPES = [
   'TAB_SWITCH', 'WINDOW_BLUR', 'FULLSCREEN_EXIT', 'COPY_PASTE', 'RIGHT_CLICK',
   'WEBCAM_BLOCKED', 'MULTIPLE_FACES', 'NO_FACE_DETECTED', 'NOISE_DETECTED',
   'SCREENSHOT_TAKEN', 'DEVTOOLS_OPEN', 'PHONE_DETECTED', 'HEAD_TURNED',
-  'SCREEN_RECORDING_STOPPED', 'CUSTOM',
+  'SCREEN_RECORDING_STOPPED', 'FACE_OBSTRUCTED', 'SUSPECTED_ASSISTANCE', 'CUSTOM',
 ] as const
 
 const eventSchema = z.object({
@@ -319,6 +323,24 @@ export async function proctoringRoutes(server: FastifyInstance) {
       return reply.status(404).send({ success: false, error: 'Recording file missing from disk', url: recording.url })
     }
     return reply.type('video/webm').send(createReadStream(filePath))
+  })
+
+  // GET /api/proctoring/:sessionId/latest-snapshot-image — serve the most recent snapshot directly (admin)
+  // Polled every 5s by the Live Monitor for real-time webcam view
+  server.get('/:sessionId/latest-snapshot-image', { preHandler: canView }, async (request, reply) => {
+    const { sessionId } = request.params as { sessionId: string }
+    const snapshot = await prisma.webcamSnapshot.findFirst({
+      where: { sessionId, session: { test: { tenantId: request.user.tenantId } } },
+      orderBy: { occurredAt: 'desc' },
+    })
+    if (!snapshot) return reply.status(404).send()
+
+    const relativePath = snapshot.url.replace(/^\/uploads\//, '')
+    const filePath = join(UPLOADS_DIR, relativePath)
+    if (!existsSync(filePath)) return reply.status(404).send()
+
+    reply.header('Cache-Control', 'no-store')
+    return reply.type('image/jpeg').send(createReadStream(filePath))
   })
 
   // GET /api/proctoring/:sessionId/snapshots — list all snapshots for a session (admin)

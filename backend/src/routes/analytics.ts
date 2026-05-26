@@ -82,6 +82,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
           },
         },
       },
+      take: 5000, // cap: enough for any realistic leaderboard aggregation
     })
 
     // Aggregate per candidate
@@ -119,6 +120,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
       where: { session: { test: { tenantId: tid }, submittedAt: { gte: since } } },
       select: { percentage: true, passed: true, createdAt: true },
       orderBy: { createdAt: 'asc' },
+      take: 10000,
     })
 
     const weekMap = new Map<string, { pass: number; fail: number; total: number }>()

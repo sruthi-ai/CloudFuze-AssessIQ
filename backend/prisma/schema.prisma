@@ -337,6 +337,8 @@ model Invitation {
   session     Session?
 
   @@unique([testId, candidateId])
+  @@index([testId, status])            // invitation list per test, filtered by status
+  @@index([status, expiresAt])         // reminder job: find pending + expiring soon
   @@map("invitations")
 }
 
@@ -371,6 +373,9 @@ model Session {
   screenRecording    ScreenRecording?
   roomScans          RoomScan[]
 
+  @@index([testId, submittedAt])       // results page: filter by test, sort by date
+  @@index([testId, status])            // live monitor + analytics: filter active sessions
+  @@index([candidateId])               // candidate detail page
   @@map("sessions")
 }
 
@@ -400,6 +405,7 @@ model Answer {
   question       Question      @relation(fields: [questionId], references: [id])
 
   @@unique([sessionId, questionId])
+  @@index([sessionId])                 // answer lookup per session
   @@map("answers")
 }
 
@@ -441,7 +447,8 @@ model ProctoringEvent {
   sessionId   String
   session     Session                 @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
-  @@index([sessionId])
+  @@index([sessionId, occurredAt])     // timeline queries: sort by time within session
+  @@index([sessionId, severity])       // filter high-severity events
   @@map("proctoring_events")
 }
 

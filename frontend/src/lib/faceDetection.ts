@@ -40,6 +40,12 @@ export async function countFaces(videoEl: HTMLVideoElement): Promise<number> {
   return dets.length
 }
 
+// Minimum detection confidence and face size (relative to frame width) required
+// before we trust landmark-based head pose. Below these thresholds the landmark
+// geometry is too noisy to produce reliable yaw/pitch values.
+const POSE_MIN_SCORE = 0.75
+const POSE_MIN_FACE_FRACTION = 0.12 // face width must be ≥12% of video width
+
 export async function detectFacesWithPose(videoEl: HTMLVideoElement): Promise<{
   count: number
   headPose: HeadPose | null
@@ -54,15 +60,21 @@ export async function detectFacesWithPose(videoEl: HTMLVideoElement): Promise<{
 
   if (results.length === 0) return { count: 0, headPose: null }
 
-  // Use first face for head pose
-  const landmarks = results[0].landmarks
-  const pts = landmarks.positions
+  // Use first face for head pose, but only when detection is high-confidence
+  // and the face is large enough that landmark geometry is reliable.
+  const best = results[0]
+  const detectionScore: number = (best.detection as { score: number }).score ?? 1
+  const faceBoxWidth: number = best.detection.box.width
+  const minFacePixels = videoEl.videoWidth * POSE_MIN_FACE_FRACTION
+
+  if (detectionScore < POSE_MIN_SCORE || faceBoxWidth < minFacePixels) {
+    return { count: results.length, headPose: null }
+  }
+
+  const pts = best.landmarks.positions
 
   // Key landmark indices (68-point model):
-  // 0-16: jaw, 17-21: left brow, 22-26: right brow
-  // 27-30: nose bridge, 31-35: nose bottom
-  // 36-41: left eye, 42-47: right eye
-  // 48-67: mouth
+  // 36: left eye outer, 45: right eye outer, 30: nose tip, 8: chin
   const leftEye = pts[36]
   const rightEye = pts[45]
   const noseTip = pts[30]
@@ -73,12 +85,17 @@ export async function detectFacesWithPose(videoEl: HTMLVideoElement): Promise<{
   const faceWidth = rightEye.x - leftEye.x
   const faceHeight = chin.y - eyeCenterY
 
+  // Guard against degenerate geometry (collapsed face box, profile view)
+  if (faceWidth < 10 || faceHeight < 10) {
+    return { count: results.length, headPose: null }
+  }
+
   // Yaw: how far nose is horizontally offset from eye center, normalized by face width
-  const yaw = faceWidth > 0 ? (noseTip.x - eyeCenterX) / (faceWidth * 0.6) : 0
+  const yaw = (noseTip.x - eyeCenterX) / (faceWidth * 0.6)
 
   // Pitch: vertical position of nose relative to face height
   // When looking straight: nose is ~0.5 down from eye center to chin
-  const rawPitch = faceHeight > 0 ? (noseTip.y - eyeCenterY) / faceHeight : 0
+  const rawPitch = (noseTip.y - eyeCenterY) / faceHeight
   const pitch = (rawPitch - 0.5) * 2 // normalize around 0
 
   return {

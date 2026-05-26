@@ -223,6 +223,9 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
             const { count, headPose } = await detectFacesWithPose(videoRef.current)
             if (cancelled) return
 
+            // count === -1 means video frame wasn't ready — skip this tick entirely
+            if (count === -1) return
+
             setFaceCount(count)
 
             if (count === 0) {

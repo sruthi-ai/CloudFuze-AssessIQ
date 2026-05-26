@@ -5,7 +5,7 @@ import {
   ShieldAlert, ShieldCheck, AlertTriangle, Trophy,
   Camera, CameraOff, TabletSmartphone, Minimize2, Copy,
   MousePointer2, Code2, Users, UserX, Volume2, Smartphone,
-  Navigation, MonitorPlay, ZoomIn,
+  Navigation, MonitorPlay, ZoomIn, Video,
 } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
@@ -59,6 +59,41 @@ function SecureImage({ src, alt, className, onClick }: {
     <div className={cn('bg-gray-100 animate-pulse', className)} />
   )
   return <img src={objectUrl} alt={alt} className={cn('object-cover', className)} onClick={onClick} />
+}
+
+function SecureVideo({ src, className }: { src: string; className?: string }) {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null)
+  const [err, setErr] = useState(false)
+  const prevUrl = useRef<string | null>(null)
+
+  useEffect(() => {
+    setObjectUrl(null)
+    setErr(false)
+    let active = true
+    const token = localStorage.getItem('accessToken')
+    fetch(src, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then(r => { if (!r.ok) { if (active) setErr(true); throw new Error() } return r.blob() })
+      .then(blob => {
+        if (!active) return
+        if (prevUrl.current) URL.revokeObjectURL(prevUrl.current)
+        const url = URL.createObjectURL(blob)
+        prevUrl.current = url
+        setObjectUrl(url)
+      })
+      .catch(() => { if (active) setErr(true) })
+    return () => {
+      active = false
+      if (prevUrl.current) { URL.revokeObjectURL(prevUrl.current); prevUrl.current = null }
+    }
+  }, [src])
+
+  if (err) return (
+    <div className={cn('flex items-center justify-center bg-gray-900 text-gray-400 rounded', className)}>
+      <span className="text-xs">Video unavailable</span>
+    </div>
+  )
+  if (!objectUrl) return <div className={cn('bg-gray-800 animate-pulse rounded', className)} />
+  return <video src={objectUrl} controls className={cn('bg-black rounded', className)} />
 }
 
 const EVENT_LABELS: Record<string, string> = {
@@ -161,6 +196,12 @@ export function ResultDetailPage() {
   const { data: snapshotsData } = useQuery({
     queryKey: ['proctoring-snapshots', sessionId],
     queryFn: () => api.get(`/proctoring/${sessionId}/snapshots`).then(r => r.data.data),
+    enabled: !!sessionId,
+  })
+
+  const { data: roomScansData } = useQuery({
+    queryKey: ['room-scans', sessionId],
+    queryFn: () => api.get(`/proctoring/${sessionId}/room-scans`).then(r => r.data.data),
     enabled: !!sessionId,
   })
 
@@ -398,11 +439,49 @@ export function ResultDetailPage() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <video
+                      <SecureVideo
                         src={`/api/proctoring/${sessionId}/media/recording`}
-                        controls
-                        className="w-full rounded-md border max-h-72 bg-black"
+                        className="w-full max-h-72"
                       />
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Room scans */}
+                {roomScansData && roomScansData.length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Video className="h-4 w-4" />
+                        Room Scans
+                        <span className="text-xs font-normal text-muted-foreground ml-1">({roomScansData.length})</span>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        {roomScansData.map((scan: any, idx: number) => (
+                          <div key={scan.id} className="space-y-1.5">
+                            <div className="flex items-center gap-2">
+                              <span className={cn(
+                                'text-xs font-medium px-2 py-0.5 rounded-full',
+                                scan.trigger === 'PRE_TEST' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
+                              )}>
+                                {scan.trigger === 'PRE_TEST' ? 'Pre-Test' : `Mid-Test #${idx}`}
+                              </span>
+                              <span className="text-xs text-muted-foreground">{formatDateTime(scan.createdAt)}</span>
+                              {scan.fileSize && (
+                                <span className="text-xs text-muted-foreground ml-auto">
+                                  {(scan.fileSize / 1024 / 1024).toFixed(1)} MB
+                                </span>
+                              )}
+                            </div>
+                            <SecureVideo
+                              src={`/api/proctoring/${sessionId}/room-scan/${scan.id}`}
+                              className="w-full max-h-48"
+                            />
+                          </div>
+                        ))}
+                      </div>
                     </CardContent>
                   </Card>
                 )}

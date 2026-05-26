@@ -16,6 +16,8 @@ const createTestSchema = z.object({
   showResults: z.boolean().optional(),
   allowedAttempts: z.number().int().min(1).optional(),
   proctoring: z.boolean().optional(),
+  roomScanEnabled: z.boolean().optional(),
+  roomScanIntervalMins: z.number().int().min(5).max(120).optional(),
 })
 
 const addQuestionSchema = z.object({
@@ -161,6 +163,8 @@ export async function testRoutes(server: FastifyInstance) {
           showResults: original.showResults,
           allowedAttempts: original.allowedAttempts,
           proctoring: original.proctoring,
+          roomScanEnabled: original.roomScanEnabled,
+          roomScanIntervalMins: original.roomScanIntervalMins,
           status: 'DRAFT',
           tenantId: request.user.tenantId,
           createdById: request.user.sub,

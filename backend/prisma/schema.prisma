@@ -236,8 +236,10 @@ model Test {
   shuffleOptions   Boolean    @default(false)
   showResults      Boolean    @default(false) // show results to candidate after submission
   allowedAttempts  Int        @default(1)
-  proctoring       Boolean    @default(true)
-  createdAt        DateTime   @default(now())
+  proctoring           Boolean    @default(true)
+  roomScanEnabled      Boolean    @default(false)
+  roomScanIntervalMins Int        @default(20)
+  createdAt            DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 
   tenantId         String
@@ -367,6 +369,7 @@ model Session {
   proctoringEvents   ProctoringEvent[]
   webcamSnapshots    WebcamSnapshot[]
   screenRecording    ScreenRecording?
+  roomScans          RoomScan[]
 
   @@map("sessions")
 }
@@ -473,6 +476,28 @@ model WebcamSnapshot {
 
   @@index([sessionId])
   @@map("webcam_snapshots")
+}
+
+// ─── Room Scans ───────────────────────────────────────────────────────────────
+
+enum RoomScanTrigger {
+  PRE_TEST
+  MID_TEST
+}
+
+model RoomScan {
+  id        String          @id @default(cuid())
+  url       String
+  trigger   RoomScanTrigger
+  duration  Int?            // seconds
+  fileSize  Int?
+  createdAt DateTime        @default(now())
+
+  sessionId String
+  session   Session         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("room_scans")
 }
 
 // ─── Screen Recordings ────────────────────────────────────────────────────────

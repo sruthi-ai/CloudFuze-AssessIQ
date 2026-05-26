@@ -32,6 +32,8 @@ const testSchema = z.object({
   shuffleOptions: z.boolean().optional(),
   showResults: z.boolean().optional(),
   proctoring: z.boolean().optional(),
+  roomScanEnabled: z.boolean().optional(),
+  roomScanIntervalMins: z.coerce.number().int().min(5).max(120).optional(),
 })
 type TestFormValues = z.infer<typeof testSchema>
 
@@ -709,6 +711,8 @@ export function TestBuilderPage() {
     defaultValues: {
       duration: 60,
       proctoring: true,
+      roomScanEnabled: false,
+      roomScanIntervalMins: 20,
       shuffleQuestions: false,
       shuffleOptions: false,
       showResults: false,
@@ -728,6 +732,8 @@ export function TestBuilderPage() {
         shuffleOptions: testData.shuffleOptions,
         showResults: testData.showResults,
         proctoring: testData.proctoring,
+        roomScanEnabled: testData.roomScanEnabled ?? false,
+        roomScanIntervalMins: testData.roomScanIntervalMins ?? 20,
       })
     }
   }, [testData, reset])
@@ -756,6 +762,9 @@ export function TestBuilderPage() {
       toast({ title: 'Error', description: getErrorMessage(err), variant: 'destructive' })
     },
   })
+
+  const proctoringOn = watch('proctoring')
+  const roomScanOn = watch('roomScanEnabled')
 
   // Auto-save with 1.5s debounce when editing an existing test
   const watchedValues = watch()
@@ -1063,6 +1072,28 @@ export function TestBuilderPage() {
                     <span className="text-sm">{opt.label}</span>
                   </label>
                 ))}
+                {proctoringOn && (
+                  <div className="ml-6 pl-3 border-l-2 border-gray-200 space-y-3 pt-1">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input type="checkbox" className="rounded" {...register('roomScanEnabled')} />
+                      <span className="text-sm">Enable room scan (60-second video of environment)</span>
+                    </label>
+                    {roomScanOn && (
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor="roomScanIntervalMins" className="text-sm whitespace-nowrap">Scan every</Label>
+                        <Input
+                          id="roomScanIntervalMins"
+                          type="number"
+                          min="5"
+                          max="120"
+                          className="w-20 h-8 text-sm"
+                          {...register('roomScanIntervalMins')}
+                        />
+                        <span className="text-sm text-muted-foreground">minutes (during test)</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

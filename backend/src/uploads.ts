@@ -6,4 +6,5 @@ export const UPLOADS_DIR = process.env.UPLOADS_DIR ?? join(process.cwd(), 'uploa
 export function initUploads(): void {
   mkdirSync(join(UPLOADS_DIR, 'snapshots'), { recursive: true })
   mkdirSync(join(UPLOADS_DIR, 'recordings'), { recursive: true })
+  mkdirSync(join(UPLOADS_DIR, 'room-scans'), { recursive: true })
 }

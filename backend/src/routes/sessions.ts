@@ -92,6 +92,8 @@ export async function sessionRoutes(server: FastifyInstance) {
         instructions: invitation.test.instructions,
         duration: invitation.test.duration,
         proctoring: invitation.test.proctoring,
+        roomScanEnabled: invitation.test.roomScanEnabled,
+        roomScanIntervalMins: invitation.test.roomScanIntervalMins,
         questionCount: invitation.test.sections.reduce((a, s) => a + s.testQuestions.length, 0),
         sections: invitation.test.sections.map(s => ({
           id: s.id,

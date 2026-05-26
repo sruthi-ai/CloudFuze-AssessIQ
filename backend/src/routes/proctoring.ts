@@ -338,6 +338,71 @@ export async function proctoringRoutes(server: FastifyInstance) {
     })
   })
 
+  // POST /api/proctoring/:sessionId/room-scan — upload a room scan video (token-validated)
+  server.post('/:sessionId/room-scan', async (request, reply) => {
+    const { sessionId } = request.params as { sessionId: string }
+    const { token, trigger } = request.query as { token?: string; trigger?: string }
+
+    const session = await prisma.session.findFirst({
+      where: { id: sessionId, invitation: { token } },
+      select: { id: true, test: { select: { roomScanEnabled: true } } },
+    })
+    if (!session) return sendError(reply, 404, 'Session not found')
+    if (!session.test.roomScanEnabled) return sendSuccess(reply, { skipped: true })
+
+    const scanTrigger = trigger === 'PRE_TEST' ? 'PRE_TEST' : 'MID_TEST'
+
+    const data = await request.file()
+    if (!data) return sendError(reply, 400, 'No file uploaded')
+
+    const filename = `${sessionId}_${scanTrigger}_${Date.now()}.webm`
+    const filePath = join(UPLOADS_DIR, 'room-scans', filename)
+    await pipeline(data.file, createWriteStream(filePath))
+
+    const stat = statSync(filePath)
+    const scan = await prisma.roomScan.create({
+      data: {
+        sessionId,
+        url: `/uploads/room-scans/${filename}`,
+        trigger: scanTrigger,
+        fileSize: stat.size,
+      },
+    })
+    return sendSuccess(reply, scan, 201)
+  })
+
+  // GET /api/proctoring/:sessionId/room-scans — list all room scans (admin)
+  server.get('/:sessionId/room-scans', { preHandler: canView }, async (request, reply) => {
+    const { sessionId } = request.params as { sessionId: string }
+    const session = await prisma.session.findFirst({
+      where: { id: sessionId, test: { tenantId: request.user.tenantId } },
+      select: { id: true },
+    })
+    if (!session) return sendError(reply, 404, 'Session not found')
+
+    const scans = await prisma.roomScan.findMany({
+      where: { sessionId },
+      orderBy: { createdAt: 'asc' },
+    })
+    return sendSuccess(reply, scans)
+  })
+
+  // GET /api/proctoring/:sessionId/room-scan/:scanId — stream a room scan video (admin)
+  server.get('/:sessionId/room-scan/:scanId', { preHandler: canView }, async (request, reply) => {
+    const { sessionId, scanId } = request.params as { sessionId: string; scanId: string }
+    const scan = await prisma.roomScan.findFirst({
+      where: { id: scanId, sessionId, session: { test: { tenantId: request.user.tenantId } } },
+    })
+    if (!scan) return sendError(reply, 404, 'Room scan not found')
+
+    const relativePath = scan.url.replace(/^\/uploads\//, '')
+    const filePath = join(UPLOADS_DIR, relativePath)
+    if (!existsSync(filePath)) {
+      return reply.status(404).send({ success: false, error: 'Room scan file missing from disk' })
+    }
+    return reply.type('video/webm').send(createReadStream(filePath))
+  })
+
   // GET /api/proctoring/:sessionId/events — admin view of all events for a session
   server.get('/:sessionId/events', { preHandler: canView }, async (request, reply) => {
     const { sessionId } = request.params as { sessionId: string }

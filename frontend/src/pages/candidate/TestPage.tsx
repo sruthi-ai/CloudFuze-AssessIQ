@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import {
   Clock, ChevronLeft, ChevronRight, Send, Loader2,
-  Camera, CameraOff, Maximize,
+  Camera, CameraOff, Maximize, Video,
 } from 'lucide-react'
 import MonacoEditor from '@monaco-editor/react'
 import { Button } from '@/components/ui/button'
@@ -41,7 +41,8 @@ export function TestPage() {
   const navigate = useNavigate()
   const { sessionId, inviteData } = location.state ?? {}
 
-  const [testStep, setTestStep] = useState<'setup' | 'test'>('setup')
+  const [testStep, setTestStep] = useState<'setup' | 'room-scan' | 'test'>('setup')
+  const [showMidScan, setShowMidScan] = useState(false)
   const [currentSectionIdx, setCurrentSectionIdx] = useState(0)
   const [currentQIdx, setCurrentQIdx] = useState(0)
   const [answers, setAnswers] = useState<Record<string, AnswerState>>({})
@@ -53,6 +54,8 @@ export function TestPage() {
   const [showTabWarning, setShowTabWarning] = useState(false)
 
   const proctoring = inviteData?.test?.proctoring !== false
+  const roomScanEnabled = proctoring && inviteData?.test?.roomScanEnabled === true
+  const roomScanIntervalMins: number = inviteData?.test?.roomScanIntervalMins ?? 20
   const brandColor = inviteData?.test?.tenant?.primaryColor ?? '#6366f1'
 
   useEffect(() => {
@@ -129,9 +132,21 @@ export function TestPage() {
   }, [testStep, sessionId, token])
 
   const handleSetupReady = useCallback(() => {
-    setTestStep('test')
-    if (proctoring) requestFullscreen()
-  }, [proctoring, requestFullscreen])
+    if (roomScanEnabled) {
+      setTestStep('room-scan')
+    } else {
+      setTestStep('test')
+      if (proctoring) requestFullscreen()
+    }
+  }, [proctoring, roomScanEnabled, requestFullscreen])
+
+  // Mid-test room scan interval
+  useEffect(() => {
+    if (testStep !== 'test' || !roomScanEnabled) return
+    const ms = roomScanIntervalMins * 60 * 1000
+    const t = setInterval(() => setShowMidScan(true), ms)
+    return () => clearInterval(t)
+  }, [testStep, roomScanEnabled, roomScanIntervalMins])
 
   const saveMutation = useMutation({
     mutationFn: ({ questionId, answer }: { questionId: string; answer: AnswerState }) =>
@@ -251,9 +266,33 @@ export function TestPage() {
     )
   }
 
+  // ── Pre-test room scan ─────────────────────────────────────────────────────
+  if (testStep === 'room-scan') {
+    return (
+      <RoomScanModal
+        sessionId={sessionId}
+        token={token ?? ''}
+        trigger="PRE_TEST"
+        onComplete={() => { setTestStep('test'); if (proctoring) requestFullscreen() }}
+      />
+    )
+  }
+
   // ── Test UI ────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* Mid-test room scan overlay */}
+      {showMidScan && (
+        <div className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center p-4">
+          <RoomScanModal
+            sessionId={sessionId}
+            token={token ?? ''}
+            trigger="MID_TEST"
+            onComplete={() => setShowMidScan(false)}
+          />
+        </div>
+      )}
+
       {/* Tab-return warning overlay */}
       {showTabWarning && (
         <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4">
@@ -732,6 +771,151 @@ function CodeQuestion({
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+function RoomScanModal({
+  sessionId, token, trigger, onComplete,
+}: {
+  sessionId: string
+  token: string
+  trigger: 'PRE_TEST' | 'MID_TEST'
+  onComplete: () => void
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const recorderRef = useRef<MediaRecorder | null>(null)
+  const chunksRef = useRef<BlobPart[]>([])
+  const [step, setStep] = useState<'intro' | 'recording' | 'uploading' | 'done' | 'error'>('intro')
+  const [countdown, setCountdown] = useState(60)
+  const [camError, setCamError] = useState(false)
+
+  useEffect(() => {
+    navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+      .then(stream => {
+        streamRef.current = stream
+        if (videoRef.current) videoRef.current.srcObject = stream
+      })
+      .catch(() => setCamError(true))
+    return () => { streamRef.current?.getTracks().forEach(t => t.stop()) }
+  }, [])
+
+  const startRecording = () => {
+    if (!streamRef.current) return
+    chunksRef.current = []
+
+    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+      ? 'video/webm;codecs=vp9'
+      : 'video/webm'
+    const recorder = new MediaRecorder(streamRef.current, { mimeType })
+    recorder.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data) }
+    recorder.onstop = async () => {
+      setStep('uploading')
+      try {
+        const blob = new Blob(chunksRef.current, { type: 'video/webm' })
+        const formData = new FormData()
+        formData.append('file', blob, 'room-scan.webm')
+        await api.post(
+          `/proctoring/${sessionId}/room-scan?token=${token}&trigger=${trigger}`,
+          formData,
+          { headers: { 'Content-Type': 'multipart/form-data' } }
+        )
+      } catch { /* best-effort */ }
+      setStep('done')
+    }
+    recorderRef.current = recorder
+    recorder.start(1000)
+    setStep('recording')
+
+    let remaining = 60
+    const tick = setInterval(() => {
+      remaining--
+      setCountdown(remaining)
+      if (remaining <= 0) {
+        clearInterval(tick)
+        if (recorder.state !== 'inactive') recorder.stop()
+      }
+    }, 1000)
+  }
+
+  return (
+    <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full overflow-hidden">
+      <div className="bg-primary/10 px-6 py-4 border-b flex items-center gap-3">
+        <Video className="h-5 w-5 text-primary shrink-0" />
+        <div>
+          <h2 className="text-lg font-bold text-gray-900">
+            {trigger === 'PRE_TEST' ? 'Pre-Test Room Scan' : 'Periodic Room Check'}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {trigger === 'PRE_TEST'
+              ? 'Show your surroundings before starting the assessment'
+              : 'A brief room verification is required to continue'}
+          </p>
+        </div>
+      </div>
+
+      <div className="p-6 space-y-4">
+        {camError ? (
+          <div className="text-center space-y-3 py-4">
+            <p className="text-sm text-muted-foreground">Camera not available. You may continue.</p>
+            <Button className="w-full" onClick={onComplete}>Continue</Button>
+          </div>
+        ) : (
+          <>
+            <div className="relative bg-gray-900 rounded-lg overflow-hidden" style={{ aspectRatio: '16/9' }}>
+              <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover" />
+              {step === 'recording' && (
+                <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-red-600 text-white text-xs font-bold px-2.5 py-1 rounded-full">
+                  <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
+                  REC {countdown}s
+                </div>
+              )}
+            </div>
+
+            {step === 'intro' && (
+              <div className="space-y-3">
+                <ul className="text-sm text-gray-600 space-y-1.5">
+                  <li>• Slowly rotate your camera to show the entire room</li>
+                  <li>• Include your desk, walls, and any visible screens</li>
+                  <li>• Recording stops automatically after 60 seconds</li>
+                </ul>
+                <Button className="w-full" onClick={startRecording}>
+                  Start Room Scan (60 seconds)
+                </Button>
+              </div>
+            )}
+
+            {step === 'recording' && (
+              <div className="text-center space-y-1.5">
+                <div className="text-5xl font-mono font-bold text-gray-900 tabular-nums">{countdown}s</div>
+                <p className="text-sm text-muted-foreground">Slowly show your entire room…</p>
+              </div>
+            )}
+
+            {step === 'uploading' && (
+              <div className="flex items-center justify-center gap-2 py-4">
+                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                <span className="text-sm text-muted-foreground">Saving room scan…</span>
+              </div>
+            )}
+
+            {step === 'done' && (
+              <div className="space-y-3 text-center">
+                <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mx-auto">
+                  <span className="text-2xl text-green-600">✓</span>
+                </div>
+                <p className="text-sm text-gray-600">
+                  {trigger === 'PRE_TEST' ? 'Room scan complete. You may now begin.' : 'Verification complete. You may continue.'}
+                </p>
+                <Button className="w-full" onClick={onComplete}>
+                  {trigger === 'PRE_TEST' ? 'Begin Assessment' : 'Continue Test'}
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   )
 }

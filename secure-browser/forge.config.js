@@ -17,6 +17,8 @@ module.exports = {
       config: {
         name: 'assessiq_secure_browser',
         setupExe: 'AssessIQ-Secure-Browser-Setup.exe',
+        authors: 'CloudFuze',
+        description: 'Lockdown browser for AssessIQ online assessments',
       },
     },
     {

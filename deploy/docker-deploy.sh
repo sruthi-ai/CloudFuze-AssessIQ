@@ -68,9 +68,14 @@ done
 # ── nginx: install site config ────────────────────────────────────────────────
 section "nginx"
 
-if [[ ! -f "$NGINX_CONF" ]] || ! diff -q "$APP_DIR/deploy/nginx-site.conf" "$NGINX_CONF" &>/dev/null; then
+# Only install the template if the config doesn't exist yet.
+# Once certbot has run it adds ssl_certificate lines to the live file — don't
+# overwrite those with the uncommitted template on re-deploys.
+if [[ ! -f "$NGINX_CONF" ]]; then
     cp "$APP_DIR/deploy/nginx-site.conf" "$NGINX_CONF"
-    info "nginx config updated."
+    info "nginx config installed."
+else
+    info "nginx config already exists — skipping copy (preserves certbot SSL lines)."
 fi
 
 if [[ ! -L "$NGINX_LINK" ]]; then

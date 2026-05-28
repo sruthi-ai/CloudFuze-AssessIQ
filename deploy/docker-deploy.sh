@@ -46,11 +46,11 @@ cd "$APP_DIR"
 # Pull latest base images
 docker compose -f docker-compose.prod.yml --env-file .env.docker pull db 2>/dev/null || true
 
-# Build app images (--no-cache on first run, cached on re-deploys)
-docker compose -f docker-compose.prod.yml --env-file "$ENV_FILE" build
+# Build app images — always rebuild to pick up latest git changes
+docker compose -f docker-compose.prod.yml --env-file "$ENV_FILE" build --no-cache
 
-# Start / recreate containers
-docker compose -f docker-compose.prod.yml --env-file "$ENV_FILE" up -d --remove-orphans
+# Start / recreate containers (force-recreate ensures new image is used)
+docker compose -f docker-compose.prod.yml --env-file "$ENV_FILE" up -d --remove-orphans --force-recreate
 
 info "Containers started."
 

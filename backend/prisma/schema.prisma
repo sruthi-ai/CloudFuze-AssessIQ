@@ -245,6 +245,7 @@ model Test {
   allowedIPs               Json?      // Array of IPs/CIDR ranges; null = no restriction
   openAt                   DateTime?  // null = always open
   closeAt                  DateTime?  // null = no close deadline
+  requireSecureBrowser     Boolean    @default(false)
   practiceEnabled          Boolean    @default(false)
   practiceToken            String?    @unique
   createdAt            DateTime   @default(now())
@@ -367,6 +368,7 @@ model Session {
   idVerified             Boolean    @default(false)
   idVerificationPhoto    String?    // URL of uploaded ID photo
   isPractice             Boolean    @default(false)
+  secureBrowserUsed      Boolean    @default(false)
   lastHeartbeatAt DateTime?    // set every 30s during active test
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
@@ -442,6 +444,7 @@ enum ProctoringEventType {
   FACE_OBSTRUCTED
   SUSPECTED_ASSISTANCE
   IDENTITY_MISMATCH
+  SECURE_BROWSER_BYPASSED
   CUSTOM
 }
 

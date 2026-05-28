@@ -35,6 +35,7 @@ const testSchema = z.object({
   roomScanEnabled: z.boolean().optional(),
   roomScanIntervalMins: z.coerce.number().int().min(5).max(120).optional(),
   requireIdVerification: z.boolean().optional(),
+  requireSecureBrowser: z.boolean().optional(),
   allowedIPs: z.array(z.string()).optional().nullable(),
   negativeMarking: z.coerce.number().min(0).max(1).optional().nullable(),
   openAt: z.string().optional().nullable(),
@@ -1426,6 +1427,10 @@ export function TestBuilderPage() {
                     <label className="flex items-center gap-3 cursor-pointer">
                       <input type="checkbox" className="rounded" {...register('roomScanEnabled')} />
                       <span className="text-sm">Enable room scan (60-second video of environment)</span>
+                    </label>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input type="checkbox" className="rounded" {...register('requireSecureBrowser')} />
+                      <span className="text-sm">Require Secure Browser (candidates must use the AssessIQ lockdown app — blocks other tabs, screen recording, remote desktop)</span>
                     </label>
                     {roomScanOn && (
                       <div className="flex items-center gap-2">

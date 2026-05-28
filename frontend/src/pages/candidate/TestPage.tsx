@@ -14,6 +14,7 @@ import { toast } from '@/hooks/use-toast'
 import { useProctoring } from '@/hooks/useProctoring'
 import { useScreenRecorder } from '@/hooks/useScreenRecorder'
 import { ProctoringSetup } from '@/components/proctoring/ProctoringSetup'
+import { SecureBrowserGate } from '@/components/SecureBrowserGate'
 import { formatSeconds, cn } from '@/lib/utils'
 
 interface AnswerState {
@@ -67,6 +68,9 @@ export function TestPage() {
   const roomScanIntervalMins: number = inviteData?.test?.roomScanIntervalMins ?? 20
   const brandColor = inviteData?.test?.tenant?.primaryColor ?? '#6366f1'
 
+  const requireSecureBrowser = !isPractice && inviteData?.test?.requireSecureBrowser === true
+  const isSecureBrowser = !!(window as any).__SECURE_BROWSER__
+
   useEffect(() => {
     document.documentElement.style.setProperty('--brand-primary', brandColor)
     return () => { document.documentElement.style.removeProperty('--brand-primary') }
@@ -116,6 +120,13 @@ export function TestPage() {
   useEffect(() => {
     if (testData?.timeRemaining != null) setTimeRemaining(testData.timeRemaining)
   }, [testData?.timeRemaining])
+
+  // Register session with secure browser main process for violation reporting
+  useEffect(() => {
+    if (isSecureBrowser && sessionId && token) {
+      ;(window as any).__secureBrowserBridge__?.setSession(sessionId, token)
+    }
+  }, [isSecureBrowser, sessionId, token])
 
   useEffect(() => {
     if (timeRemaining === null) return
@@ -216,6 +227,10 @@ export function TestPage() {
     },
     onSuccess: res => {
       setSubmitting(false)
+      // Notify secure browser that test is complete — unlocks the kiosk window
+      if (isSecureBrowser) {
+        ;(window as any).__secureBrowserBridge__?.notifySubmitted()
+      }
       navigate(`/take/${token}/done`, { state: { result: res.data.data, isPractice }, replace: true })
     },
     onError: err => {
@@ -290,6 +305,16 @@ export function TestPage() {
 
   if (isLoading) {
     return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+  }
+
+  // ── Secure browser gate ────────────────────────────────────────────────────
+  if (requireSecureBrowser && !isSecureBrowser) {
+    return (
+      <SecureBrowserGate
+        testTitle={inviteData?.test?.title}
+        tenantName={inviteData?.test?.tenant?.name}
+      />
+    )
   }
 
   // ── Proctoring setup step ──────────────────────────────────────────────────

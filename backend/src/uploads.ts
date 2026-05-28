@@ -9,4 +9,5 @@ export function initUploads(): void {
   mkdirSync(join(UPLOADS_DIR, 'room-scans'), { recursive: true })
   mkdirSync(join(UPLOADS_DIR, 'id-photos'), { recursive: true })
   mkdirSync(join(UPLOADS_DIR, 'screen-snapshots'), { recursive: true })
+  mkdirSync(join(UPLOADS_DIR, 'secure-browser-installers'), { recursive: true })
 }

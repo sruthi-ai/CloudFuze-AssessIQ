@@ -131,6 +131,7 @@ export async function sessionRoutes(server: FastifyInstance) {
         roomScanEnabled: invitation.test.roomScanEnabled,
         roomScanIntervalMins: invitation.test.roomScanIntervalMins,
         requireIdVerification: invitation.test.requireIdVerification,
+        requireSecureBrowser: invitation.test.requireSecureBrowser,
         allowedIPs: invitation.test.allowedIPs as string[] | null,
         openAt: invitation.test.openAt,
         closeAt: invitation.test.closeAt,
@@ -181,6 +182,14 @@ export async function sessionRoutes(server: FastifyInstance) {
       if (invitation.test.closeAt && invitation.test.closeAt < now) {
         return sendError(reply, 410, 'Test window has closed', { closeAt: invitation.test.closeAt })
       }
+      // Secure browser enforcement
+      if (invitation.test.requireSecureBrowser) {
+        const ua = (userAgent || request.headers['user-agent'] || '')
+        if (!ua.includes('AssessIQ-Secure-Browser')) {
+          return sendError(reply, 403, 'This test requires the AssessIQ Secure Browser. Please download and use it to start the test.')
+        }
+      }
+
       // IP restriction check
       const allowedIPs = invitation.test.allowedIPs as string[] | null
       if (allowedIPs && allowedIPs.length > 0) {
@@ -229,6 +238,7 @@ export async function sessionRoutes(server: FastifyInstance) {
         timeoutAt,
         ipAddress: ipAddress || request.ip,
         userAgent: userAgent || request.headers['user-agent'],
+        secureBrowserUsed: (userAgent || request.headers['user-agent'] || '').includes('AssessIQ-Secure-Browser'),
         ...(questionOrder ? { questionOrder } : {}),
       },
     })

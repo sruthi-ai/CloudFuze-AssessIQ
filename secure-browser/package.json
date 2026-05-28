@@ -1,0 +1,26 @@
+{
+  "name": "assessiq-secure-browser",
+  "productName": "AssessIQ Secure Browser",
+  "version": "1.0.0",
+  "description": "Lockdown browser for AssessIQ online assessments",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron-forge start",
+    "make": "electron-forge make",
+    "package": "electron-forge package"
+  },
+  "config": {
+    "forge": "./forge.config.js"
+  },
+  "dependencies": {
+    "electron-squirrel-startup": "^1.0.0"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.4.0",
+    "@electron-forge/maker-squirrel": "^7.4.0",
+    "@electron-forge/maker-dmg": "^7.4.0",
+    "@electron-forge/maker-zip": "^7.4.0",
+    "@electron-forge/maker-deb": "^7.4.0",
+    "electron": "^31.0.0"
+  }
+}

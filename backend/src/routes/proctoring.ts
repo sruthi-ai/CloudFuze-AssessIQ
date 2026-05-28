@@ -27,6 +27,7 @@ const SEVERITY_MAP: Record<string, 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'> = {
   FACE_OBSTRUCTED: 'HIGH',
   SUSPECTED_ASSISTANCE: 'CRITICAL',
   IDENTITY_MISMATCH: 'CRITICAL',
+  SECURE_BROWSER_BYPASSED: 'CRITICAL',
   CUSTOM: 'MEDIUM',
 }
 
@@ -47,6 +48,7 @@ const EVENT_RISK: Record<string, { weight: number; maxPts: number }> = {
   FACE_OBSTRUCTED:          { weight: 15, maxPts: 45  }, // face deliberately partially hidden
   SUSPECTED_ASSISTANCE:     { weight: 60, maxPts: 60  }, // repeated same-direction gaze pattern
   IDENTITY_MISMATCH:        { weight: 70, maxPts: 70  }, // face during test doesn't match baseline
+  SECURE_BROWSER_BYPASSED:  { weight: 80, maxPts: 80  }, // test requires lockdown browser but candidate bypassed it
   WINDOW_BLUR:              { weight:  6, maxPts: 18  }, // window lost focus (can be accidental)
   RIGHT_CLICK:              { weight:  2, maxPts:  6  }, // right-click (often accidental)
   NOISE_DETECTED:           { weight:  2, maxPts:  8  }, // background noise (common)
@@ -58,7 +60,8 @@ const EVENT_TYPES = [
   'TAB_SWITCH', 'WINDOW_BLUR', 'FULLSCREEN_EXIT', 'COPY_PASTE', 'RIGHT_CLICK',
   'WEBCAM_BLOCKED', 'MULTIPLE_FACES', 'NO_FACE_DETECTED', 'NOISE_DETECTED',
   'SCREENSHOT_TAKEN', 'DEVTOOLS_OPEN', 'PHONE_DETECTED', 'HEAD_TURNED',
-  'SCREEN_RECORDING_STOPPED', 'FACE_OBSTRUCTED', 'SUSPECTED_ASSISTANCE', 'IDENTITY_MISMATCH', 'CUSTOM',
+  'SCREEN_RECORDING_STOPPED', 'FACE_OBSTRUCTED', 'SUSPECTED_ASSISTANCE', 'IDENTITY_MISMATCH',
+  'SECURE_BROWSER_BYPASSED', 'CUSTOM',
 ] as const
 
 const eventSchema = z.object({

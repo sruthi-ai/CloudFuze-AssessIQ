@@ -24,6 +24,7 @@ import { analyticsRoutes } from './routes/analytics'
 import { auditRoutes } from './routes/audit'
 import { ssoRoutes } from './routes/sso'
 import { demoRoutes } from './routes/demo'
+import { downloadRoutes } from './routes/downloads'
 import { startReminderJob } from './jobs/reminders'
 import { startSessionTimeoutJob } from './jobs/sessionTimeout'
 import { startRetentionJob } from './jobs/retention'
@@ -111,6 +112,7 @@ async function bootstrap() {
   await server.register(auditRoutes, { prefix: '/api/audit' })
   await server.register(ssoRoutes, { prefix: '/api/sso' })
   await server.register(demoRoutes, { prefix: '/api/demo' })
+  await server.register(downloadRoutes, { prefix: '/api/downloads' })
 
   // Health check
   server.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }))

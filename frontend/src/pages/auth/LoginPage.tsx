@@ -142,9 +142,7 @@ export function LoginPage() {
             </p>
           </CardContent>
         </Card>
-        <p className="text-center text-xs text-muted-foreground">
-          Demo: workspace <strong>demo-company</strong> · admin@demo.com · Password123!
-        </p>
+
       </div>
     </div>
   )

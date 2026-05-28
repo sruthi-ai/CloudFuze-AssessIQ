@@ -168,7 +168,8 @@ export async function sendInvitationEmail(params: {
   // 2. Resend (env var)
   if (process.env.RESEND_API_KEY) {
     const resend = new Resend(process.env.RESEND_API_KEY)
-    await resend.emails.send({ from: FROM_EMAIL, to: params.to, subject, html })
+    const { error } = await resend.emails.send({ from: FROM_EMAIL, to: params.to, subject, html })
+    if (error) throw new Error(`Resend error: ${error.message}`)
     return
   }
 
@@ -192,12 +193,13 @@ export async function sendInvitationEmail(params: {
   // 4. Tenant Resend key from database
   if (s?.emailProvider === 'resend' && s.resendApiKey) {
     const resend = new Resend(s.resendApiKey)
-    await resend.emails.send({
+    const { error } = await resend.emails.send({
       from: s.smtpFrom || FROM_EMAIL,
       to: params.to,
       subject,
       html,
     })
+    if (error) throw new Error(`Resend error: ${error.message}`)
     return
   }
 
@@ -229,14 +231,18 @@ export async function sendPasswordResetEmail(params: {
   }
   if (process.env.RESEND_API_KEY) {
     const resend = new Resend(process.env.RESEND_API_KEY)
-    await resend.emails.send({ from: FROM_EMAIL, to: params.to, subject, html }); return
+    const { error } = await resend.emails.send({ from: FROM_EMAIL, to: params.to, subject, html })
+    if (error) throw new Error(`Resend error: ${error.message}`)
+    return
   }
   if (s?.emailProvider === 'smtp' && s.smtpHost && s.smtpUser && s.smtpPass) {
     await sendViaSmtp({ to: params.to, subject, html, smtpHost: s.smtpHost, smtpPort: s.smtpPort ?? 587, smtpUser: s.smtpUser, smtpPass: s.smtpPass, smtpFrom: s.smtpFrom || s.smtpUser, smtpSecure: s.smtpSecure ?? false }); return
   }
   if (s?.emailProvider === 'resend' && s.resendApiKey) {
     const resend = new Resend(s.resendApiKey)
-    await resend.emails.send({ from: s.smtpFrom || FROM_EMAIL, to: params.to, subject, html }); return
+    const { error } = await resend.emails.send({ from: s.smtpFrom || FROM_EMAIL, to: params.to, subject, html })
+    if (error) throw new Error(`Resend error: ${error.message}`)
+    return
   }
   throw new Error('No email provider configured — set RESEND_API_KEY or configure SMTP/Azure in Settings')
 }
@@ -273,14 +279,18 @@ export async function sendSubmissionNotification(params: {
   }
   if (process.env.RESEND_API_KEY) {
     const resend = new Resend(process.env.RESEND_API_KEY)
-    await resend.emails.send({ from: FROM_EMAIL, to: params.to, subject, html }); return
+    const { error } = await resend.emails.send({ from: FROM_EMAIL, to: params.to, subject, html })
+    if (error) console.warn(`[EMAIL] Resend error for submission notification: ${error.message}`)
+    return
   }
   if (s?.emailProvider === 'smtp' && s.smtpHost && s.smtpUser && s.smtpPass) {
     await sendViaSmtp({ to: params.to, subject, html, smtpHost: s.smtpHost, smtpPort: s.smtpPort ?? 587, smtpUser: s.smtpUser, smtpPass: s.smtpPass, smtpFrom: s.smtpFrom || s.smtpUser, smtpSecure: s.smtpSecure ?? false }); return
   }
   if (s?.emailProvider === 'resend' && s.resendApiKey) {
     const resend = new Resend(s.resendApiKey)
-    await resend.emails.send({ from: s.smtpFrom || FROM_EMAIL, to: params.to, subject, html }); return
+    const { error } = await resend.emails.send({ from: s.smtpFrom || FROM_EMAIL, to: params.to, subject, html })
+    if (error) console.warn(`[EMAIL] Resend error for submission notification: ${error.message}`)
+    return
   }
   // Submission notification is best-effort — log and continue if no provider
   console.warn(`[EMAIL] No provider configured — skipping submission notification to ${params.to}`)

@@ -207,6 +207,7 @@ export async function candidateRoutes(server: FastifyInstance) {
   // POST /api/candidates/invitations/:invitationId/resend
   server.post('/invitations/:invitationId/resend', { preHandler: canEdit }, async (request, reply) => {
     const { invitationId } = request.params as { invitationId: string }
+    const body = request.body as { expiresInDays?: number }
     const invitation = await prisma.invitation.findFirst({
       where: { id: invitationId },
       include: { candidate: true, test: { include: { tenant: true } } },
@@ -214,21 +215,30 @@ export async function candidateRoutes(server: FastifyInstance) {
     if (!invitation) return sendError(reply, 404, 'Invitation not found')
     if (invitation.test.tenantId !== request.user.tenantId) return sendError(reply, 403, 'Forbidden')
 
+    // Extend expiry from now (default 7 days) so the resent link is always fresh
+    const expiresAt = new Date()
+    expiresAt.setDate(expiresAt.getDate() + (body.expiresInDays ?? 7))
+
     await prisma.invitation.update({
       where: { id: invitationId },
-      data: { sentAt: new Date(), status: 'SENT' },
+      data: { sentAt: new Date(), status: 'SENT', expiresAt },
     })
 
-    await sendInvitationEmail({
-      to: invitation.candidate.email,
-      candidateName: `${invitation.candidate.firstName} ${invitation.candidate.lastName}`,
-      testTitle: invitation.test.title,
-      companyName: invitation.test.tenant.name,
-      token: invitation.token,
-      expiresAt: invitation.expiresAt,
-      message: invitation.message ?? undefined,
-      tenantSettings: (invitation.test.tenant.settings ?? undefined) as any,
-    })
+    try {
+      await sendInvitationEmail({
+        to: invitation.candidate.email,
+        candidateName: `${invitation.candidate.firstName} ${invitation.candidate.lastName}`,
+        testTitle: invitation.test.title,
+        companyName: invitation.test.tenant.name,
+        token: invitation.token,
+        expiresAt,
+        message: invitation.message ?? undefined,
+        tenantSettings: (invitation.test.tenant.settings ?? undefined) as any,
+      })
+    } catch (err) {
+      console.error('[RESEND] Email send failed:', err)
+      return sendError(reply, 502, `Invitation updated but email delivery failed: ${(err as Error).message}`)
+    }
 
     logAudit({ tenantId: request.user.tenantId, userId: request.user.sub, action: 'INVITATION_RESENT', entityType: 'invitation', entityId: invitationId, metadata: { candidateEmail: invitation.candidate.email, testTitle: invitation.test.title } })
     return sendSuccess(reply, { resent: true })

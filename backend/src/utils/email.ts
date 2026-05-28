@@ -159,22 +159,13 @@ export async function sendInvitationEmail(params: {
     ? interpolate(params.tenantSettings.emailSubject, vars)
     : `You're invited: ${params.testTitle} — ${params.companyName}`
 
-  // 1. Azure Graph (env vars)
-  if (process.env.AZURE_TENANT_ID && process.env.AZURE_CLIENT_ID && process.env.AZURE_CLIENT_SECRET) {
-    await sendViaGraph({ from: FROM_EMAIL, to: params.to, subject, html })
-    return
-  }
-
-  // 2. Resend (env var)
-  if (process.env.RESEND_API_KEY) {
-    const resend = new Resend(process.env.RESEND_API_KEY)
-    const { error } = await resend.emails.send({ from: FROM_EMAIL, to: params.to, subject, html })
-    if (error) throw new Error(`Resend error: ${error.message}`)
-    return
-  }
-
-  // 3. Tenant SMTP settings from database
   const s = params.tenantSettings
+
+  // Tenant-configured email takes priority over server env vars.
+  // If the admin set up SMTP/Resend in the UI, use it — env vars are fallbacks
+  // for tenants that haven't configured anything yet.
+
+  // 1. Tenant SMTP (configured in admin Settings)
   if (s?.emailProvider === 'smtp' && s.smtpHost && s.smtpUser && s.smtpPass) {
     await sendViaSmtp({
       to: params.to,
@@ -190,7 +181,7 @@ export async function sendInvitationEmail(params: {
     return
   }
 
-  // 4. Tenant Resend key from database
+  // 2. Tenant Resend key (configured in admin Settings)
   if (s?.emailProvider === 'resend' && s.resendApiKey) {
     const resend = new Resend(s.resendApiKey)
     const { error } = await resend.emails.send({
@@ -203,7 +194,21 @@ export async function sendInvitationEmail(params: {
     return
   }
 
-  throw new Error('No email provider configured — set RESEND_API_KEY or configure SMTP/Azure in Settings')
+  // 3. Azure Graph (server env var fallback)
+  if (process.env.AZURE_TENANT_ID && process.env.AZURE_CLIENT_ID && process.env.AZURE_CLIENT_SECRET) {
+    await sendViaGraph({ from: FROM_EMAIL, to: params.to, subject, html })
+    return
+  }
+
+  // 4. Resend (server env var fallback)
+  if (process.env.RESEND_API_KEY) {
+    const resend = new Resend(process.env.RESEND_API_KEY)
+    const { error } = await resend.emails.send({ from: FROM_EMAIL, to: params.to, subject, html })
+    if (error) throw new Error(`Resend error: ${error.message}`)
+    return
+  }
+
+  throw new Error('No email provider configured — configure SMTP in Settings or set RESEND_API_KEY')
 }
 
 export async function sendPasswordResetEmail(params: {

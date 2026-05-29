@@ -162,7 +162,7 @@ export async function sendInvitationEmail(params: {
   const s = params.tenantSettings
 
   // Tenant-configured email takes priority over server env vars.
-  // If the admin set up SMTP/Resend in the UI, use it — env vars are fallbacks
+  // If the admin set up SMTP/Resend/Graph in the UI, use it — env vars are fallbacks
   // for tenants that haven't configured anything yet.
 
   // 1. Tenant SMTP (configured in admin Settings)
@@ -194,13 +194,21 @@ export async function sendInvitationEmail(params: {
     return
   }
 
-  // 3. Azure Graph (server env var fallback)
+  // 3. Tenant Microsoft Graph (admin selected "Microsoft Graph" in Settings and saved a From address)
+  // Azure app credentials (AZURE_TENANT_ID/CLIENT_ID/SECRET) must be set as server env vars.
+  if (s?.emailProvider === 'graph') {
+    const from = s.smtpFrom || FROM_EMAIL
+    await sendViaGraph({ from, to: params.to, subject, html })
+    return
+  }
+
+  // 4. Azure Graph (server env var fallback — no tenant provider set)
   if (process.env.AZURE_TENANT_ID && process.env.AZURE_CLIENT_ID && process.env.AZURE_CLIENT_SECRET) {
     await sendViaGraph({ from: FROM_EMAIL, to: params.to, subject, html })
     return
   }
 
-  // 4. Resend (server env var fallback)
+  // 5. Resend (server env var fallback)
   if (process.env.RESEND_API_KEY) {
     const resend = new Resend(process.env.RESEND_API_KEY)
     const { error } = await resend.emails.send({ from: FROM_EMAIL, to: params.to, subject, html })
@@ -208,7 +216,7 @@ export async function sendInvitationEmail(params: {
     return
   }
 
-  throw new Error('No email provider configured — configure SMTP in Settings or set RESEND_API_KEY')
+  throw new Error('No email provider configured — configure SMTP/Resend/Graph in Settings or set RESEND_API_KEY')
 }
 
 export async function sendPasswordResetEmail(params: {
@@ -231,15 +239,6 @@ export async function sendPasswordResetEmail(params: {
   `
   const subject = 'Reset your NeutaraAssessments password'
   const s = params.tenantSettings
-  if (process.env.AZURE_TENANT_ID && process.env.AZURE_CLIENT_ID && process.env.AZURE_CLIENT_SECRET) {
-    await sendViaGraph({ from: FROM_EMAIL, to: params.to, subject, html }); return
-  }
-  if (process.env.RESEND_API_KEY) {
-    const resend = new Resend(process.env.RESEND_API_KEY)
-    const { error } = await resend.emails.send({ from: FROM_EMAIL, to: params.to, subject, html })
-    if (error) throw new Error(`Resend error: ${error.message}`)
-    return
-  }
   if (s?.emailProvider === 'smtp' && s.smtpHost && s.smtpUser && s.smtpPass) {
     await sendViaSmtp({ to: params.to, subject, html, smtpHost: s.smtpHost, smtpPort: s.smtpPort ?? 587, smtpUser: s.smtpUser, smtpPass: s.smtpPass, smtpFrom: s.smtpFrom || s.smtpUser, smtpSecure: s.smtpSecure ?? false }); return
   }
@@ -249,7 +248,19 @@ export async function sendPasswordResetEmail(params: {
     if (error) throw new Error(`Resend error: ${error.message}`)
     return
   }
-  throw new Error('No email provider configured — set RESEND_API_KEY or configure SMTP/Azure in Settings')
+  if (s?.emailProvider === 'graph') {
+    await sendViaGraph({ from: s.smtpFrom || FROM_EMAIL, to: params.to, subject, html }); return
+  }
+  if (process.env.AZURE_TENANT_ID && process.env.AZURE_CLIENT_ID && process.env.AZURE_CLIENT_SECRET) {
+    await sendViaGraph({ from: FROM_EMAIL, to: params.to, subject, html }); return
+  }
+  if (process.env.RESEND_API_KEY) {
+    const resend = new Resend(process.env.RESEND_API_KEY)
+    const { error } = await resend.emails.send({ from: FROM_EMAIL, to: params.to, subject, html })
+    if (error) throw new Error(`Resend error: ${error.message}`)
+    return
+  }
+  throw new Error('No email provider configured — set RESEND_API_KEY or configure SMTP/Graph in Settings')
 }
 
 export async function sendSubmissionNotification(params: {
@@ -279,21 +290,26 @@ export async function sendSubmissionNotification(params: {
   `
   const subject = `${params.candidateName} submitted: ${params.testTitle}`
   const s = params.tenantSettings
-  if (process.env.AZURE_TENANT_ID && process.env.AZURE_CLIENT_ID && process.env.AZURE_CLIENT_SECRET) {
-    await sendViaGraph({ from: FROM_EMAIL, to: params.to, subject, html }); return
-  }
-  if (process.env.RESEND_API_KEY) {
-    const resend = new Resend(process.env.RESEND_API_KEY)
-    const { error } = await resend.emails.send({ from: FROM_EMAIL, to: params.to, subject, html })
-    if (error) console.warn(`[EMAIL] Resend error for submission notification: ${error.message}`)
-    return
-  }
   if (s?.emailProvider === 'smtp' && s.smtpHost && s.smtpUser && s.smtpPass) {
     await sendViaSmtp({ to: params.to, subject, html, smtpHost: s.smtpHost, smtpPort: s.smtpPort ?? 587, smtpUser: s.smtpUser, smtpPass: s.smtpPass, smtpFrom: s.smtpFrom || s.smtpUser, smtpSecure: s.smtpSecure ?? false }); return
   }
   if (s?.emailProvider === 'resend' && s.resendApiKey) {
     const resend = new Resend(s.resendApiKey)
     const { error } = await resend.emails.send({ from: s.smtpFrom || FROM_EMAIL, to: params.to, subject, html })
+    if (error) console.warn(`[EMAIL] Resend error for submission notification: ${error.message}`)
+    return
+  }
+  if (s?.emailProvider === 'graph') {
+    try { await sendViaGraph({ from: s.smtpFrom || FROM_EMAIL, to: params.to, subject, html }) } catch (e: any) { console.warn(`[EMAIL] Graph error: ${e.message}`) }
+    return
+  }
+  if (process.env.AZURE_TENANT_ID && process.env.AZURE_CLIENT_ID && process.env.AZURE_CLIENT_SECRET) {
+    try { await sendViaGraph({ from: FROM_EMAIL, to: params.to, subject, html }) } catch (e: any) { console.warn(`[EMAIL] Graph error: ${e.message}`) }
+    return
+  }
+  if (process.env.RESEND_API_KEY) {
+    const resend = new Resend(process.env.RESEND_API_KEY)
+    const { error } = await resend.emails.send({ from: FROM_EMAIL, to: params.to, subject, html })
     if (error) console.warn(`[EMAIL] Resend error for submission notification: ${error.message}`)
     return
   }

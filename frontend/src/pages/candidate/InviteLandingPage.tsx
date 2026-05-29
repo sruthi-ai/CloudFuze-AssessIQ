@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { api, getErrorMessage } from '@/lib/api'
 import { toast } from '@/hooks/use-toast'
 import { formatDuration } from '@/lib/utils'
+import { SecureBrowserGate } from '@/components/SecureBrowserGate'
 
 function useCountdown(target: Date | null) {
   const [remaining, setRemaining] = useState<number | null>(null)
@@ -155,6 +156,7 @@ export function InviteLandingPage() {
   const [systemChecked, setSystemChecked] = useState(false)
   const [checking, setChecking] = useState(false)
   const [idVerifySession, setIdVerifySession] = useState<{ sessionId: string } | null>(null)
+  const [secureBrowserBlocked, setSecureBrowserBlocked] = useState(false)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['invite', token],
@@ -199,7 +201,12 @@ export function InviteLandingPage() {
     onError: (err: any) => {
       const status = err?.response?.status
       if (status === 403) {
-        toast({ title: 'Network not allowed', description: 'This assessment is restricted to specific IP addresses. Contact the organizer if you believe this is an error.', variant: 'destructive' })
+        const serverMsg: string = err?.response?.data?.error ?? ''
+        if (serverMsg.toLowerCase().includes('secure browser')) {
+          setSecureBrowserBlocked(true)
+        } else {
+          toast({ title: 'Network not allowed', description: serverMsg || 'This assessment is restricted to specific IP addresses. Contact the organizer if you believe this is an error.', variant: 'destructive' })
+        }
       } else {
         toast({ title: 'Unable to start', description: getErrorMessage(err), variant: 'destructive' })
       }
@@ -240,6 +247,16 @@ export function InviteLandingPage() {
           onVerified={() => navigate(`/take/${token}/test`, { state: { sessionId: idVerifySession.sessionId, inviteData: data } })}
         />
       </div>
+    )
+  }
+
+  const isSecureBrowser = !!(window as any).__SECURE_BROWSER__
+  if (secureBrowserBlocked || (data?.test?.requireSecureBrowser && !isSecureBrowser)) {
+    return (
+      <SecureBrowserGate
+        testTitle={data?.test?.title}
+        tenantName={data?.test?.tenant?.name}
+      />
     )
   }
 

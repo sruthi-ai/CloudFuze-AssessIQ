@@ -9,12 +9,17 @@ export async function initPhoneDetection(): Promise<boolean> {
   if (initPromise) return initPromise
   initPromise = (async () => {
     try {
-      // Ensure a TF.js backend is registered before loading the model
-      await import('@tensorflow/tfjs-backend-webgl')
+      // Try WebGL first (GPU-accelerated); fall back to WASM/CPU if unavailable
+      try {
+        await import('@tensorflow/tfjs-backend-webgl')
+      } catch {
+        // WebGL unavailable — model will attempt whatever backend TF.js auto-selects
+      }
       const cocoSsd = await import('@tensorflow-models/coco-ssd')
       model = await cocoSsd.load({ base: 'lite_mobilenet_v2' })
       return true
-    } catch {
+    } catch (e) {
+      console.warn('[PhoneDetection] COCO-SSD failed to load:', e)
       initPromise = null
       return false
     }

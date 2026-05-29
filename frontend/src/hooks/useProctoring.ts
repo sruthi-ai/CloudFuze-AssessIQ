@@ -254,7 +254,15 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
               consecutivePartialFace = 0
               if (consecutiveNoFace >= 2) {
                 captureViolationSnapshot()
-                pushImmediate('NO_FACE_DETECTED', 'No face visible in webcam for extended period')
+                // Check for a phone in the frame before reporting no-face —
+                // if a phone is visible it's a stronger signal than just an absent face.
+                const { detectPhone } = await import('@/lib/phoneDetection')
+                const phoneVisible = videoRef.current ? await detectPhone(videoRef.current) : false
+                if (phoneVisible) {
+                  pushImmediate('PHONE_DETECTED', 'Mobile phone detected in webcam view')
+                } else {
+                  pushImmediate('NO_FACE_DETECTED', 'No face visible in webcam for extended period')
+                }
                 consecutiveNoFace = 0
               }
             } else {

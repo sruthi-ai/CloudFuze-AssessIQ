@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { measureFrameBrightness, MIN_BRIGHTNESS } from '@/lib/frameAnalysis'
+import { measureRegionBrightness, MIN_BRIGHTNESS } from '@/lib/frameAnalysis'
 import { Camera, Mic, CheckCircle, XCircle, Loader2, AlertCircle, Shield, RefreshCw, Monitor } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -46,7 +46,15 @@ export function ProctoringSetup({
   useEffect(() => {
     if (!webcamActive) return
     const measure = () => {
-      if (internalVideoRef.current) setBrightness(measureFrameBrightness(internalVideoRef.current))
+      const v = internalVideoRef.current
+      if (!v || v.videoWidth === 0) return
+      // Check center 60% width × 80% height — covers the face area and catches backlighting
+      // without being thrown off by dark regions at the frame edges.
+      const cx = v.videoWidth * 0.2
+      const cy = v.videoHeight * 0.05
+      const cw = v.videoWidth * 0.6
+      const ch = v.videoHeight * 0.8
+      setBrightness(measureRegionBrightness(v, cx, cy, cw, ch))
     }
     measure()
     const id = setInterval(measure, 2000)

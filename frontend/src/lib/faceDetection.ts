@@ -87,16 +87,17 @@ export async function detectFacesWithPose(videoEl: HTMLVideoElement): Promise<{
   count: number
   headPose: HeadPose | null
   partialFace: boolean
+  faceBbox: { x: number; y: number; width: number; height: number } | null
 }> {
   if (!_faceapi || videoEl.readyState < 2 || videoEl.videoWidth === 0) {
-    return { count: -1, headPose: null, partialFace: false }
+    return { count: -1, headPose: null, partialFace: false, faceBbox: null }
   }
 
   const results = await _faceapi
     .detectAllFaces(videoEl, new _faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 }))
     .withFaceLandmarks(true)
 
-  if (results.length === 0) return { count: 0, headPose: null, partialFace: false }
+  if (results.length === 0) return { count: 0, headPose: null, partialFace: false, faceBbox: null }
 
   const frameW = videoEl.videoWidth
   const frameH = videoEl.videoHeight
@@ -119,8 +120,10 @@ export async function detectFacesWithPose(videoEl: HTMLVideoElement): Promise<{
   const detectionScore: number = (best.detection as { score: number }).score ?? 1
   const faceBoxWidth: number = best.detection.box.width
 
+  const primaryBbox = best.detection.box
+
   if (detectionScore < POSE_MIN_SCORE || faceBoxWidth < frameW * POSE_MIN_FACE_FRACTION) {
-    return { count: results.length, headPose: null, partialFace }
+    return { count: results.length, headPose: null, partialFace, faceBbox: primaryBbox }
   }
 
   const pts = best.landmarks.positions
@@ -139,7 +142,7 @@ export async function detectFacesWithPose(videoEl: HTMLVideoElement): Promise<{
 
   // Guard against degenerate geometry (collapsed box, extreme profile view)
   if (faceWidth < 10 || faceHeight < 10) {
-    return { count: results.length, headPose: null, partialFace }
+    return { count: results.length, headPose: null, partialFace, faceBbox: primaryBbox }
   }
 
   // Yaw: nose horizontal offset from eye center, normalized by face width
@@ -149,5 +152,5 @@ export async function detectFacesWithPose(videoEl: HTMLVideoElement): Promise<{
   const rawPitch = (noseTip.y - eyeCenterY) / faceHeight
   const pitch = (rawPitch - 0.5) * 2
 
-  return { count: results.length, headPose: { yaw, pitch }, partialFace }
+  return { count: results.length, headPose: { yaw, pitch }, partialFace, faceBbox: primaryBbox }
 }

@@ -56,6 +56,7 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
   const screenshotRef = useRef<number | null>(null)
   const phoneCheckRef = useRef<number | null>(null)
   const brightnessCheckRef = useRef<number | null>(null)
+  const latestFaceBboxRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null)
 
   const [webcamActive, setWebcamActive] = useState(false)
   const [micActive, setMicActive] = useState(false)
@@ -159,24 +160,54 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
         audioCtxRef.current = audioCtx
         const analyser = audioCtx.createAnalyser()
         analyserRef.current = analyser
-        analyser.fftSize = 256
+        // 2048-point FFT gives ~23 Hz/bin at 48 kHz — enough to isolate speech frequencies
+        analyser.fftSize = 2048
+        analyser.smoothingTimeConstant = 0.8
         audioCtx.createMediaStreamSource(stream).connect(analyser)
         setMicActive(true)
 
-        const buffer = new Uint8Array(analyser.frequencyBinCount)
-        let consecutiveNoise = 0
+        const bufLen = analyser.frequencyBinCount  // 1024 bins
+        const buffer = new Uint8Array(bufLen)
+        const hzPerBin = audioCtx.sampleRate / analyser.fftSize
+
+        // Speech band: 300–3400 Hz (telephone/voice bandwidth)
+        const spLo = Math.round(300 / hzPerBin)
+        const spHi = Math.round(3400 / hzPerBin)
+
+        // Broadband noise reference: sub-bass (50–200 Hz) + high (5–8 kHz)
+        // If the whole room is loud (exam hall hum), both bands rise equally — SNR stays low.
+        const nLo1 = Math.round(50 / hzPerBin)
+        const nHi1 = Math.round(200 / hzPerBin)
+        const nLo2 = Math.round(5000 / hzPerBin)
+        const nHi2 = Math.min(Math.round(8000 / hzPerBin), bufLen - 1)
+
+        const bandAvg = (lo: number, hi: number) => {
+          let s = 0; for (let i = lo; i <= hi; i++) s += buffer[i]
+          return s / (hi - lo + 1) / 255
+        }
+
+        let consecutiveSpeech = 0
         noiseCheckRef.current = window.setInterval(() => {
           if (cancelled || !analyserRef.current) return
           analyserRef.current.getByteFrequencyData(buffer)
-          const rms = Math.sqrt(buffer.reduce((s, v) => s + v * v, 0) / buffer.length) / 255
-          if (rms > 0.15) {
-            consecutiveNoise++
-            if (consecutiveNoise >= 3) {
-              pushEventRef.current('NOISE_DETECTED', 'Sustained background noise detected')
-              consecutiveNoise = 0
+
+          const speech = bandAvg(spLo, spHi)
+          const noise = (bandAvg(nLo1, nHi1) + bandAvg(nLo2, nHi2)) / 2
+
+          // Flag only when speech band is both absolutely loud (> 8%) AND
+          // at least 1.5× louder than the ambient noise floor (SNR check).
+          // This passes: talking to someone, reading questions aloud.
+          // This ignores: keyboard, HVAC, paper, loud exam-hall ambient noise.
+          const isSpeech = speech > 0.08 && speech > noise * 1.5
+
+          if (isSpeech) {
+            consecutiveSpeech++
+            if (consecutiveSpeech >= 3) {
+              pushEventRef.current('NOISE_DETECTED', `Voice detected during test (speech band: ${(speech * 100).toFixed(0)}%, noise floor: ${(noise * 100).toFixed(0)}%)`)
+              consecutiveSpeech = 0
             }
           } else {
-            consecutiveNoise = 0
+            consecutiveSpeech = 0
           }
         }, 3000)
       } catch {}
@@ -241,8 +272,9 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
 
           const check = async () => {
             if (cancelled || !videoRef.current) return
-            const { count, headPose, partialFace } = await detectFacesWithPose(videoRef.current)
+            const { count, headPose, partialFace, faceBbox } = await detectFacesWithPose(videoRef.current)
             if (cancelled) return
+            latestFaceBboxRef.current = faceBbox
 
             // count === -1 means video frame wasn't ready — skip this tick entirely
             if (count === -1) return
@@ -396,19 +428,23 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
           uploadSnapshot(blob)
           pushEventRef.current('SCREENSHOT_TAKEN', 'Periodic webcam snapshot captured')
         }, 'image/jpeg', 0.7)
-      }, 10_000)
+      }, 5_000)
 
-      // Brightness check every 15s — fire POOR_LIGHTING if consistently too dark
+      // Brightness check every 15s — uses face bounding box when available so a bright
+      // window behind the candidate (backlighting) is correctly detected as poor lighting.
       let darkFrameCount = 0
       brightnessCheckRef.current = window.setInterval(async () => {
         if (cancelled || !videoRef.current) return
-        const { measureFrameBrightness, MIN_BRIGHTNESS } = await import('@/lib/frameAnalysis')
-        const lum = measureFrameBrightness(videoRef.current)
+        const { measureFrameBrightness, measureRegionBrightness, MIN_BRIGHTNESS } = await import('@/lib/frameAnalysis')
+        const bbox = latestFaceBboxRef.current
+        const lum = bbox
+          ? measureRegionBrightness(videoRef.current, bbox.x, bbox.y, bbox.width, bbox.height)
+          : measureFrameBrightness(videoRef.current)
         if (lum < MIN_BRIGHTNESS) {
           darkFrameCount++
           if (darkFrameCount >= 2) {
             captureViolationSnapshot()
-            pushImmediate('POOR_LIGHTING', `Webcam feed too dark — ensure adequate lighting (luminance: ${lum.toFixed(0)})`)
+            pushImmediate('POOR_LIGHTING', `Face region too dark — candidate may be backlit or in poor lighting (luminance: ${lum.toFixed(0)})`)
             darkFrameCount = 0
           }
         } else {

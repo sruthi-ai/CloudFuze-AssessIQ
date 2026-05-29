@@ -54,6 +54,15 @@ export function LoginPage() {
     window.location.href = `${API_BASE}/sso/login?tenant=${encodeURIComponent(slug)}`
   }
 
+  const handleMicrosoftLogin = () => {
+    const slug = ssoSlug.trim() || getValues('tenantSlug').trim()
+    if (!slug) {
+      toast({ title: 'Enter your company workspace first', variant: 'destructive' })
+      return
+    }
+    window.location.href = `${API_BASE}/sso/microsoft/login?tenant=${encodeURIComponent(slug)}`
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 to-white p-4">
       <div className="w-full max-w-md space-y-6">
@@ -109,18 +118,16 @@ export function LoginPage() {
             </div>
 
             {!showSso ? (
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={() => setShowSso(true)}
-              >
-                <KeyRound className="h-4 w-4 mr-2" />
-                Sign in with SSO
-              </Button>
+              <div className="space-y-2">
+                <Button variant="outline" className="w-full" onClick={() => setShowSso(true)}>
+                  <KeyRound className="h-4 w-4 mr-2" />
+                  Sign in with SSO / Microsoft
+                </Button>
+              </div>
             ) : (
               <div className="space-y-3">
                 <div className="space-y-2">
-                  <Label>Company workspace (for SSO)</Label>
+                  <Label>Company workspace</Label>
                   <Input
                     placeholder="your-company"
                     value={ssoSlug}
@@ -129,9 +136,24 @@ export function LoginPage() {
                   />
                   <p className="text-xs text-muted-foreground">Your workspace slug — leave blank to use the one above</p>
                 </div>
+                {/* Microsoft OIDC */}
+                <Button
+                  variant="outline"
+                  className="w-full border-blue-200 hover:bg-blue-50 text-gray-700"
+                  onClick={handleMicrosoftLogin}
+                >
+                  <svg width="16" height="16" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg" className="mr-2">
+                    <rect x="1" y="1" width="9" height="9" fill="#F25022"/>
+                    <rect x="11" y="1" width="9" height="9" fill="#7FBA00"/>
+                    <rect x="1" y="11" width="9" height="9" fill="#00A4EF"/>
+                    <rect x="11" y="11" width="9" height="9" fill="#FFB900"/>
+                  </svg>
+                  Sign in with Microsoft
+                </Button>
+                {/* SAML */}
                 <Button variant="outline" className="w-full" onClick={handleSsoLogin}>
                   <KeyRound className="h-4 w-4 mr-2" />
-                  Continue with SSO
+                  Continue with SAML SSO
                 </Button>
               </div>
             )}

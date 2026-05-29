@@ -45,6 +45,8 @@ interface TenantSettings {
   samlLastNameAttr: string | null
   samlAutoProvision: boolean
   samlDefaultRole: string
+  microsoftSsoEnabled: boolean
+  microsoftSsoAvailable: boolean
 }
 
 export function SettingsPage() {
@@ -174,10 +176,11 @@ export function SettingsPage() {
     samlLastNameAttr: '',
     samlAutoProvision: false,
     samlDefaultRole: 'VIEWER',
+    microsoftSsoEnabled: false,
   })
   const [ssoDirty, setSsoDirty] = useState(false)
 
-  if (settings && !ssoDirty && !ssoForm.samlEntryPoint && settings.samlEntryPoint) {
+  if (settings && !ssoDirty && !ssoForm.samlEntryPoint && (settings.samlEntryPoint || settings.microsoftSsoEnabled)) {
     setSsoForm({
       ssoEnabled: settings.ssoEnabled,
       samlEntryPoint: settings.samlEntryPoint ?? '',
@@ -188,6 +191,7 @@ export function SettingsPage() {
       samlLastNameAttr: settings.samlLastNameAttr ?? '',
       samlAutoProvision: settings.samlAutoProvision,
       samlDefaultRole: settings.samlDefaultRole ?? 'VIEWER',
+      microsoftSsoEnabled: settings.microsoftSsoEnabled ?? false,
     })
   }
 
@@ -201,6 +205,7 @@ export function SettingsPage() {
       samlLastNameAttr: ssoForm.samlLastNameAttr.trim() || null,
       samlAutoProvision: ssoForm.samlAutoProvision,
       samlDefaultRole: ssoForm.samlDefaultRole,
+      microsoftSsoEnabled: ssoForm.microsoftSsoEnabled,
     }
     if (ssoForm.samlIdpCert.trim()) payload.samlIdpCert = ssoForm.samlIdpCert.trim()
     saveMutation.mutate(payload)
@@ -670,6 +675,52 @@ export function SettingsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
+              {/* Microsoft 365 / Entra ID OIDC */}
+              <div className={cn(
+                'rounded-lg border p-4 space-y-3',
+                ssoForm.microsoftSsoEnabled ? 'border-blue-200 bg-blue-50' : 'border-gray-200'
+              )}>
+                <div className="flex items-center gap-2">
+                  {/* Microsoft logo */}
+                  <svg width="18" height="18" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="1" y="1" width="9" height="9" fill="#F25022"/>
+                    <rect x="11" y="1" width="9" height="9" fill="#7FBA00"/>
+                    <rect x="1" y="11" width="9" height="9" fill="#00A4EF"/>
+                    <rect x="11" y="11" width="9" height="9" fill="#FFB900"/>
+                  </svg>
+                  <p className="font-medium text-sm">Microsoft 365 / Entra ID</p>
+                  {settings?.microsoftSsoAvailable
+                    ? <span className="ml-auto text-xs text-green-600 font-medium flex items-center gap-1"><CheckCircle2 className="h-3 w-3" />Credentials configured</span>
+                    : <span className="ml-auto text-xs text-orange-600 font-medium flex items-center gap-1"><AlertCircle className="h-3 w-3" />Needs AZURE_* env vars</span>
+                  }
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Lets your team sign in with their Microsoft 365 account. Requires <code className="bg-gray-100 px-1 rounded">AZURE_TENANT_ID</code>, <code className="bg-gray-100 px-1 rounded">AZURE_CLIENT_ID</code>, and <code className="bg-gray-100 px-1 rounded">AZURE_CLIENT_SECRET</code> on the server, plus <code className="bg-gray-100 px-1 rounded">User.Read</code> permission on the Azure app.
+                  Also add <code className="bg-gray-100 px-1 rounded">{backendBase}/api/sso/microsoft/callback</code> as a Redirect URI.
+                </p>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={ssoForm.microsoftSsoEnabled}
+                    onChange={e => { setSsoForm(f => ({ ...f, microsoftSsoEnabled: e.target.checked })); setSsoDirty(true) }}
+                    className="h-4 w-4 rounded"
+                    disabled={!settings?.microsoftSsoAvailable}
+                  />
+                  <div>
+                    <p className={cn('font-medium text-sm', !settings?.microsoftSsoAvailable && 'text-muted-foreground')}>
+                      Enable "Sign in with Microsoft" button
+                    </p>
+                    <p className="text-xs text-muted-foreground">Shows a Microsoft login button on the sign-in page for this workspace</p>
+                  </div>
+                </label>
+              </div>
+
+              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                <div className="flex-1 border-t" />
+                <span>SAML 2.0</span>
+                <div className="flex-1 border-t" />
+              </div>
+
               {/* Enable toggle */}
               <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg border hover:bg-gray-50 transition-colors">
                 <input
@@ -679,8 +730,8 @@ export function SettingsPage() {
                   className="h-4 w-4 rounded"
                 />
                 <div>
-                  <p className="font-medium text-sm">Enable SSO for this workspace</p>
-                  <p className="text-xs text-muted-foreground">When enabled, a "Sign in with SSO" button appears on the login page</p>
+                  <p className="font-medium text-sm">Enable SAML SSO for this workspace</p>
+                  <p className="text-xs text-muted-foreground">Works with Azure AD, Okta, Google Workspace, and any SAML 2.0 IdP</p>
                 </div>
               </label>
 

@@ -76,6 +76,141 @@ export async function ssoRoutes(server: FastifyInstance) {
     }
   })
 
+  // ── Microsoft OIDC (OAuth 2.0 / Entra ID) ────────────────────────────────────
+
+  // GET /api/sso/microsoft/login?tenant=slug — redirect to Microsoft login
+  server.get('/microsoft/login', async (request, reply) => {
+    const { tenant: slug } = request.query as { tenant?: string }
+    if (!slug) return sendError(reply, 400, 'tenant slug required')
+
+    const tenantId = process.env.AZURE_TENANT_ID
+    const clientId = process.env.AZURE_CLIENT_ID
+    if (!tenantId || !clientId) {
+      return sendError(reply, 503, 'Microsoft SSO is not configured on this server — set AZURE_TENANT_ID and AZURE_CLIENT_ID')
+    }
+
+    const row = await prisma.tenant.findUnique({ where: { slug }, select: { id: true, settings: true } })
+    if (!row) return sendError(reply, 404, 'Tenant not found')
+
+    const s = (row.settings as Record<string, unknown>) ?? {}
+    if (!s.microsoftSsoEnabled) return sendError(reply, 400, 'Microsoft SSO is not enabled for this workspace')
+
+    const redirectUri = `${BACKEND_URL}/api/sso/microsoft/callback`
+    const state = Buffer.from(JSON.stringify({ slug, n: Math.random().toString(36).slice(2) })).toString('base64url')
+
+    const params = new URLSearchParams({
+      client_id: clientId,
+      response_type: 'code',
+      redirect_uri: redirectUri,
+      scope: 'openid profile email',
+      state,
+      response_mode: 'query',
+    })
+
+    return reply.redirect(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize?${params}`)
+  })
+
+  // GET /api/sso/microsoft/callback — Microsoft posts code here after login
+  server.get('/microsoft/callback', async (request, reply) => {
+    const { code, state, error: oauthError } = request.query as { code?: string; state?: string; error?: string }
+
+    if (oauthError) return reply.redirect(`${FRONTEND_URL}/login?error=sso_failed`)
+    if (!code || !state) return reply.redirect(`${FRONTEND_URL}/login?error=sso_missing_relay`)
+
+    let slug: string
+    try {
+      slug = (JSON.parse(Buffer.from(state, 'base64url').toString()) as { slug: string }).slug
+    } catch {
+      return reply.redirect(`${FRONTEND_URL}/login?error=sso_failed`)
+    }
+
+    const row = await prisma.tenant.findUnique({ where: { slug }, select: { id: true, slug: true, settings: true } })
+    if (!row) return reply.redirect(`${FRONTEND_URL}/login?error=tenant_not_found`)
+
+    const s = (row.settings as Record<string, unknown>) ?? {}
+    if (!s.microsoftSsoEnabled) return reply.redirect(`${FRONTEND_URL}/login?error=sso_not_configured`)
+
+    const azureTenantId = process.env.AZURE_TENANT_ID!
+    const clientId = process.env.AZURE_CLIENT_ID!
+    const clientSecret = process.env.AZURE_CLIENT_SECRET!
+    const redirectUri = `${BACKEND_URL}/api/sso/microsoft/callback`
+
+    try {
+      // Exchange authorisation code for tokens
+      const tokenRes = await fetch(`https://login.microsoftonline.com/${azureTenantId}/oauth2/v2.0/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          code,
+          redirect_uri: redirectUri,
+          grant_type: 'authorization_code',
+          scope: 'openid profile email',
+        }),
+      })
+
+      if (!tokenRes.ok) {
+        server.log.error(`Microsoft token exchange failed: ${await tokenRes.text()}`)
+        return reply.redirect(`${FRONTEND_URL}/login?error=sso_failed`)
+      }
+
+      const tokens = await tokenRes.json() as { id_token?: string }
+      if (!tokens.id_token) return reply.redirect(`${FRONTEND_URL}/login?error=sso_failed`)
+
+      // Decode ID token payload — trusted because it came directly from Microsoft over HTTPS
+      const [, payloadB64] = tokens.id_token.split('.')
+      const idp = JSON.parse(Buffer.from(payloadB64, 'base64url').toString()) as {
+        email?: string; preferred_username?: string
+        given_name?: string; family_name?: string; name?: string
+      }
+
+      const email = (idp.email || idp.preferred_username || '').toLowerCase()
+      if (!email || !email.includes('@')) return reply.redirect(`${FRONTEND_URL}/login?error=sso_no_email`)
+
+      let user = await prisma.user.findFirst({
+        where: { email, tenantId: row.id },
+        select: { id: true, email: true, firstName: true, lastName: true, role: true, tenantId: true, isActive: true },
+      })
+
+      if (!user && s.samlAutoProvision) {
+        const defaultRole = (s.samlDefaultRole as string) || 'VIEWER'
+        const parts = (idp.name || email.split('@')[0]).split(' ')
+        user = await prisma.user.create({
+          data: {
+            email,
+            firstName: idp.given_name || parts[0],
+            lastName: idp.family_name || parts.slice(1).join(' '),
+            role: defaultRole as any,
+            tenantId: row.id,
+            passwordHash: '',
+          },
+          select: { id: true, email: true, firstName: true, lastName: true, role: true, tenantId: true, isActive: true },
+        })
+      }
+
+      if (!user) return reply.redirect(`${FRONTEND_URL}/login?error=user_not_found`)
+      if (!user.isActive) return reply.redirect(`${FRONTEND_URL}/login?error=account_disabled`)
+
+      const payload: JWTPayload = {
+        sub: user.id, email: user.email, role: user.role,
+        tenantId: user.tenantId, tenantSlug: row.slug,
+      }
+
+      const accessToken = server.jwt.sign(payload, { expiresIn: process.env.JWT_EXPIRES_IN || '15m' })
+      const refreshToken = server.jwt.sign({ sub: user.id } as any, { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d' })
+
+      await prisma.refreshToken.create({
+        data: { token: refreshToken, userId: user.id, expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
+      })
+
+      return reply.redirect(`${FRONTEND_URL}/sso/callback?token=${encodeURIComponent(accessToken)}&refresh=${encodeURIComponent(refreshToken)}`)
+    } catch (err: any) {
+      server.log.error(err)
+      return reply.redirect(`${FRONTEND_URL}/login?error=sso_failed`)
+    }
+  })
+
   // POST /api/sso/callback — ACS endpoint: IdP posts SAML assertion here
   server.post('/callback', async (request, reply) => {
     const body = request.body as Record<string, string>

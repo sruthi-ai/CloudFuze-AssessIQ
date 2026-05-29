@@ -44,6 +44,9 @@ const settingsSchema = z.object({
   samlLastNameAttr: z.string().optional().nullable(),
   samlAutoProvision: z.boolean().optional(),
   samlDefaultRole: z.enum(['RECRUITER', 'VIEWER']).optional(),
+
+  // Microsoft OIDC SSO (uses server AZURE_* env vars — no per-tenant credentials needed)
+  microsoftSsoEnabled: z.boolean().optional(),
 })
 
 export async function settingsRoutes(server: FastifyInstance) {
@@ -94,6 +97,9 @@ export async function settingsRoutes(server: FastifyInstance) {
       samlLastNameAttr: (settings.samlLastNameAttr as string) ?? null,
       samlAutoProvision: (settings.samlAutoProvision as boolean) ?? false,
       samlDefaultRole: (settings.samlDefaultRole as string) ?? 'VIEWER',
+      // Microsoft OIDC
+      microsoftSsoEnabled: (settings.microsoftSsoEnabled as boolean) ?? false,
+      microsoftSsoAvailable: !!(process.env.AZURE_TENANT_ID && process.env.AZURE_CLIENT_ID && process.env.AZURE_CLIENT_SECRET),
     })
   })
 

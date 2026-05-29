@@ -20,7 +20,7 @@ const createTestSchema = z.object({
   allowedAttempts: z.number().int().min(1).optional(),
   proctoring: z.boolean().optional(),
   roomScanEnabled: z.boolean().optional(),
-  roomScanIntervalMins: z.number().int().min(5).max(120).optional(),
+  roomScanIntervalMins: z.number().int().min(1).max(120).optional(),
   requireIdVerification: z.boolean().optional(),
   requireSecureBrowser: z.boolean().optional(),
   allowedIPs: z.array(z.string()).optional().nullable(),

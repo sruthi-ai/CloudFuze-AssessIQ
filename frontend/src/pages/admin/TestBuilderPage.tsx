@@ -33,7 +33,7 @@ const testSchema = z.object({
   showResults: z.boolean().optional(),
   proctoring: z.boolean().optional(),
   roomScanEnabled: z.boolean().optional(),
-  roomScanIntervalMins: z.coerce.number().int().min(5).max(120).optional(),
+  roomScanIntervalMins: z.coerce.number().int().min(1).max(120).optional(),
   requireIdVerification: z.boolean().optional(),
   requireSecureBrowser: z.boolean().optional(),
   allowedIPs: z.array(z.string()).optional().nullable(),
@@ -1451,7 +1451,7 @@ export function TestBuilderPage() {
                         <Input
                           id="roomScanIntervalMins"
                           type="number"
-                          min="5"
+                          min="1"
                           max="120"
                           className="w-20 h-8 text-sm"
                           {...register('roomScanIntervalMins')}

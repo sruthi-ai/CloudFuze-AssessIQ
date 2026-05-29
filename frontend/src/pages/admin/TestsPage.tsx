@@ -1,11 +1,14 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import { Plus, Search, Pencil, Archive, Send, Copy, Loader2 } from 'lucide-react'
+import { Plus, Search, Pencil, Archive, Send, Copy, Loader2, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
 import { api, getErrorMessage } from '@/lib/api'
 import { toast } from '@/hooks/use-toast'
 import { formatDate, formatDuration } from '@/lib/utils'
@@ -18,6 +21,7 @@ const statusVariant: Record<string, any> = {
 
 export function TestsPage() {
   const [search, setSearch] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null)
   const qc = useQueryClient()
   const navigate = useNavigate()
 
@@ -31,6 +35,12 @@ export function TestsPage() {
       api.patch(`/tests/${id}/status`, { status }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['tests'] }); toast({ title: 'Test updated' }) },
     onError: err => toast({ title: 'Error', description: getErrorMessage(err), variant: 'destructive' }),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/tests/${id}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['tests'] }); toast({ title: 'Test deleted' }); setDeleteTarget(null) },
+    onError: err => { toast({ title: 'Error', description: getErrorMessage(err), variant: 'destructive' }); setDeleteTarget(null) },
   })
 
   const duplicateMutation = useMutation({
@@ -128,6 +138,14 @@ export function TestsPage() {
                         Archive
                       </Button>
                     )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                      onClick={() => setDeleteTarget({ id: test.id, title: test.title })}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
                 </div>
               </CardContent>
@@ -135,6 +153,27 @@ export function TestsPage() {
           ))}
         </div>
       )}
+      <Dialog open={!!deleteTarget} onOpenChange={open => { if (!open) setDeleteTarget(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete test?</DialogTitle>
+            <DialogDescription>
+              <strong>"{deleteTarget?.title}"</strong> and all its sessions, invitations, and results will be permanently deleted. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Delete permanently
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

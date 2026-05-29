@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { measureFrameBrightness, MIN_BRIGHTNESS } from '@/lib/frameAnalysis'
 import { Camera, Mic, CheckCircle, XCircle, Loader2, AlertCircle, Shield, RefreshCw, Monitor } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -21,6 +22,8 @@ export function ProctoringSetup({
   const [canStart, setCanStart] = useState(false)
   const [cameraBlocked, setCameraBlocked] = useState(false)
   const [screenShareLoading, setScreenShareLoading] = useState(false)
+  const [brightness, setBrightness] = useState<number>(128)
+  const internalVideoRef = useRef<HTMLVideoElement | null>(null)
 
   useEffect(() => {
     if (!('permissions' in navigator)) return
@@ -39,6 +42,18 @@ export function ProctoringSetup({
     const t = setTimeout(() => setCanStart(true), 3000)
     return () => clearTimeout(t)
   }, [webcamActive])
+
+  useEffect(() => {
+    if (!webcamActive) return
+    const measure = () => {
+      if (internalVideoRef.current) setBrightness(measureFrameBrightness(internalVideoRef.current))
+    }
+    measure()
+    const id = setInterval(measure, 2000)
+    return () => clearInterval(id)
+  }, [webcamActive])
+
+  const lightingOk = !webcamActive || brightness >= MIN_BRIGHTNESS
 
   const faceStatus: 'loading' | 'ok' | 'none' | 'multiple' =
     !webcamActive || faceCount === -1 ? 'loading' :
@@ -92,7 +107,7 @@ export function ProctoringSetup({
         <Card className="overflow-hidden">
           <div className="relative bg-gray-900 aspect-video">
             <video
-              ref={attachVideoRef}
+              ref={(el) => { internalVideoRef.current = el; attachVideoRef(el) }}
               autoPlay
               muted
               playsInline
@@ -150,9 +165,12 @@ export function ProctoringSetup({
             }
           />
           <CheckItem
-            ok
-            icon={<Shield className="h-4 w-4" />}
-            label="Secure session"
+            ok={lightingOk}
+            loading={!webcamActive}
+            warn={webcamActive && !lightingOk}
+            icon={<span className="text-base leading-none">💡</span>}
+            label="Lighting"
+            note={webcamActive && !lightingOk ? 'Too dark — move to a well-lit area' : undefined}
           />
         </div>
 
@@ -223,7 +241,7 @@ export function ProctoringSetup({
           className="w-full"
           size="lg"
           onClick={onReady}
-          disabled={!canStart || cameraBlocked}
+          disabled={!canStart || cameraBlocked || !lightingOk}
         >
           {cameraBlocked ? (
             <><XCircle className="h-4 w-4 mr-2" />Camera access required</>
@@ -231,6 +249,8 @@ export function ProctoringSetup({
             <><Loader2 className="h-4 w-4 animate-spin mr-2" />Setting up camera…</>
           ) : !canStart ? (
             <><Loader2 className="h-4 w-4 animate-spin mr-2" />Preparing proctoring…</>
+          ) : !lightingOk ? (
+            <><span className="mr-2">💡</span>Improve lighting to begin</>
           ) : (
             'Begin Assessment →'
           )}

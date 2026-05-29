@@ -496,6 +496,35 @@ export async function proctoringRoutes(server: FastifyInstance) {
     return reply.type('video/webm').send(createReadStream(filePath))
   })
 
+  // POST /proctoring/:sessionId/disqualify  — called by frontend when violation threshold is exceeded
+  server.post('/:sessionId/disqualify', async (request, reply) => {
+    const { sessionId } = request.params as { sessionId: string }
+    const { token, reason } = request.body as { token?: string; reason?: string }
+
+    const session = await prisma.session.findFirst({
+      where: { id: sessionId, invitation: { token } },
+      select: { id: true, status: true },
+    })
+    if (!session) return sendError(reply, 404, 'Session not found')
+    if (!['IN_PROGRESS', 'NOT_STARTED'].includes(session.status)) {
+      return sendError(reply, 400, 'Session is not active')
+    }
+
+    await prisma.session.update({
+      where: { id: sessionId },
+      data: { status: 'DISQUALIFIED', submittedAt: new Date() },
+    })
+    await prisma.proctoringEvent.create({
+      data: {
+        sessionId,
+        type: 'CUSTOM',
+        severity: 'CRITICAL',
+        description: reason ?? 'Auto-disqualified: repeated proctoring violations exceeded threshold',
+      },
+    })
+    return sendSuccess(reply, { message: 'Session disqualified' })
+  })
+
   // GET /api/proctoring/:sessionId/events — admin view of all events for a session
   server.get('/:sessionId/events', { preHandler: canView }, async (request, reply) => {
     const { sessionId } = request.params as { sessionId: string }

@@ -3,7 +3,7 @@ import { useParams, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import {
   Clock, ChevronLeft, ChevronRight, Send, Loader2,
-  Camera, CameraOff, Maximize, Video, FileText, CalculatorIcon, X as XIcon,
+  Camera, CameraOff, Maximize, Video, FileText, CalculatorIcon, X as XIcon, XCircle,
 } from 'lucide-react'
 import MonacoEditor from '@monaco-editor/react'
 import { Button } from '@/components/ui/button'
@@ -81,10 +81,45 @@ export function TestPage() {
       ? `${inviteData.candidate.firstName ?? ''} ${inviteData.candidate.lastName ?? ''}`.trim()
       : undefined)
 
+  const [disqualified, setDisqualified] = useState(false)
+
+  const VIOLATION_SCORE: Partial<Record<string, number>> = {
+    PHONE_DETECTED: 4,
+    MULTIPLE_FACES: 4,
+    IDENTITY_MISMATCH: 4,
+    SUSPECTED_ASSISTANCE: 3,
+    FACE_OBSTRUCTED: 3,
+    TAB_SWITCH: 2,
+    NO_FACE_DETECTED: 2,
+    POOR_LIGHTING: 1,
+    HEAD_TURNED: 1,
+    FULLSCREEN_EXIT: 1,
+    COPY_PASTE: 1,
+    DEVTOOLS_OPEN: 1,
+  }
+  const DISQUALIFY_THRESHOLD = 10
+  const violationScoreRef = useRef(0)
+  const API_BASE = import.meta.env.VITE_API_URL ?? ''
+
   const handleTabReturn = useCallback(() => {
     setTabWarningCount(c => c + 1)
     setShowTabWarning(true)
   }, [])
+
+  const handleViolation = useCallback((type: string, _count: number) => {
+    const score = VIOLATION_SCORE[type] ?? 0
+    if (score === 0) return
+    violationScoreRef.current += score
+    if (violationScoreRef.current >= DISQUALIFY_THRESHOLD && !disqualified) {
+      setDisqualified(true)
+      // Fire-and-forget: mark session as disqualified on backend
+      fetch(`${API_BASE}/api/proctoring/${sessionId}/disqualify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, reason: `Auto-disqualified: violation score ${violationScoreRef.current} exceeded threshold ${DISQUALIFY_THRESHOLD}` }),
+      }).catch(() => {})
+    }
+  }, [disqualified, sessionId, token, API_BASE])
 
   const {
     pushEvent, pushImmediate, stopProctoring, requestFullscreen, flush,
@@ -97,6 +132,7 @@ export function TestPage() {
     enabled: proctoring,
     candidateName,
     onTabReturn: handleTabReturn,
+    onViolation: handleViolation,
   })
 
   const {
@@ -347,6 +383,26 @@ export function TestPage() {
   // ── Test UI ────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
+      {disqualified && (
+        <div className="fixed inset-0 z-[100] bg-gray-950 flex items-center justify-center p-6">
+          <div className="text-center text-white max-w-md space-y-5">
+            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-red-900/50 border-2 border-red-500 mx-auto">
+              <XCircle className="h-10 w-10 text-red-400" />
+            </div>
+            <h1 className="text-3xl font-bold tracking-tight">Session Terminated</h1>
+            <p className="text-gray-300 text-base leading-relaxed">
+              This assessment session has been automatically terminated due to repeated proctoring violations.
+            </p>
+            <div className="rounded-lg bg-red-950/60 border border-red-800 p-4 text-sm text-red-200 space-y-2 text-left">
+              <p className="font-semibold text-red-100">Violations exceeded the allowed threshold.</p>
+              <p>All activity during this session has been recorded and flagged for review by the assessment organizer.</p>
+              <p>If you believe this is an error, contact your assessment administrator immediately.</p>
+            </div>
+            <p className="text-xs text-gray-500">Session ID: {sessionId}</p>
+          </div>
+        </div>
+      )}
+
       {/* Mid-test room scan overlay */}
       {showMidScan && (
         <div className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center p-4">
@@ -371,7 +427,7 @@ export function TestPage() {
               <p className="text-sm text-muted-foreground mt-1">
                 You left this tab. This violation has been recorded and a screenshot was taken.
               </p>
-              {tabWarningCount >= 3 && (
+              {tabWarningCount >= 2 && (
                 <p className="text-sm text-red-600 font-medium mt-2">
                   {tabWarningCount} violations logged. Repeated switching may result in disqualification.
                 </p>

@@ -61,19 +61,29 @@ function IdVerificationStep({
     }
   }, [])
 
-  const capture = () => {
-    if (!videoRef.current || !canvasRef.current) return
-    const v = videoRef.current
-    const c = canvasRef.current
-    c.width = v.videoWidth
-    c.height = v.videoHeight
-    c.getContext('2d')!.drawImage(v, 0, 0)
-    c.toBlob(blob => {
+  const capture = async () => {
+    const video = videoRef.current
+    if (!video) return
+    // Check lighting before capturing
+    const { measureFrameBrightness, MIN_BRIGHTNESS } = await import('@/lib/frameAnalysis')
+    const lum = measureFrameBrightness(video)
+    if (lum < MIN_BRIGHTNESS) {
+      setCameraError('Photo is too dark — please move to a well-lit area and try again.')
+      return
+    }
+    const canvas = canvasRef.current
+    if (!canvas) return
+    canvas.width = video.videoWidth || 640
+    canvas.height = video.videoHeight || 480
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.drawImage(video, 0, 0)
+    canvas.toBlob(blob => {
       if (!blob) return
       if (capturedUrl) URL.revokeObjectURL(capturedUrl)
       setCaptured(blob)
       setCapturedUrl(URL.createObjectURL(blob))
-    }, 'image/jpeg', 0.85)
+    }, 'image/jpeg', 0.9)
   }
 
   const retake = () => {
@@ -110,8 +120,21 @@ function IdVerificationStep({
           </p>
         </div>
 
-        {cameraError ? (
-          <div className="rounded-lg bg-destructive/10 p-4 text-sm text-destructive text-center">{cameraError}</div>
+        {cameraError && !capturedUrl ? (
+          cameraError.startsWith('Photo is too dark') ? (
+            <div className="space-y-3">
+              <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive text-center">{cameraError}</div>
+              <div className="relative rounded-lg overflow-hidden bg-black aspect-video">
+                <video ref={videoRef} className="w-full h-full object-cover" muted playsInline />
+              </div>
+              <canvas ref={canvasRef} className="hidden" />
+              <Button className="w-full border-0" style={{ backgroundColor: brandColor }} onClick={() => { setCameraError(null); capture() }}>
+                <Camera className="h-4 w-4 mr-2" /> Try Again
+              </Button>
+            </div>
+          ) : (
+            <div className="rounded-lg bg-destructive/10 p-4 text-sm text-destructive text-center">{cameraError}</div>
+          )
         ) : capturedUrl ? (
           <div className="space-y-3">
             <img src={capturedUrl} alt="Captured ID verification" className="w-full rounded-lg object-cover max-h-64" />

@@ -6,7 +6,7 @@ export type ProctoringEventType =
   | 'RIGHT_CLICK' | 'WEBCAM_BLOCKED' | 'MULTIPLE_FACES' | 'NO_FACE_DETECTED'
   | 'NOISE_DETECTED' | 'SCREENSHOT_TAKEN' | 'DEVTOOLS_OPEN' | 'PHONE_DETECTED'
   | 'HEAD_TURNED' | 'SCREEN_RECORDING_STOPPED' | 'CUSTOM'
-  | 'FACE_OBSTRUCTED' | 'SUSPECTED_ASSISTANCE' | 'IDENTITY_MISMATCH'
+  | 'FACE_OBSTRUCTED' | 'SUSPECTED_ASSISTANCE' | 'IDENTITY_MISMATCH' | 'POOR_LIGHTING'
 
 interface QueuedEvent {
   type: ProctoringEventType
@@ -55,6 +55,7 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
   const faceCheckRef = useRef<number | null>(null)
   const screenshotRef = useRef<number | null>(null)
   const phoneCheckRef = useRef<number | null>(null)
+  const brightnessCheckRef = useRef<number | null>(null)
 
   const [webcamActive, setWebcamActive] = useState(false)
   const [micActive, setMicActive] = useState(false)
@@ -396,6 +397,24 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
           pushEventRef.current('SCREENSHOT_TAKEN', 'Periodic webcam snapshot captured')
         }, 'image/jpeg', 0.7)
       }, 10_000)
+
+      // Brightness check every 15s — fire POOR_LIGHTING if consistently too dark
+      let darkFrameCount = 0
+      brightnessCheckRef.current = window.setInterval(async () => {
+        if (cancelled || !videoRef.current) return
+        const { measureFrameBrightness, MIN_BRIGHTNESS } = await import('@/lib/frameAnalysis')
+        const lum = measureFrameBrightness(videoRef.current)
+        if (lum < MIN_BRIGHTNESS) {
+          darkFrameCount++
+          if (darkFrameCount >= 2) {
+            captureViolationSnapshot()
+            pushImmediate('POOR_LIGHTING', `Webcam feed too dark — ensure adequate lighting (luminance: ${lum.toFixed(0)})`)
+            darkFrameCount = 0
+          }
+        } else {
+          darkFrameCount = 0
+        }
+      }, 15_000)
     }
 
     const acquire = () =>
@@ -435,6 +454,7 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
       if (faceCheckRef.current) { clearInterval(faceCheckRef.current); faceCheckRef.current = null }
       if (screenshotRef.current) { clearInterval(screenshotRef.current); screenshotRef.current = null }
       if (phoneCheckRef.current) { clearInterval(phoneCheckRef.current); phoneCheckRef.current = null }
+      if (brightnessCheckRef.current) { clearInterval(brightnessCheckRef.current); brightnessCheckRef.current = null }
       setWebcamActive(false)
       setMicActive(false)
       setFaceCount(-1)
@@ -580,6 +600,7 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
     if (faceCheckRef.current) { clearInterval(faceCheckRef.current); faceCheckRef.current = null }
     if (screenshotRef.current) { clearInterval(screenshotRef.current); screenshotRef.current = null }
     if (phoneCheckRef.current) { clearInterval(phoneCheckRef.current); phoneCheckRef.current = null }
+    if (brightnessCheckRef.current) { clearInterval(brightnessCheckRef.current); brightnessCheckRef.current = null }
     if (document.fullscreenElement) await document.exitFullscreen().catch(() => {})
     await flush()
   }, [flush])

@@ -107,7 +107,7 @@ export async function testRoutes(server: FastifyInstance) {
     const test = await prisma.test.create({
       data: {
         ...restData,
-        ...(allowedIPs !== undefined && { allowedIPs: (allowedIPs ?? undefined) as Prisma.InputJsonValue | undefined }),
+        ...(allowedIPs !== undefined && { allowedIPs: (allowedIPs === null ? Prisma.JsonNull : allowedIPs) as Prisma.InputJsonValue }),
         tenantId: request.user.tenantId,
         createdById: request.user.sub,
         sections: {
@@ -133,7 +133,7 @@ export async function testRoutes(server: FastifyInstance) {
       where: { id },
       data: {
         ...restData,
-        ...(allowedIPs !== undefined && { allowedIPs: (allowedIPs ?? undefined) as Prisma.InputJsonValue | undefined }),
+        ...(allowedIPs !== undefined && { allowedIPs: (allowedIPs === null ? Prisma.JsonNull : allowedIPs) as Prisma.InputJsonValue }),
       },
     })
     return sendSuccess(reply, updated)

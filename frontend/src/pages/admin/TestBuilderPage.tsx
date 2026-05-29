@@ -558,6 +558,17 @@ function AllowedIPsEditor({ testId, initialIPs }: { testId: string; initialIPs: 
             Save
           </Button>
           <Button size="sm" variant="outline" onClick={() => setEditing(false)}>Cancel</Button>
+          {value.trim() && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-destructive hover:text-destructive ml-auto"
+              onClick={() => { setValue(''); mutation.mutate(null) }}
+              disabled={mutation.isPending}
+            >
+              Remove all restrictions
+            </Button>
+          )}
         </div>
       </div>
     )

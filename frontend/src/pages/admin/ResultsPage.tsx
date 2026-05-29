@@ -12,6 +12,7 @@ import { formatDateTime } from '@/lib/utils'
 
 const STATUS_VARIANT: Record<string, any> = {
   SUBMITTED: 'success', IN_PROGRESS: 'warning', TIMED_OUT: 'destructive', NOT_STARTED: 'secondary',
+  DISQUALIFIED: 'destructive',
 }
 
 function riskLevel(eventCount: number): { label: string; variant: any } {
@@ -148,6 +149,7 @@ export function ResultsPage() {
           <option value="IN_PROGRESS">In Progress</option>
           <option value="TIMED_OUT">Timed Out</option>
           <option value="NOT_STARTED">Not Started</option>
+          <option value="DISQUALIFIED">Disqualified</option>
         </select>
       </div>
 

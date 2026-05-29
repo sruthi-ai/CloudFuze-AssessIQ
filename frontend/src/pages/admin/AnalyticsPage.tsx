@@ -8,7 +8,7 @@ import {
 import {
   BarChart3, TrendingUp, Download, Webhook, Loader2,
   Users, ClipboardList, CheckCircle2, Trophy, Medal,
-  AlertTriangle, Clock,
+  AlertTriangle, Clock, Ban,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -131,6 +131,18 @@ export function AnalyticsPage() {
           </Card>
         ))}
       </div>
+
+      {/* Disqualification alert */}
+      {(overview?.sessions?.disqualified ?? 0) > 0 && (
+        <div className="flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <Ban className="h-4 w-4 shrink-0" />
+          <span>
+            <strong>{overview.sessions.disqualified}</strong> candidate{overview.sessions.disqualified > 1 ? 's' : ''} disqualified
+            for proctoring violations in this period —{' '}
+            <Link to="/admin/results?status=DISQUALIFIED" className="underline underline-offset-2 font-medium">view sessions</Link>
+          </span>
+        </div>
+      )}
 
       {/* Invitation alerts */}
       {(overview?.invitations?.expiringSoon ?? 0) > 0 && (
@@ -286,15 +298,16 @@ export function AnalyticsPage() {
           {testAnalytics && (
             <div className="space-y-6">
               {/* KPIs */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                 {[
                   { label: 'Total Sessions', value: testAnalytics.totalSessions },
                   { label: 'Completed', value: testAnalytics.completed },
                   { label: 'Pass Rate', value: `${testAnalytics.passRate}%` },
                   { label: 'Avg Score', value: `${testAnalytics.avgScore}%` },
+                  { label: 'Disqualified', value: testAnalytics.disqualified ?? 0, red: (testAnalytics.disqualified ?? 0) > 0 },
                 ].map(kpi => (
-                  <div key={kpi.label} className="rounded-lg bg-gray-50 border p-3 text-center">
-                    <p className="text-xl font-bold text-gray-900">{kpi.value}</p>
+                  <div key={kpi.label} className={cn('rounded-lg border p-3 text-center', (kpi as any).red ? 'bg-red-50 border-red-200' : 'bg-gray-50')}>
+                    <p className={cn('text-xl font-bold', (kpi as any).red ? 'text-red-600' : 'text-gray-900')}>{kpi.value}</p>
                     <p className="text-xs text-muted-foreground mt-0.5">{kpi.label}</p>
                   </div>
                 ))}
@@ -353,6 +366,39 @@ export function AnalyticsPage() {
                   </div>
                 )}
               </div>
+
+              {/* Proctoring violation breakdown */}
+              {testAnalytics.violationBreakdown?.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-medium text-gray-700 mb-3">Proctoring Violations</h3>
+                  <div className="space-y-2">
+                    {(() => {
+                      const max = Math.max(...testAnalytics.violationBreakdown.map((v: any) => v.count), 1)
+                      const VIOLATION_LABEL: Record<string, string> = {
+                        TAB_SWITCH: 'Tab switched', WINDOW_BLUR: 'Window lost focus', FULLSCREEN_EXIT: 'Exited fullscreen',
+                        COPY_PASTE: 'Copy/paste attempt', RIGHT_CLICK: 'Right-click', WEBCAM_BLOCKED: 'Webcam blocked',
+                        MULTIPLE_FACES: 'Multiple faces', NO_FACE_DETECTED: 'No face', NOISE_DETECTED: 'Background noise',
+                        DEVTOOLS_OPEN: 'DevTools opened', PHONE_DETECTED: 'Phone detected', HEAD_TURNED: 'Head turned',
+                        SCREEN_RECORDING_STOPPED: 'Recording stopped', FACE_OBSTRUCTED: 'Face hidden',
+                        SUSPECTED_ASSISTANCE: 'Suspected assistance', IDENTITY_MISMATCH: 'Identity mismatch',
+                        POOR_LIGHTING: 'Poor lighting', SECURE_BROWSER_BYPASSED: 'Secure browser bypassed',
+                      }
+                      return testAnalytics.violationBreakdown.map((v: any) => (
+                        <div key={v.type} className="flex items-center gap-3 text-xs">
+                          <span className="w-36 shrink-0 text-muted-foreground truncate">{VIOLATION_LABEL[v.type] ?? v.type.replace(/_/g, ' ')}</span>
+                          <div className="flex-1 h-5 rounded bg-gray-100 overflow-hidden">
+                            <div
+                              className="h-full rounded bg-orange-400 transition-all"
+                              style={{ width: `${Math.round((v.count / max) * 100)}%` }}
+                            />
+                          </div>
+                          <span className="w-8 text-right font-semibold text-gray-700 shrink-0">{v.count}</span>
+                        </div>
+                      ))
+                    })()}
+                  </div>
+                </div>
+              )}
 
               {/* Hardest questions */}
               {testAnalytics.questionDifficulty?.length > 0 && (

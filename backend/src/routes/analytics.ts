@@ -17,7 +17,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
     const [
       testsTotal, testsPublished,
       candidatesTotal,
-      sessionsTotal, sessionsCompleted, sessionsFailed,
+      sessionsTotal, sessionsCompleted, sessionsDisqualified, sessionsFailed,
       avgScoreAgg,
       invitationsPending,
       invitationsExpiringSoon,
@@ -27,6 +27,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
       prisma.candidate.count({ where: { tenantId: tid, ...(dateFilter ? { createdAt: dateFilter } : {}) } }),
       prisma.session.count({ where: { test: { tenantId: tid }, ...(dateFilter ? { createdAt: dateFilter } : {}) } }),
       prisma.session.count({ where: { test: { tenantId: tid }, status: { in: ['SUBMITTED', 'TIMED_OUT'] }, ...(dateFilter ? { createdAt: dateFilter } : {}) } }),
+      prisma.session.count({ where: { test: { tenantId: tid }, status: 'DISQUALIFIED', ...(dateFilter ? { createdAt: dateFilter } : {}) } }),
       prisma.score.count({ where: { session: { test: { tenantId: tid }, ...(dateFilter ? { createdAt: dateFilter } : {}) }, passed: false } }),
       prisma.score.aggregate({ where: { session: { test: { tenantId: tid }, ...(dateFilter ? { createdAt: dateFilter } : {}) } }, _avg: { percentage: true } }),
       prisma.invitation.count({ where: { test: { tenantId: tid }, status: 'PENDING' } }),
@@ -46,6 +47,7 @@ export async function analyticsRoutes(server: FastifyInstance) {
       sessions: {
         total: sessionsTotal,
         completed: sessionsCompleted,
+        disqualified: sessionsDisqualified,
         completionRate: sessionsTotal > 0 ? Math.round((sessionsCompleted / sessionsTotal) * 100) : 0,
       },
       scores: {
@@ -149,15 +151,15 @@ export async function analyticsRoutes(server: FastifyInstance) {
     const test = await prisma.test.findFirst({ where: { id: testId, tenantId: request.user.tenantId } })
     if (!test) return sendError(reply, 404, 'Test not found')
 
-    const [sessions, scores, questionAnswers] = await Promise.all([
+    const [sessions, scores, questionAnswers, violationCounts] = await Promise.all([
       prisma.session.findMany({
-        where: { testId, status: { in: ['SUBMITTED', 'TIMED_OUT'] } },
+        where: { testId, status: { in: ['SUBMITTED', 'TIMED_OUT', 'DISQUALIFIED'] } },
         include: { score: true },
         take: 5000,
       }),
       prisma.score.findMany({ where: { session: { testId } }, take: 5000 }),
       prisma.answer.findMany({
-        where: { session: { testId, status: { in: ['SUBMITTED', 'TIMED_OUT'] } } },
+        where: { session: { testId, status: { in: ['SUBMITTED', 'TIMED_OUT', 'DISQUALIFIED'] } } },
         take: 50000,
         select: {
           questionId: true,
@@ -169,9 +171,17 @@ export async function analyticsRoutes(server: FastifyInstance) {
           },
         },
       }),
+      prisma.proctoringEvent.groupBy({
+        by: ['type'],
+        where: { session: { testId }, NOT: { type: 'SCREENSHOT_TAKEN' } },
+        _count: { id: true },
+        orderBy: { _count: { id: 'desc' } },
+        take: 10,
+      }),
     ])
 
     const completed = sessions.filter(s => s.status === 'SUBMITTED').length
+    const disqualified = sessions.filter(s => s.status === 'DISQUALIFIED').length
     const passed = scores.filter(s => s.passed === true).length
     const avgPct = scores.length > 0 ? scores.reduce((s, sc) => s + sc.percentage, 0) / scores.length : 0
     const avgTime = sessions
@@ -222,12 +232,14 @@ export async function analyticsRoutes(server: FastifyInstance) {
       title: test.title,
       totalSessions: sessions.length,
       completed,
+      disqualified,
       passed,
       passRate: completed > 0 ? Math.round((passed / completed) * 100) : 0,
       avgScore: Math.round(avgPct),
       avgTimeMinutes: Math.round(avgTime / 60000),
       scoreDistribution,
       questionDifficulty,
+      violationBreakdown: violationCounts.map(v => ({ type: v.type, count: v._count.id })),
     })
   })
 

@@ -6,6 +6,7 @@ import {
   Camera, CameraOff, TabletSmartphone, Minimize2, Copy,
   MousePointer2, Code2, Users, UserX, Volume2, Smartphone,
   Navigation, MonitorPlay, ZoomIn, Video, Printer, EyeOff,
+  Sun, ShieldOff, Ban,
 } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
@@ -114,6 +115,8 @@ const EVENT_LABELS: Record<string, string> = {
   FACE_OBSTRUCTED: 'Face partially hidden',
   SUSPECTED_ASSISTANCE: 'Suspected off-camera help',
   IDENTITY_MISMATCH: 'Identity mismatch',
+  POOR_LIGHTING: 'Poor lighting / backlighting',
+  SECURE_BROWSER_BYPASSED: 'Secure browser bypassed',
   CUSTOM: 'Custom event',
 }
 
@@ -175,6 +178,8 @@ function EventIcon({ type }: { type: string }) {
     case 'FACE_OBSTRUCTED': return <EyeOff className={cls} />
     case 'SUSPECTED_ASSISTANCE': return <ShieldAlert className={cls} />
     case 'IDENTITY_MISMATCH': return <ShieldAlert className={cls} />
+    case 'POOR_LIGHTING': return <Sun className={cls} />
+    case 'SECURE_BROWSER_BYPASSED': return <ShieldOff className={cls} />
     default: return <AlertTriangle className={cls} />
   }
 }
@@ -386,6 +391,20 @@ export function ResultDetailPage() {
           Print Report
         </Button>
       </div>
+
+      {/* Disqualified banner */}
+      {session.status === 'DISQUALIFIED' && (
+        <div className="flex items-center gap-3 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <Ban className="h-5 w-5 shrink-0 text-red-600" />
+          <div>
+            <p className="font-semibold">Session disqualified</p>
+            <p className="text-xs mt-0.5 text-red-700">
+              This candidate was automatically disqualified due to repeated proctoring violations.
+              {(proctoringData?.summary?.riskScore ?? 0) > 0 && ` Malpractice score: ${proctoringData.summary.riskScore}/100.`}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">

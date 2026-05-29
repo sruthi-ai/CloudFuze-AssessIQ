@@ -11,7 +11,7 @@
     "build": "npm run build --workspace=backend && npm run build --workspace=frontend",
     "db:migrate": "npm run db:migrate --workspace=backend",
     "db:studio": "npm run db:studio --workspace=backend",
-    "test": "npm run test --workspace=backend && npm run test --workspace=frontend"
+    "test": "cd backend && npm test && cd ../frontend && npm test"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

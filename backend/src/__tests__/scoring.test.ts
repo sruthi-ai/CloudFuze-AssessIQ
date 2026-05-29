@@ -1,4 +1,8 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+
+// scoring.ts has a top-level prisma import; mock db so tests run without generated client
+vi.mock('../db', () => ({ prisma: {} }))
+
 import { scoreRanking } from '../services/scoring'
 
 describe('scoreRanking', () => {

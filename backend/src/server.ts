@@ -51,11 +51,8 @@ if (process.env.NODE_ENV === 'production') {
   }
 }
 
-if (!process.env.JUDGE0_API_KEY) {
-  console.warn('⚠  WARNING: JUDGE0_API_KEY not set — code execution questions will run in mock mode')
-}
-if (!process.env.OPENAI_API_KEY) {
-  console.warn('⚠  WARNING: OPENAI_API_KEY not set — essay/short-answer questions will use heuristic grading')
+if (!process.env.ANTHROPIC_API_KEY) {
+  console.warn('⚠  WARNING: ANTHROPIC_API_KEY not set — AI question generation and essay grading will be unavailable')
 }
 
 const server = Fastify({

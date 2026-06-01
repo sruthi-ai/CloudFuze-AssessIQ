@@ -18,6 +18,7 @@ function buildSaml(settings: Record<string, unknown>, tenantSlug: string) {
     idpCert: cert,
     callbackUrl: `${BACKEND_URL}/api/sso/callback`,
     wantAuthnResponseSigned: false,
+    wantAssertionsSigned: true,
     disableRequestedAuthnContext: true,
   })
 }
@@ -204,6 +205,17 @@ export async function ssoRoutes(server: FastifyInstance) {
         data: { token: refreshToken, userId: user.id, expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
       })
 
+      await prisma.auditLog.create({
+        data: {
+          action: 'SSO_LOGIN',
+          entityType: 'user',
+          entityId: user.id,
+          metadata: { email: user.email, provider: 'microsoft', tenantSlug: row.slug },
+          tenantId: row.id,
+          userId: user.id,
+        },
+      }).catch(() => {})
+
       return reply.redirect(`${FRONTEND_URL}/sso/callback?token=${encodeURIComponent(accessToken)}&refresh=${encodeURIComponent(refreshToken)}`)
     } catch (err: any) {
       server.log.error(err)
@@ -282,6 +294,17 @@ export async function ssoRoutes(server: FastifyInstance) {
           expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         },
       })
+
+      await prisma.auditLog.create({
+        data: {
+          action: 'SSO_LOGIN',
+          entityType: 'user',
+          entityId: user.id,
+          metadata: { email: user.email, provider: 'saml', tenantSlug: row.slug },
+          tenantId: row.id,
+          userId: user.id,
+        },
+      }).catch(() => {})
 
       const dest = `${FRONTEND_URL}/sso/callback?token=${encodeURIComponent(accessToken)}&refresh=${encodeURIComponent(refreshToken)}`
       return reply.redirect(dest)

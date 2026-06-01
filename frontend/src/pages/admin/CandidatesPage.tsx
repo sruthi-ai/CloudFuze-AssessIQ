@@ -55,10 +55,20 @@ export function CandidatesPage() {
   // Parse + validate rows in real-time from the textarea/CSV
   const parsedPreview = useMemo(() => {
     if (!inviteForm.candidateLines.trim()) return []
-    return inviteForm.candidateLines.split('\n')
+    // Strip UTF-8 BOM (added by Excel), normalise line endings
+    const cleaned = inviteForm.candidateLines.replace(/^﻿/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    return cleaned.split('\n')
       .filter(l => l.trim())
       .map(line => {
-        const parts = line.split(',').map(s => s.trim())
+        // Simple quoted-field CSV parser — handles "Smith, John" style fields
+        const parts: string[] = []
+        let cur = '', inQ = false
+        for (let i = 0; i <= line.length; i++) {
+          const c = line[i]
+          if (c === '"') { inQ = !inQ }
+          else if ((c === ',' || i === line.length) && !inQ) { parts.push(cur.trim()); cur = '' }
+          else { cur += c ?? '' }
+        }
         const email = parts[0] ?? ''
         let firstName = parts[1] ?? ''
         let lastName = parts[2] ?? ''

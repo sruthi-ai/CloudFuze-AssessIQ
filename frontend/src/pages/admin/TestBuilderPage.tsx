@@ -33,6 +33,7 @@ const testSchema = z.object({
   shuffleOptions: z.boolean().optional(),
   showResults: z.boolean().optional(),
   proctoring: z.boolean().optional(),
+  violationThreshold: z.coerce.number().int().min(5).max(50).optional(),
   roomScanEnabled: z.boolean().optional(),
   roomScanIntervalMins: z.coerce.number().int().min(1).max(120).optional(),
   requireIdVerification: z.boolean().optional(),
@@ -1104,6 +1105,7 @@ export function TestBuilderPage() {
     defaultValues: {
       duration: 60,
       proctoring: true,
+      violationThreshold: 10,
       roomScanEnabled: false,
       requireSecureBrowser: false,
       roomScanIntervalMins: 20,
@@ -1130,6 +1132,7 @@ export function TestBuilderPage() {
         shuffleOptions: testData.shuffleOptions,
         showResults: testData.showResults,
         proctoring: testData.proctoring,
+        violationThreshold: testData.violationThreshold ?? 10,
         roomScanEnabled: testData.roomScanEnabled ?? false,
         roomScanIntervalMins: testData.roomScanIntervalMins ?? 20,
         requireIdVerification: testData.requireIdVerification ?? false,
@@ -1519,6 +1522,18 @@ export function TestBuilderPage() {
                       <input type="checkbox" className="rounded" {...register('requireSecureBrowser')} />
                       <span className="text-sm">Require Secure Browser (candidates must use the AssessIQ lockdown app — blocks other tabs, screen recording, remote desktop)</span>
                     </label>
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="violationThreshold" className="text-sm whitespace-nowrap">Auto-disqualify at</Label>
+                      <Input
+                        id="violationThreshold"
+                        type="number"
+                        min="5"
+                        max="50"
+                        className="w-20 h-8 text-sm"
+                        {...register('violationThreshold')}
+                      />
+                      <span className="text-sm text-muted-foreground">violation points (5–50, default 10)</span>
+                    </div>
                     {roomScanOn && (
                       <div className="flex items-center gap-2">
                         <Label htmlFor="roomScanIntervalMins" className="text-sm whitespace-nowrap">Scan every</Label>

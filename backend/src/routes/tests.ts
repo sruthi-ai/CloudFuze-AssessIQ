@@ -19,6 +19,7 @@ const createTestSchema = z.object({
   showResults: z.boolean().optional(),
   allowedAttempts: z.coerce.number().int().min(1).optional(),
   proctoring: z.boolean().optional(),
+  violationThreshold: z.coerce.number().int().min(5).max(50).optional(),
   roomScanEnabled: z.boolean().optional(),
   roomScanIntervalMins: z.coerce.number().int().min(1).max(120).optional(),
   requireIdVerification: z.boolean().optional(),

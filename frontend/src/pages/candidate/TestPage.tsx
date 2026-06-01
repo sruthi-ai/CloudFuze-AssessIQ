@@ -100,7 +100,7 @@ export function TestPage() {
     COPY_PASTE: 1,
     DEVTOOLS_OPEN: 1,
   }
-  const DISQUALIFY_THRESHOLD = 10
+  const DISQUALIFY_THRESHOLD = inviteData?.test?.violationThreshold ?? 10
   const violationScoreRef = useRef(0)
   const API_BASE = import.meta.env.VITE_API_URL ?? ''
 
@@ -1233,8 +1233,13 @@ function RoomScanModal({
               const src = stepFramesRef.current[i]
               if (src) {
                 const img = new Image()
-                await new Promise<void>(resolve => { img.onload = () => resolve(); img.src = src })
-                pCtx.drawImage(img, i * FRAME_W, 0, FRAME_W, FRAME_H)
+                const loaded = await new Promise<boolean>(resolve => {
+                  img.onload = () => resolve(true)
+                  img.onerror = () => resolve(false)
+                  img.src = src
+                })
+                if (loaded) pCtx.drawImage(img, i * FRAME_W, 0, FRAME_W, FRAME_H)
+                else { pCtx.fillStyle = '#374151'; pCtx.fillRect(i * FRAME_W, 0, FRAME_W, FRAME_H) }
               } else {
                 pCtx.fillStyle = '#374151'
                 pCtx.fillRect(i * FRAME_W, 0, FRAME_W, FRAME_H)

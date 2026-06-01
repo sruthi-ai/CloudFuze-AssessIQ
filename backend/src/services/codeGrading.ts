@@ -40,7 +40,24 @@ export async function gradeCode(
 
   const langId = LANG_ID[language]
   if (!langId) {
-    return { results: [], passedCount: 0, totalCount: 0, pointsEarned: 0, totalPoints: 0, hasTestCases: true }
+    return {
+      results: testCases.map(tc => ({
+        caseId: tc.id,
+        description: tc.description,
+        isHidden: tc.isHidden,
+        passed: false,
+        actualOutput: `Unsupported language: ${language}`,
+        expectedOutput: null,
+        status: 'Unsupported Language',
+        time: null,
+        memory: null,
+      })),
+      passedCount: 0,
+      totalCount: testCases.length,
+      pointsEarned: 0,
+      totalPoints: testCases.reduce((s, tc) => s + tc.points, 0),
+      hasTestCases: true,
+    }
   }
 
   const totalPoints = testCases.reduce((s, tc) => s + tc.points, 0)

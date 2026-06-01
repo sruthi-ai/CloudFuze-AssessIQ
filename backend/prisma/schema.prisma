@@ -240,6 +240,7 @@ model Test {
   allowedAttempts  Int        @default(1)
   negativeMarking  Float?     // fraction of points deducted per wrong MCQ answer (e.g. 0.25)
   proctoring               Boolean    @default(true)
+  violationThreshold       Int        @default(10)
   roomScanEnabled          Boolean    @default(false)
   roomScanIntervalMins     Int        @default(20)
   requireIdVerification    Boolean    @default(false)

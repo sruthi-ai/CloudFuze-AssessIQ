@@ -28,18 +28,30 @@ export async function runCode(
   languageId: string,
   stdin = '',
 ): Promise<Judge0Result> {
-  const res = await fetch(`${PISTON_URL}/execute`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      language: languageId,
-      version: '*',
-      files: [{ content: sourceCode }],
-      stdin,
-      run_timeout: 5000,
-      compile_timeout: 10000,
-    }),
-  })
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 30_000)
+
+  let res: Response
+  try {
+    res = await fetch(`${PISTON_URL}/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        language: languageId,
+        version: '*',
+        files: [{ content: sourceCode }],
+        stdin,
+        run_timeout: 5000,
+        compile_timeout: 10000,
+      }),
+    })
+  } catch (err: any) {
+    clearTimeout(timeoutId)
+    if (err.name === 'AbortError') throw new Error('Code execution timed out — Piston did not respond in 30s')
+    throw new Error(`Code execution unavailable: ${err.message}`)
+  }
+  clearTimeout(timeoutId)
 
   if (!res.ok) {
     const text = await res.text()

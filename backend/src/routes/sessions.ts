@@ -433,7 +433,8 @@ export async function sessionRoutes(server: FastifyInstance) {
     })
     if (!session) return sendError(reply, 404, 'Session not found')
     if (session.status === 'SUBMITTED') return sendError(reply, 409, 'Already submitted')
-    if (session.status !== 'IN_PROGRESS') return sendError(reply, 409, 'Session is not active')
+    // Allow TIMED_OUT — the timeout job may have fired just before the frontend auto-submitted
+    if (session.status !== 'IN_PROGRESS' && session.status !== 'TIMED_OUT') return sendError(reply, 409, 'Session is not active')
 
     await prisma.session.update({ where: { id: sessionId }, data: { status: 'SUBMITTED', submittedAt: new Date() } })
     await prisma.invitation.update({ where: { id: session.invitationId }, data: { status: 'COMPLETED' } })

@@ -27,13 +27,16 @@ export async function initPhoneDetection(): Promise<boolean> {
   return initPromise
 }
 
-// Returns true if a cell phone is detected in the current video frame
-export async function detectPhone(videoEl: HTMLVideoElement): Promise<boolean> {
-  if (!model || videoEl.readyState < 2 || videoEl.videoWidth === 0) return false
+// Returns { detected, highConfidence }.
+// highConfidence = true when score ≥ 0.75 — caller can flag immediately (no consecutive check needed).
+export async function detectPhone(videoEl: HTMLVideoElement): Promise<{ detected: boolean; highConfidence: boolean }> {
+  if (!model || videoEl.readyState < 2 || videoEl.videoWidth === 0) return { detected: false, highConfidence: false }
   try {
     const predictions = await model.detect(videoEl)
-    return predictions.some(p => p.class === 'cell phone' && p.score >= 0.5)
+    const best = predictions.filter(p => p.class === 'cell phone').sort((a, b) => b.score - a.score)[0]
+    if (!best) return { detected: false, highConfidence: false }
+    return { detected: best.score >= 0.58, highConfidence: best.score >= 0.75 }
   } catch {
-    return false
+    return { detected: false, highConfidence: false }
   }
 }

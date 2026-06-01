@@ -3,7 +3,7 @@ import { useParams, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import {
   Clock, ChevronLeft, ChevronRight, Send, Loader2,
-  Camera, CameraOff, Maximize, Video, FileText, CalculatorIcon, X as XIcon, XCircle,
+  Camera, CameraOff, Maximize, Video, FileText, CalculatorIcon, X as XIcon, XCircle, AlertTriangle,
 } from 'lucide-react'
 import MonacoEditor from '@monaco-editor/react'
 import { Button } from '@/components/ui/button'
@@ -1045,6 +1045,55 @@ function CodeQuestion({
   )
 }
 
+// ── Guided room scan helpers ───────────────────────────────────────────────────
+
+const SCAN_STEPS = [
+  { icon: '👤', label: 'Face the camera',          hint: "Look directly at the camera so we can verify it's you",               secs: 5 },
+  { icon: '⬅',  label: 'Show your LEFT side',      hint: 'Slowly pan left — show the wall and area to your left',              secs: 8 },
+  { icon: '➡',  label: 'Show your RIGHT side',     hint: 'Pan right — show the full right side of your workspace',             secs: 8 },
+  { icon: '⬇',  label: 'Show desk & any screens',  hint: 'Tilt the camera down — reveal your desk surface and extra monitors', secs: 8 },
+  { icon: '🔄', label: 'Show behind you',           hint: 'Rotate or physically turn around to show the area behind your seat', secs: 9 },
+]
+
+function rsThumb(video: HTMLVideoElement): Uint8ClampedArray | null {
+  if (video.readyState < 2 || video.videoWidth === 0) return null
+  const c = document.createElement('canvas')
+  c.width = 32; c.height = 18
+  const ctx = c.getContext('2d')
+  if (!ctx) return null
+  ctx.drawImage(video, 0, 0, 32, 18)
+  return ctx.getImageData(0, 0, 32, 18).data
+}
+
+function rsFrameIssue(d: Uint8ClampedArray): 'ceiling' | 'dark' | null {
+  const n = d.length / 4
+  let sumL = 0
+  for (let i = 0; i < d.length; i += 4) sumL += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]
+  const mean = sumL / n
+  let sumV = 0
+  for (let i = 0; i < d.length; i += 4) {
+    const l = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]
+    sumV += (l - mean) ** 2
+  }
+  const sd = Math.sqrt(sumV / n)
+  if (sd < 18 && mean > 175) return 'ceiling'
+  if (sd < 18 && mean < 35) return 'dark'
+  return null
+}
+
+function rsFrameDiff(a: Uint8ClampedArray, b: Uint8ClampedArray): number {
+  let sum = 0
+  for (let i = 0; i < a.length; i += 4)
+    sum += Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2])
+  return sum / (a.length / 4 * 3 * 255)
+}
+
+const RS_WARNING: Record<string, string> = {
+  ceiling: 'Camera appears aimed at the ceiling — point it toward the room',
+  dark: 'Image too dark — move to a lit area or uncover the camera lens',
+  not_moving: "Camera didn't appear to move — please pan to show this area",
+}
+
 function RoomScanModal({
   sessionId, token, trigger, onComplete,
 }: {
@@ -1057,57 +1106,82 @@ function RoomScanModal({
   const streamRef = useRef<MediaStream | null>(null)
   const recorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<BlobPart[]>([])
-  const [step, setStep] = useState<'intro' | 'recording' | 'uploading' | 'done' | 'error'>('intro')
-  const [countdown, setCountdown] = useState(60)
+  const startThumbRef = useRef<Uint8ClampedArray | null>(null)
+
+  const [phase, setPhase] = useState<'intro' | 'scanning' | 'uploading' | 'done'>('intro')
+  const [stepIdx, setStepIdx] = useState(0)
+  const [stepSecs, setStepSecs] = useState(0)
+  const [warning, setWarning] = useState<string | null>(null)
   const [camError, setCamError] = useState(false)
 
   useEffect(() => {
     navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-      .then(stream => {
-        streamRef.current = stream
-        if (videoRef.current) videoRef.current.srcObject = stream
-      })
+      .then(stream => { streamRef.current = stream; if (videoRef.current) videoRef.current.srcObject = stream })
       .catch(() => setCamError(true))
     return () => { streamRef.current?.getTracks().forEach(t => t.stop()) }
   }, [])
 
-  const startRecording = () => {
+  // Per-step countdown — re-runs whenever stepIdx changes while scanning
+  useEffect(() => {
+    if (phase !== 'scanning') return
+    setWarning(null)
+    setStepSecs(SCAN_STEPS[stepIdx].secs)
+    if (videoRef.current) startThumbRef.current = rsThumb(videoRef.current)
+
+    const tick = setInterval(() => {
+      setStepSecs(prev => {
+        if (prev > 1) return prev - 1
+        clearInterval(tick)
+
+        // Check camera angle and motion at end of step
+        const video = videoRef.current
+        if (video) {
+          const endThumb = rsThumb(video)
+          if (endThumb) {
+            const issue = rsFrameIssue(endThumb)
+            if (issue) {
+              setWarning(RS_WARNING[issue])
+            } else if (startThumbRef.current && stepIdx > 0) {
+              if (rsFrameDiff(startThumbRef.current, endThumb) < 0.03) setWarning(RS_WARNING.not_moving)
+            }
+          }
+        }
+
+        const next = stepIdx + 1
+        if (next >= SCAN_STEPS.length) {
+          setPhase('uploading')
+          if (recorderRef.current?.state !== 'inactive') recorderRef.current?.stop()
+        } else {
+          setStepIdx(next)
+        }
+        return 0
+      })
+    }, 1000)
+    return () => clearInterval(tick)
+  }, [phase, stepIdx]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const startScan = () => {
     if (!streamRef.current) return
     chunksRef.current = []
-
-    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-      ? 'video/webm;codecs=vp9'
-      : 'video/webm'
+    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm'
     const recorder = new MediaRecorder(streamRef.current, { mimeType })
     recorder.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data) }
     recorder.onstop = async () => {
-      setStep('uploading')
       try {
         const blob = new Blob(chunksRef.current, { type: 'video/webm' })
-        const formData = new FormData()
-        formData.append('file', blob, 'room-scan.webm')
-        await api.post(
-          `/proctoring/${sessionId}/room-scan?token=${token}&trigger=${trigger}`,
-          formData,
-          { headers: { 'Content-Type': 'multipart/form-data' } }
-        )
+        const fd = new FormData()
+        fd.append('file', blob, 'room-scan.webm')
+        await api.post(`/proctoring/${sessionId}/room-scan?token=${token}&trigger=${trigger}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
       } catch { /* best-effort */ }
-      setStep('done')
+      setPhase('done')
     }
     recorderRef.current = recorder
     recorder.start(1000)
-    setStep('recording')
-
-    let remaining = 60
-    const tick = setInterval(() => {
-      remaining--
-      setCountdown(remaining)
-      if (remaining <= 0) {
-        clearInterval(tick)
-        if (recorder.state !== 'inactive') recorder.stop()
-      }
-    }, 1000)
+    setStepIdx(0)
+    setPhase('scanning')
   }
+
+  const totalSecs = SCAN_STEPS.reduce((a, s) => a + s.secs, 0)
 
   return (
     <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full overflow-hidden">
@@ -1118,9 +1192,7 @@ function RoomScanModal({
             {trigger === 'PRE_TEST' ? 'Pre-Test Room Scan' : 'Periodic Room Check'}
           </h2>
           <p className="text-sm text-muted-foreground">
-            {trigger === 'PRE_TEST'
-              ? 'Show your surroundings before starting the assessment'
-              : 'A brief room verification is required to continue'}
+            {trigger === 'PRE_TEST' ? 'Follow the guided steps to show your surroundings' : 'A brief guided verification is required to continue'}
           </p>
         </div>
       </div>
@@ -1133,44 +1205,91 @@ function RoomScanModal({
           </div>
         ) : (
           <>
+            {/* Camera preview */}
             <div className="relative bg-gray-900 rounded-lg overflow-hidden" style={{ aspectRatio: '16/9' }}>
               <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover" />
-              {step === 'recording' && (
-                <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-red-600 text-white text-xs font-bold px-2.5 py-1 rounded-full">
-                  <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
-                  REC {countdown}s
-                </div>
+
+              {phase === 'scanning' && (
+                <>
+                  {/* REC badge */}
+                  <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-red-600 text-white text-xs font-bold px-2.5 py-1 rounded-full z-10">
+                    <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
+                    REC
+                  </div>
+                  {/* Direction icon overlay */}
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <span className="text-6xl drop-shadow-lg select-none opacity-80">{SCAN_STEPS[stepIdx].icon}</span>
+                  </div>
+                  {/* Step progress bar */}
+                  <div className="absolute bottom-0 inset-x-0 h-1.5 bg-black/30">
+                    <div
+                      className="h-full bg-primary transition-all duration-1000"
+                      style={{ width: `${stepSecs > 0 ? (stepSecs / SCAN_STEPS[stepIdx].secs) * 100 : 0}%` }}
+                    />
+                  </div>
+                </>
               )}
             </div>
 
-            {step === 'intro' && (
+            {/* Warning */}
+            {warning && phase === 'scanning' && (
+              <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800">
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-500" />
+                <span>{warning}</span>
+              </div>
+            )}
+
+            {/* Intro step list */}
+            {phase === 'intro' && (
               <div className="space-y-3">
-                <ul className="text-sm text-gray-600 space-y-1.5">
-                  <li>• Slowly rotate your camera to show the entire room</li>
-                  <li>• Include your desk, walls, and any visible screens</li>
-                  <li>• Recording stops automatically after 60 seconds</li>
-                </ul>
-                <Button className="w-full" onClick={startRecording}>
-                  Start Room Scan (60 seconds)
+                <p className="text-sm font-medium text-gray-700">
+                  You'll be guided through {SCAN_STEPS.length} steps (~{totalSecs}s total):
+                </p>
+                <div className="grid grid-cols-5 gap-2">
+                  {SCAN_STEPS.map((s, i) => (
+                    <div key={i} className="text-center space-y-1">
+                      <div className="text-2xl">{s.icon}</div>
+                      <p className="text-[10px] text-muted-foreground leading-tight">{s.label}</p>
+                      <p className="text-[10px] font-mono text-muted-foreground">{s.secs}s</p>
+                    </div>
+                  ))}
+                </div>
+                <Button className="w-full" onClick={startScan}>
+                  <Video className="h-4 w-4 mr-2" />
+                  Begin Guided Room Scan
                 </Button>
               </div>
             )}
 
-            {step === 'recording' && (
-              <div className="text-center space-y-1.5">
-                <div className="text-5xl font-mono font-bold text-gray-900 tabular-nums">{countdown}s</div>
-                <p className="text-sm text-muted-foreground">Slowly show your entire room…</p>
+            {/* Scanning — current step info */}
+            {phase === 'scanning' && (
+              <div className="space-y-3">
+                {/* Step progress dots */}
+                <div className="flex gap-1.5">
+                  {SCAN_STEPS.map((_, i) => (
+                    <div key={i} className={cn(
+                      'flex-1 h-1.5 rounded-full transition-colors',
+                      i < stepIdx ? 'bg-green-400' : i === stepIdx ? 'bg-primary' : 'bg-gray-200'
+                    )} />
+                  ))}
+                </div>
+                <div className="text-center space-y-1">
+                  <div className="text-4xl font-mono font-bold text-gray-900 tabular-nums">{stepSecs}s</div>
+                  <p className="text-base font-semibold text-gray-900">{SCAN_STEPS[stepIdx].label}</p>
+                  <p className="text-sm text-muted-foreground">{SCAN_STEPS[stepIdx].hint}</p>
+                  <p className="text-xs text-muted-foreground">Step {stepIdx + 1} of {SCAN_STEPS.length}</p>
+                </div>
               </div>
             )}
 
-            {step === 'uploading' && (
+            {phase === 'uploading' && (
               <div className="flex items-center justify-center gap-2 py-4">
                 <Loader2 className="h-5 w-5 animate-spin text-primary" />
                 <span className="text-sm text-muted-foreground">Saving room scan…</span>
               </div>
             )}
 
-            {step === 'done' && (
+            {phase === 'done' && (
               <div className="space-y-3 text-center">
                 <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mx-auto">
                   <span className="text-2xl text-green-600">✓</span>

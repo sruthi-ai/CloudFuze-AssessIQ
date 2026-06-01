@@ -186,7 +186,7 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
           return s / (hi - lo + 1) / 255
         }
 
-        let consecutiveSpeech = 0
+        const speechWindow: boolean[] = []
         noiseCheckRef.current = window.setInterval(() => {
           if (cancelled || !analyserRef.current) return
           analyserRef.current.getByteFrequencyData(buffer)
@@ -194,27 +194,24 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
           const speech = bandAvg(spLo, spHi)
           const noise = (bandAvg(nLo1, nHi1) + bandAvg(nLo2, nHi2)) / 2
 
-          // Flag only when speech band is both absolutely loud (> 8%) AND
-          // at least 1.5× louder than the ambient noise floor (SNR check).
-          // This passes: talking to someone, reading questions aloud.
-          // This ignores: keyboard, HVAC, paper, loud exam-hall ambient noise.
-          const isSpeech = speech > 0.08 && speech > noise * 1.5
+          // Flag when speech band is absolutely present (> 6.5%) AND
+          // at least 1.5× louder than ambient noise floor (SNR check).
+          const isSpeech = speech > 0.065 && speech > noise * 1.5
 
-          if (isSpeech) {
-            consecutiveSpeech++
-            if (consecutiveSpeech >= 3) {
-              pushEventRef.current('NOISE_DETECTED', `Voice detected during test (speech band: ${(speech * 100).toFixed(0)}%, noise floor: ${(noise * 100).toFixed(0)}%)`)
-              consecutiveSpeech = 0
-            }
-          } else {
-            consecutiveSpeech = 0
+          // Rolling window: fire if speech detected in 3 of the last 5 checks (~15s window).
+          // A brief pause between sentences no longer resets the counter.
+          speechWindow.push(isSpeech)
+          if (speechWindow.length > 5) speechWindow.shift()
+          if (speechWindow.filter(Boolean).length >= 3) {
+            pushEventRef.current('NOISE_DETECTED', `Voice detected during test (speech band: ${(speech * 100).toFixed(0)}%, noise floor: ${(noise * 100).toFixed(0)}%)`)
+            speechWindow.length = 0
           }
         }, 3000)
       } catch {}
     }
 
     const startPhoneDetection = () => {
-      // Delay start so it doesn't compete with face model loading
+      // 3s delay — enough for face model to start loading without blocking it
       setTimeout(async () => {
         if (cancelled) return
         try {
@@ -226,17 +223,18 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
 
           phoneCheckRef.current = window.setInterval(async () => {
             if (cancelled || !videoRef.current) return
-            const found = await detectPhone(videoRef.current)
-            if (!found) { consecutivePhone = 0; return }
+            const { detected, highConfidence } = await detectPhone(videoRef.current)
+            if (!detected) { consecutivePhone = 0; return }
             consecutivePhone++
-            if (consecutivePhone >= 2) {
+            // High-confidence single detection is enough — don't wait for 2nd check
+            if (highConfidence || consecutivePhone >= 2) {
               captureViolationSnapshot()
               pushImmediate('PHONE_DETECTED', 'Mobile phone detected in webcam view')
               consecutivePhone = 0
             }
-          }, 15_000)
+          }, 8_000)
         } catch {}
-      }, 8000) // 8s head-start for face detection to load first
+      }, 3000)
     }
 
     const startFaceAndPoseDetection = () => {
@@ -290,7 +288,8 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
                 // Check for a phone in the frame before reporting no-face —
                 // if a phone is visible it's a stronger signal than just an absent face.
                 const { detectPhone } = await import('@/lib/phoneDetection')
-                const phoneVisible = videoRef.current ? await detectPhone(videoRef.current) : false
+                const phoneResult = videoRef.current ? await detectPhone(videoRef.current) : null
+                const phoneVisible = phoneResult?.detected ?? false
                 if (phoneVisible) {
                   pushImmediate('PHONE_DETECTED', 'Mobile phone detected in webcam view')
                 } else {

@@ -1,5 +1,5 @@
 import { prisma } from '../db'
-import { JUDGE0_KEY, LANG_ID, runCode } from '../utils/judge0'
+import { LANG_ID, runCode } from '../utils/judge0'
 
 export interface TestCaseResult {
   caseId: string
@@ -49,22 +49,6 @@ export async function gradeCode(
   const results: TestCaseResult[] = []
 
   for (const tc of testCases) {
-    if (!JUDGE0_KEY) {
-      // Mock: always fail without a real Judge0 key
-      results.push({
-        caseId: tc.id,
-        description: tc.description,
-        isHidden: tc.isHidden,
-        passed: false,
-        actualOutput: null,
-        expectedOutput: tc.expectedOutput,
-        status: 'Mock mode — set JUDGE0_API_KEY for real execution',
-        time: null,
-        memory: null,
-      })
-      continue
-    }
-
     try {
       const res = await runCode(code, langId, tc.input)
       const actual = (res.stdout ?? '').trimEnd()

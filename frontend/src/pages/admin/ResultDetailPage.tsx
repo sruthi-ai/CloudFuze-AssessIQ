@@ -996,7 +996,9 @@ function AnswerReview({ index, question, answer, maxPoints, onGrade }: {
   const [grading, setGrading] = useState(false)
   const [points, setPoints] = useState<number | string>(answer?.pointsEarned ?? '')
   const [feedback, setFeedback] = useState(answer?.feedback ?? '')
-  const needsGrading = ['ESSAY', 'SHORT_ANSWER', 'CODE', 'FILE_UPLOAD', 'AUDIO_RECORDING'].includes(question.type)
+  const needsGrading =
+    ['ESSAY', 'SHORT_ANSWER', 'FILE_UPLOAD', 'AUDIO_RECORDING'].includes(question.type) ||
+    (question.type === 'CODE' && (!answer?.gradingStatus || answer.gradingStatus === 'PENDING'))
 
   return (
     <div className="border rounded-lg p-4 space-y-3">
@@ -1051,9 +1053,62 @@ function AnswerReview({ index, question, answer, maxPoints, onGrade }: {
           )}
           {answer.numericValue != null && <p>Answer: <strong>{answer.numericValue}</strong></p>}
           {answer.codeSubmission && (
-            <pre className="bg-gray-900 text-gray-100 p-3 rounded text-xs overflow-x-auto mt-2 max-h-48">
-              {answer.codeSubmission}
-            </pre>
+            <div className="mt-2 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {answer.language ?? 'code'}
+                </span>
+              </div>
+              <pre className="bg-gray-900 text-gray-100 p-3 rounded text-xs overflow-x-auto max-h-48">
+                {answer.codeSubmission}
+              </pre>
+              {Array.isArray(answer.codeTestResults) && answer.codeTestResults.length > 0 && (() => {
+                const results = answer.codeTestResults as Array<{
+                  caseId: string; description: string | null; isHidden: boolean
+                  passed: boolean; actualOutput: string | null; expectedOutput: string | null
+                  status: string; time: string | null
+                }>
+                const passed = results.filter(r => r.passed).length
+                const total = results.length
+                return (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-muted-foreground">Test results:</span>
+                      <span className={cn('text-xs font-bold', passed === total ? 'text-green-600' : passed > 0 ? 'text-yellow-600' : 'text-red-500')}>
+                        {passed}/{total} passed
+                      </span>
+                    </div>
+                    {results.map((r, i) => (
+                      <div key={r.caseId} className={cn(
+                        'rounded border p-2 text-xs space-y-1',
+                        r.passed ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'
+                      )}>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={cn('font-semibold', r.passed ? 'text-green-700' : 'text-red-700')}>
+                            {r.passed ? '✓' : '✗'} Case {i + 1}
+                          </span>
+                          {r.description && <span className="text-muted-foreground">{r.description}</span>}
+                          {r.isHidden && <Badge variant="outline" className="text-[10px] h-4 py-0">hidden</Badge>}
+                          <span className="ml-auto text-muted-foreground text-[10px]">{r.status}</span>
+                        </div>
+                        {!r.passed && !r.isHidden && (r.expectedOutput || r.actualOutput) && (
+                          <div className="grid grid-cols-2 gap-1 mt-1">
+                            <div>
+                              <p className="text-muted-foreground mb-0.5 text-[10px]">Expected:</p>
+                              <pre className="bg-white rounded p-1 text-[10px] font-mono whitespace-pre-wrap border border-gray-200">{r.expectedOutput ?? '(none)'}</pre>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground mb-0.5 text-[10px]">Actual:</p>
+                              <pre className="bg-white rounded p-1 text-[10px] font-mono whitespace-pre-wrap border border-gray-200">{r.actualOutput ?? '(no output)'}</pre>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )
+              })()}
+            </div>
           )}
           {answer.timeSpent != null && (
             <p className={cn(

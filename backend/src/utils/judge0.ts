@@ -1,60 +1,80 @@
-export const JUDGE0_URL = process.env.JUDGE0_URL || 'https://judge0-ce.p.rapidapi.com'
-export const JUDGE0_KEY = process.env.JUDGE0_API_KEY || ''
+// Code execution via Piston (https://github.com/engineer-man/piston)
+// No API key required; point PISTON_URL at a self-hosted instance for production.
+export const PISTON_URL = process.env.PISTON_URL || 'https://emkc.org/api/v2/piston'
 
-export const LANG_ID: Record<string, number> = {
-  python: 71,       // Python 3.8
-  javascript: 63,   // Node.js 12
-  typescript: 74,   // TypeScript 3.7
-  java: 62,         // Java 13
-  c: 50,            // C (GCC 9.2)
-  cpp: 54,          // C++ (GCC 9.2)
-  go: 60,           // Go 1.13
-  rust: 73,         // Rust 1.40
-  csharp: 51,       // C# Mono 6.6
+export const LANG_ID: Record<string, string> = {
+  python:     'python',
+  javascript: 'javascript',
+  typescript: 'typescript',
+  java:       'java',
+  c:          'c',
+  cpp:        'c++',
+  go:         'go',
+  rust:       'rust',
+  csharp:     'csharp',
 }
 
 export interface Judge0Result {
-  stdout: string | null
-  stderr: string | null
-  status: string
-  statusId: number
-  time: string | null
-  memory: number | null
+  stdout:   string | null
+  stderr:   string | null
+  status:   string
+  statusId: number   // 3 = Accepted (mirrors Judge0 convention used downstream)
+  time:     string | null
+  memory:   number | null
 }
 
 export async function runCode(
   sourceCode: string,
-  languageId: number,
+  languageId: string,
   stdin = '',
 ): Promise<Judge0Result> {
-  const res = await fetch(`${JUDGE0_URL}/submissions?base64_encoded=false&wait=true`, {
+  const res = await fetch(`${PISTON_URL}/execute`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-RapidAPI-Key': JUDGE0_KEY,
-      'X-RapidAPI-Host': 'judge0-ce.p.rapidapi.com',
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      source_code: sourceCode,
-      language_id: languageId,
+      language: languageId,
+      version: '*',
+      files: [{ content: sourceCode }],
       stdin,
-      cpu_time_limit: 5,
-      memory_limit: 128000,
+      run_timeout: 5000,
+      compile_timeout: 10000,
     }),
   })
 
   if (!res.ok) {
     const text = await res.text()
-    throw new Error(`Judge0 HTTP ${res.status}: ${text}`)
+    throw new Error(`Piston HTTP ${res.status}: ${text}`)
   }
 
   const data = await res.json() as any
+  const compile = data.compile ?? {}
+  const run = data.run ?? {}
+
+  // Compile error — show compiler output as stderr
+  if (compile.code != null && compile.code !== 0) {
+    return {
+      stdout: null,
+      stderr: compile.stderr || compile.output || 'Compilation failed',
+      status: 'Compilation Error',
+      statusId: 6,
+      time: null,
+      memory: null,
+    }
+  }
+
+  const succeeded = run.code === 0 && !run.signal
+  const stderr = run.stderr || null
+
   return {
-    stdout: data.stdout ?? null,
-    stderr: data.stderr ?? data.compile_output ?? null,
-    status: data.status?.description ?? 'Unknown',
-    statusId: data.status?.id ?? 0,
-    time: data.time ?? null,
-    memory: data.memory ?? null,
+    stdout: run.stdout || null,
+    stderr,
+    status: succeeded
+      ? 'Accepted'
+      : run.signal
+        ? `Runtime Error (${run.signal})`
+        : `Runtime Error (exit ${run.code})`,
+    statusId: succeeded ? 3 : 4,
+    time: null,
+    memory: null,
   }
 }

@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../db'
 import { sendError, sendSuccess } from '../utils/errors'
-import { JUDGE0_KEY, LANG_ID, runCode } from '../utils/judge0'
+import { LANG_ID, runCode } from '../utils/judge0'
 import { runTestsForCandidate } from '../services/codeGrading'
 
 const runSchema = z.object({
@@ -29,10 +29,6 @@ export async function codeRoutes(server: FastifyInstance) {
     const languageId = LANG_ID[language]
     if (!languageId) return sendError(reply, 400, `Unsupported language: ${language}`)
 
-    if (!JUDGE0_KEY) {
-      return sendSuccess(reply, mockExecute(code, language))
-    }
-
     try {
       const res = await runCode(code, languageId, stdin ?? '')
       return sendSuccess(reply, {
@@ -43,7 +39,7 @@ export async function codeRoutes(server: FastifyInstance) {
         memory: res.memory,
       })
     } catch (err: any) {
-      server.log.error(err, 'Judge0 fetch failed')
+      server.log.error(err, 'Piston fetch failed')
       return sendError(reply, 502, 'Code execution service unavailable')
     }
   })
@@ -76,22 +72,3 @@ export async function codeRoutes(server: FastifyInstance) {
   })
 }
 
-function mockExecute(code: string, language: string) {
-  if (language === 'python') {
-    const printMatches = [...code.matchAll(/print\(["'](.+?)["']\)/g)]
-    const stdout = printMatches.map(m => m[1]).join('\n')
-    return { stdout: stdout || null, stderr: null, status: 'Accepted (mock)', time: '0.01', memory: 1024 }
-  }
-  if (language === 'javascript') {
-    const logMatches = [...code.matchAll(/console\.log\(["'](.+?)["']\)/g)]
-    const stdout = logMatches.map(m => m[1]).join('\n')
-    return { stdout: stdout || null, stderr: null, status: 'Accepted (mock)', time: '0.01', memory: 1024 }
-  }
-  return {
-    stdout: null,
-    stderr: null,
-    status: 'Mock mode — set JUDGE0_API_KEY for real execution',
-    time: null,
-    memory: null,
-  }
-}

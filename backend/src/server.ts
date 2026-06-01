@@ -51,8 +51,8 @@ if (process.env.NODE_ENV === 'production') {
   }
 }
 
-if (!process.env.ANTHROPIC_API_KEY) {
-  console.warn('⚠  WARNING: ANTHROPIC_API_KEY not set — AI question generation and essay grading will be unavailable')
+if (!process.env.OPENAI_API_KEY) {
+  console.warn('⚠  WARNING: OPENAI_API_KEY not set — AI question generation will be unavailable')
 }
 
 const server = Fastify({

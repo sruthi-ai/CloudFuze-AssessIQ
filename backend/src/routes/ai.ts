@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import Anthropic from '@anthropic-ai/sdk'
+import OpenAI from 'openai'
 import { sendError, sendSuccess } from '../utils/errors'
 import { requireRole } from '../middleware/authenticate'
 
@@ -25,9 +25,9 @@ export async function aiRoutes(server: FastifyInstance) {
   const canEdit = requireRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'RECRUITER')
 
   server.post('/generate-questions', { preHandler: canEdit }, async (request, reply) => {
-    const apiKey = process.env.ANTHROPIC_API_KEY
+    const apiKey = process.env.OPENAI_API_KEY
     if (!apiKey) {
-      return sendError(reply, 503, 'AI generation is not configured — add ANTHROPIC_API_KEY to your environment')
+      return sendError(reply, 503, 'AI generation is not configured — add OPENAI_API_KEY to your environment')
     }
 
     const result = generateSchema.safeParse(request.body)
@@ -72,15 +72,17 @@ Rules:
 - Return ONLY the JSON array. No other text.`
 
     try {
-      const client = new Anthropic({ apiKey })
-      const message = await client.messages.create({
-        model: 'claude-sonnet-4-6',
+      const client = new OpenAI({ apiKey })
+      const completion = await client.chat.completions.create({
+        model: 'gpt-4o',
         max_tokens: 8096,
-        system,
-        messages: [{ role: 'user', content: `Topic / Job Description:\n\n${topic}` }],
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: `Topic / Job Description:\n\n${topic}` },
+        ],
       })
 
-      const raw = message.content[0].type === 'text' ? message.content[0].text : ''
+      const raw = completion.choices[0]?.message?.content ?? ''
       // Strip accidental markdown fences
       const clean = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
 

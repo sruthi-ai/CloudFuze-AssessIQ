@@ -34,7 +34,7 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-https://neutaraassessment.cftools.live}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       FROM_EMAIL: ${FROM_EMAIL:-noreply@neutaraassessment.cftools.live}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       PISTON_URL: ${PISTON_URL:-https://emkc.org/api/v2/piston}
       AZURE_TENANT_ID: ${AZURE_TENANT_ID:-}
       AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:-}

@@ -528,12 +528,15 @@ enum RoomScanTrigger {
 }
 
 model RoomScan {
-  id        String          @id @default(cuid())
-  url       String
-  trigger   RoomScanTrigger
-  duration  Int?            // seconds
-  fileSize  Int?
-  createdAt DateTime        @default(now())
+  id           String          @id @default(cuid())
+  url          String
+  trigger      RoomScanTrigger
+  duration     Int?            // seconds
+  fileSize     Int?
+  panoramaUrl  String?         // stitched JPEG of all 5 step frames
+  qualityScore Int?            // 0-100 coverage score
+  qualityFlags Json?           // per-step flags: ceiling, dark, noMotion
+  createdAt    DateTime        @default(now())
 
   sessionId String
   session   Session         @relation(fields: [sessionId], references: [id], onDelete: Cascade)

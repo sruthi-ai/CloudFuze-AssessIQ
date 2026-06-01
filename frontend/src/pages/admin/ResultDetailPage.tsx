@@ -639,11 +639,18 @@ export function ResultDetailPage() {
                         <span className="text-xs font-normal text-muted-foreground ml-1">({roomScansData.length})</span>
                       </CardTitle>
                     </CardHeader>
-                    <CardContent>
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        {roomScansData.map((scan: any, idx: number) => (
-                          <div key={scan.id} className="space-y-1.5">
-                            <div className="flex items-center gap-2">
+                    <CardContent className="space-y-6">
+                      {roomScansData.map((scan: any, idx: number) => {
+                        const flags: Record<string, string | null> = (scan.qualityFlags as Record<string, string | null>) ?? {}
+                        const flaggedSteps = Object.values(flags).filter(Boolean)
+                        const score: number | null = scan.qualityScore ?? null
+                        const scoreColor = score === null ? '' : score >= 80 ? 'bg-green-100 text-green-700' : score >= 60 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'
+                        const scoreLabel = score === null ? null : score >= 80 ? 'Good' : score >= 60 ? 'Fair' : 'Poor'
+                        const STEP_LABELS = ['Face', 'Left', 'Right', 'Desk', 'Behind']
+                        return (
+                          <div key={scan.id} className="space-y-3">
+                            {/* Header row */}
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className={cn(
                                 'text-xs font-medium px-2 py-0.5 rounded-full',
                                 scan.trigger === 'PRE_TEST' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
@@ -651,19 +658,71 @@ export function ResultDetailPage() {
                                 {scan.trigger === 'PRE_TEST' ? 'Pre-Test' : `Mid-Test #${idx}`}
                               </span>
                               <span className="text-xs text-muted-foreground">{formatDateTime(scan.createdAt)}</span>
+                              {score !== null && (
+                                <span className={cn('text-xs font-semibold px-2 py-0.5 rounded-full ml-1', scoreColor)}>
+                                  Coverage {score}/100 · {scoreLabel}
+                                </span>
+                              )}
                               {scan.fileSize && (
                                 <span className="text-xs text-muted-foreground ml-auto">
                                   {(scan.fileSize / 1024 / 1024).toFixed(1)} MB
                                 </span>
                               )}
                             </div>
-                            <SecureVideo
-                              src={`/api/proctoring/${sessionId}/room-scan/${scan.id}`}
-                              className="w-full max-h-48"
-                            />
+
+                            {/* Panorama: one-glance stitch of all 5 steps */}
+                            {scan.panoramaUrl && (
+                              <div className="space-y-1.5">
+                                <p className="text-xs font-medium text-muted-foreground">Panoramic View</p>
+                                <SecureImage
+                                  src={`/api/proctoring/${sessionId}/room-scan/${scan.id}/panorama`}
+                                  alt="Room scan panorama"
+                                  className="w-full rounded-lg border"
+                                />
+                                {/* Per-step quality indicators */}
+                                {Object.keys(flags).length > 0 && (
+                                  <div className="flex gap-1">
+                                    {STEP_LABELS.map((label, i) => {
+                                      const issue = flags[String(i)]
+                                      return (
+                                        <div key={i} className="flex-1 text-center">
+                                          <div className={cn(
+                                            'text-[10px] px-1 py-0.5 rounded font-medium truncate',
+                                            issue ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'
+                                          )} title={issue ?? 'OK'}>
+                                            {label}
+                                          </div>
+                                          {issue && (
+                                            <p className="text-[9px] text-red-500 mt-0.5 leading-tight capitalize">{issue.replace('_', ' ')}</p>
+                                          )}
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Full video */}
+                            <div className="space-y-1">
+                              <p className="text-xs font-medium text-muted-foreground">Full Recording</p>
+                              <SecureVideo
+                                src={`/api/proctoring/${sessionId}/room-scan/${scan.id}`}
+                                className="w-full max-h-48"
+                              />
+                            </div>
+
+                            {flaggedSteps.length > 0 && (
+                              <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                                <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-500" />
+                                <span>{flaggedSteps.length} step{flaggedSteps.length > 1 ? 's' : ''} flagged during scan: {flaggedSteps.map(f => f!.replace('_', ' ')).join(', ')}</span>
+                              </div>
+                            )}
+
+                            {idx < roomScansData.length - 1 && <hr className="border-border" />}
                           </div>
-                        ))}
-                      </div>
+                        )
+                      })}
                     </CardContent>
                   </Card>
                 )}

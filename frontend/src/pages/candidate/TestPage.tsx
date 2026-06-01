@@ -44,6 +44,7 @@ export function TestPage() {
 
   const [testStep, setTestStep] = useState<'setup' | 'room-scan' | 'test'>(isPractice ? 'test' : 'setup')
   const [showMidScan, setShowMidScan] = useState(false)
+  useEffect(() => { showMidScanRef.current = showMidScan }, [showMidScan])
   const [currentSectionIdx, setCurrentSectionIdx] = useState(0)
   const [currentQIdx, setCurrentQIdx] = useState(0)
   const [answers, setAnswers] = useState<Record<string, AnswerState>>({})
@@ -62,6 +63,8 @@ export function TestPage() {
   const [calcOp, setCalcOp] = useState<string | null>(null)
   const [calcJustEval, setCalcJustEval] = useState(false)
   const sectionExpireRef = useRef<(() => void) | null>(null)
+  const lastRoomScanTimeRef = useRef(0)
+  const showMidScanRef = useRef(false)
 
   const proctoring = !isPractice && inviteData?.test?.proctoring !== false
   const roomScanEnabled = proctoring && inviteData?.test?.roomScanEnabled === true
@@ -110,6 +113,18 @@ export function TestPage() {
     const score = VIOLATION_SCORE[type] ?? 0
     if (score === 0) return
     violationScoreRef.current += score
+
+    // Trigger mid-test room scan at half the disqualification threshold (10-minute cooldown)
+    if (
+      roomScanEnabled &&
+      !showMidScanRef.current &&
+      violationScoreRef.current >= Math.floor(DISQUALIFY_THRESHOLD / 2) &&
+      Date.now() - lastRoomScanTimeRef.current >= 10 * 60 * 1000
+    ) {
+      lastRoomScanTimeRef.current = Date.now()
+      setShowMidScan(true)
+    }
+
     if (violationScoreRef.current >= DISQUALIFY_THRESHOLD && !disqualified) {
       setDisqualified(true)
       // Fire-and-forget: mark session as disqualified on backend
@@ -119,7 +134,7 @@ export function TestPage() {
         body: JSON.stringify({ token, reason: `Auto-disqualified: violation score ${violationScoreRef.current} exceeded threshold ${DISQUALIFY_THRESHOLD}` }),
       }).catch(() => {})
     }
-  }, [disqualified, sessionId, token, API_BASE])
+  }, [disqualified, sessionId, token, API_BASE, roomScanEnabled])
 
   const {
     pushEvent, pushImmediate, stopProctoring, requestFullscreen, flush,
@@ -1107,6 +1122,8 @@ function RoomScanModal({
   const recorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<BlobPart[]>([])
   const startThumbRef = useRef<Uint8ClampedArray | null>(null)
+  const stepFramesRef = useRef<string[]>([])
+  const stepIssuesRef = useRef<(string | null)[]>(Array(SCAN_STEPS.length).fill(null))
 
   const [phase, setPhase] = useState<'intro' | 'scanning' | 'uploading' | 'done'>('intro')
   const [stepIdx, setStepIdx] = useState(0)
@@ -1133,19 +1150,34 @@ function RoomScanModal({
         if (prev > 1) return prev - 1
         clearInterval(tick)
 
-        // Check camera angle and motion at end of step
         const video = videoRef.current
+        let stepIssue: string | null = null
+
         if (video) {
           const endThumb = rsThumb(video)
           if (endThumb) {
             const issue = rsFrameIssue(endThumb)
             if (issue) {
+              stepIssue = issue
               setWarning(RS_WARNING[issue])
             } else if (startThumbRef.current && stepIdx > 0) {
-              if (rsFrameDiff(startThumbRef.current, endThumb) < 0.03) setWarning(RS_WARNING.not_moving)
+              if (rsFrameDiff(startThumbRef.current, endThumb) < 0.03) {
+                stepIssue = 'not_moving'
+                setWarning(RS_WARNING.not_moving)
+              }
             }
           }
+
+          // Capture full-res frame for panorama stitch
+          const fCanvas = document.createElement('canvas')
+          fCanvas.width = 320; fCanvas.height = 180
+          const fCtx = fCanvas.getContext('2d')
+          if (fCtx) {
+            fCtx.drawImage(video, 0, 0, 320, 180)
+            stepFramesRef.current[stepIdx] = fCanvas.toDataURL('image/jpeg', 0.75)
+          }
         }
+        stepIssuesRef.current[stepIdx] = stepIssue
 
         const next = stepIdx + 1
         if (next >= SCAN_STEPS.length) {
@@ -1163,15 +1195,76 @@ function RoomScanModal({
   const startScan = () => {
     if (!streamRef.current) return
     chunksRef.current = []
+    stepFramesRef.current = []
+    stepIssuesRef.current = Array(SCAN_STEPS.length).fill(null)
     const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm'
     const recorder = new MediaRecorder(streamRef.current, { mimeType })
     recorder.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data) }
     recorder.onstop = async () => {
       try {
         const blob = new Blob(chunksRef.current, { type: 'video/webm' })
+
+        // Compute quality score: -20 pts per flagged step
+        const issues = stepIssuesRef.current
+        const badSteps = issues.filter(Boolean).length
+        const qualityScore = Math.max(0, 100 - badSteps * 20)
+        const qualityFlags: Record<string, string | null> = {}
+        SCAN_STEPS.forEach((_, i) => { qualityFlags[String(i)] = issues[i] ?? null })
+        const quality = encodeURIComponent(JSON.stringify({ score: qualityScore, flags: qualityFlags }))
+
         const fd = new FormData()
         fd.append('file', blob, 'room-scan.webm')
-        await api.post(`/proctoring/${sessionId}/room-scan?token=${token}&trigger=${trigger}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+        const res = await api.post(
+          `/proctoring/${sessionId}/room-scan?token=${token}&trigger=${trigger}&quality=${quality}`,
+          fd,
+          { headers: { 'Content-Type': 'multipart/form-data' } }
+        )
+        const scanId: string | undefined = res.data?.data?.id
+
+        // Stitch panorama: 5 frames side-by-side with step labels
+        if (scanId) {
+          const FRAME_W = 320, FRAME_H = 180
+          const pCanvas = document.createElement('canvas')
+          pCanvas.width = FRAME_W * SCAN_STEPS.length
+          pCanvas.height = FRAME_H
+          const pCtx = pCanvas.getContext('2d')
+          if (pCtx) {
+            for (let i = 0; i < SCAN_STEPS.length; i++) {
+              const src = stepFramesRef.current[i]
+              if (src) {
+                const img = new Image()
+                await new Promise<void>(resolve => { img.onload = () => resolve(); img.src = src })
+                pCtx.drawImage(img, i * FRAME_W, 0, FRAME_W, FRAME_H)
+              } else {
+                pCtx.fillStyle = '#374151'
+                pCtx.fillRect(i * FRAME_W, 0, FRAME_W, FRAME_H)
+              }
+              // Step label bar
+              pCtx.fillStyle = 'rgba(0,0,0,0.55)'
+              pCtx.fillRect(i * FRAME_W, FRAME_H - 22, FRAME_W, 22)
+              pCtx.fillStyle = issues[i] ? '#fbbf24' : '#fff'
+              pCtx.font = '11px sans-serif'
+              pCtx.textAlign = 'center'
+              pCtx.fillText(SCAN_STEPS[i].label, i * FRAME_W + FRAME_W / 2, FRAME_H - 7)
+              // Divider line between frames
+              if (i > 0) {
+                pCtx.strokeStyle = 'rgba(255,255,255,0.25)'
+                pCtx.lineWidth = 1
+                pCtx.beginPath(); pCtx.moveTo(i * FRAME_W, 0); pCtx.lineTo(i * FRAME_W, FRAME_H); pCtx.stroke()
+              }
+            }
+            const pBlob = await new Promise<Blob | null>(resolve => pCanvas.toBlob(resolve, 'image/jpeg', 0.82))
+            if (pBlob) {
+              const pFd = new FormData()
+              pFd.append('file', pBlob, 'panorama.jpg')
+              await api.post(
+                `/proctoring/${sessionId}/room-scan/${scanId}/panorama?token=${token}`,
+                pFd,
+                { headers: { 'Content-Type': 'multipart/form-data' } }
+              )
+            }
+          }
+        }
       } catch { /* best-effort */ }
       setPhase('done')
     }

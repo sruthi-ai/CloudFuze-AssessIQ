@@ -432,9 +432,10 @@ export async function proctoringRoutes(server: FastifyInstance) {
   })
 
   // POST /api/proctoring/:sessionId/room-scan — upload a room scan video (token-validated)
+  // Query: token, trigger, quality (URL-encoded JSON: { score, flags })
   server.post('/:sessionId/room-scan', async (request, reply) => {
     const { sessionId } = request.params as { sessionId: string }
-    const { token, trigger } = request.query as { token?: string; trigger?: string }
+    const { token, trigger, quality } = request.query as { token?: string; trigger?: string; quality?: string }
 
     const session = await prisma.session.findFirst({
       where: { id: sessionId, invitation: { token } },
@@ -453,15 +454,53 @@ export async function proctoringRoutes(server: FastifyInstance) {
     await pipeline(data.file, createWriteStream(filePath))
 
     const stat = statSync(filePath)
+
+    let qualityScore: number | undefined
+    let qualityFlags: object | undefined
+    if (quality) {
+      try {
+        const q = JSON.parse(decodeURIComponent(quality))
+        if (typeof q.score === 'number') qualityScore = Math.min(100, Math.max(0, Math.round(q.score)))
+        if (q.flags && typeof q.flags === 'object') qualityFlags = q.flags
+      } catch { /* ignore malformed quality param */ }
+    }
+
     const scan = await prisma.roomScan.create({
       data: {
         sessionId,
         url: `/uploads/room-scans/${filename}`,
         trigger: scanTrigger,
         fileSize: stat.size,
+        ...(qualityScore !== undefined && { qualityScore }),
+        ...(qualityFlags !== undefined && { qualityFlags }),
       },
     })
     return sendSuccess(reply, scan, 201)
+  })
+
+  // POST /api/proctoring/:sessionId/room-scan/:scanId/panorama — upload stitched panorama JPEG (token-validated)
+  server.post('/:sessionId/room-scan/:scanId/panorama', async (request, reply) => {
+    const { sessionId, scanId } = request.params as { sessionId: string; scanId: string }
+    const { token } = request.query as { token?: string }
+
+    const scan = await prisma.roomScan.findFirst({
+      where: { id: scanId, sessionId, session: { invitation: { token } } },
+      select: { id: true },
+    })
+    if (!scan) return sendError(reply, 404, 'Room scan not found')
+
+    const data = await request.file()
+    if (!data) return sendError(reply, 400, 'No file uploaded')
+
+    const filename = `${scanId}_panorama.jpg`
+    const filePath = join(UPLOADS_DIR, 'room-scans', filename)
+    await pipeline(data.file, createWriteStream(filePath))
+
+    const updated = await prisma.roomScan.update({
+      where: { id: scanId },
+      data: { panoramaUrl: `/uploads/room-scans/${filename}` },
+    })
+    return sendSuccess(reply, updated)
   })
 
   // GET /api/proctoring/:sessionId/room-scans — list all room scans (admin)
@@ -494,6 +533,21 @@ export async function proctoringRoutes(server: FastifyInstance) {
       return reply.status(404).send({ success: false, error: 'Room scan file missing from disk' })
     }
     return reply.type('video/webm').send(createReadStream(filePath))
+  })
+
+  // GET /api/proctoring/:sessionId/room-scan/:scanId/panorama — serve panorama JPEG (admin)
+  server.get('/:sessionId/room-scan/:scanId/panorama', { preHandler: canView }, async (request, reply) => {
+    const { sessionId, scanId } = request.params as { sessionId: string; scanId: string }
+    const scan = await prisma.roomScan.findFirst({
+      where: { id: scanId, sessionId, session: { test: { tenantId: request.user.tenantId } } },
+      select: { panoramaUrl: true },
+    })
+    if (!scan?.panoramaUrl) return sendError(reply, 404, 'Panorama not available')
+
+    const relativePath = scan.panoramaUrl.replace(/^\/uploads\//, '')
+    const filePath = join(UPLOADS_DIR, relativePath)
+    if (!existsSync(filePath)) return sendError(reply, 404, 'Panorama file missing from disk')
+    return reply.type('image/jpeg').send(createReadStream(filePath))
   })
 
   // POST /proctoring/:sessionId/disqualify  — called by frontend when violation threshold is exceeded

@@ -9,6 +9,7 @@ import {
   GripVertical, Loader2, Save, Eye, Pencil, X, Check,
   Users, BarChart2, Copy, RefreshCw, XCircle, Send,
   TrendingUp, CheckCircle, Clock, RotateCcw, Calendar, FlaskConical, Link2,
+  Sparkles, ChevronLeft, AlertCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -987,6 +988,79 @@ export function TestBuilderPage() {
   const [showQuestionPicker, setShowQuestionPicker] = useState(false)
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null)
 
+  // AI question generation
+  const [showAIGen, setShowAIGen] = useState(false)
+  const [aiSectionId, setAiSectionId] = useState<string | null>(null)
+  const [aiStep, setAiStep] = useState<'settings' | 'generating' | 'review' | 'saving'>('settings')
+  const [aiTopic, setAiTopic] = useState('')
+  const [aiCount, setAiCount] = useState(10)
+  const [aiDifficulty, setAiDifficulty] = useState<'EASY' | 'MEDIUM' | 'HARD' | 'MIXED'>('MIXED')
+  const [aiTypes, setAiTypes] = useState<string[]>(['MCQ_SINGLE'])
+  const [aiQuestions, setAiQuestions] = useState<any[]>([])
+  const [aiAccepted, setAiAccepted] = useState<Set<number>>(new Set())
+  const [aiSaveProgress, setAiSaveProgress] = useState<{ done: number; total: number } | null>(null)
+  const [aiError, setAiError] = useState<string | null>(null)
+
+  const closeAIGen = () => {
+    setShowAIGen(false)
+    setAiStep('settings')
+    setAiTopic('')
+    setAiQuestions([])
+    setAiAccepted(new Set())
+    setAiSaveProgress(null)
+    setAiError(null)
+  }
+
+  const runAIGenerate = async () => {
+    setAiError(null)
+    setAiStep('generating')
+    try {
+      const res = await api.post('/ai/generate-questions', {
+        topic: aiTopic,
+        count: aiCount,
+        difficulty: aiDifficulty,
+        types: aiTypes,
+      })
+      const qs: any[] = res.data.data.questions
+      setAiQuestions(qs)
+      setAiAccepted(new Set(qs.map((_, i) => i)))
+      setAiStep('review')
+    } catch (err: any) {
+      setAiError(err.response?.data?.error ?? 'Generation failed — please try again')
+      setAiStep('settings')
+    }
+  }
+
+  const saveAIQuestions = async () => {
+    const accepted = aiQuestions.filter((_, i) => aiAccepted.has(i))
+    if (accepted.length === 0) return
+    setAiStep('saving')
+    setAiSaveProgress({ done: 0, total: accepted.length })
+    let done = 0
+    for (const q of accepted) {
+      try {
+        const payload: any = {
+          type: q.type,
+          title: q.title,
+          body: q.body,
+          difficulty: q.difficulty,
+          points: q.points,
+          explanation: q.explanation ?? undefined,
+        }
+        if (q.options?.length) payload.options = q.options
+        const qRes = await api.post('/questions', payload)
+        const newId: string = qRes.data.data.id
+        await api.post(`/tests/${testId}/questions`, { questionId: newId, sectionId: aiSectionId ?? undefined })
+      } catch { /* skip failed individual questions */ }
+      done++
+      setAiSaveProgress({ done, total: accepted.length })
+    }
+    qc.invalidateQueries({ queryKey: ['test', testId] })
+    qc.invalidateQueries({ queryKey: ['questions-picker'] })
+    toast({ title: `${done} AI-generated question${done !== 1 ? 's' : ''} added to test` })
+    closeAIGen()
+  }
+
   // Picker filters
   const [pickerSearch, setPickerSearch] = useState('')
   const [pickerTypeFilter, setPickerTypeFilter] = useState<string>('ALL')
@@ -1641,6 +1715,18 @@ export function TestBuilderPage() {
                       <Plus className="h-3.5 w-3.5 mr-1" />
                       Add Question
                     </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-violet-200 text-violet-700 hover:bg-violet-50 hover:border-violet-300"
+                      onClick={() => {
+                        setAiSectionId(section.id)
+                        setShowAIGen(true)
+                      }}
+                    >
+                      <Sparkles className="h-3.5 w-3.5 mr-1" />
+                      Generate with AI
+                    </Button>
                   </div>
                 </div>
               </CardHeader>
@@ -1872,6 +1958,247 @@ export function TestBuilderPage() {
           question={previewQuestion}
           onClose={() => setPreviewQuestion(null)}
         />
+      )}
+
+      {/* ── AI Question Generation Modal ── */}
+      {showAIGen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl">
+            <CardHeader className="shrink-0 pb-3 border-b">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-violet-600" />
+                  <CardTitle className="text-base">Generate Questions with AI</CardTitle>
+                </div>
+                <button onClick={closeAIGen} className="text-muted-foreground hover:text-foreground p-1">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </CardHeader>
+
+            <CardContent className="overflow-y-auto flex-1 p-5">
+              {/* ── Step: settings ── */}
+              {aiStep === 'settings' && (
+                <div className="space-y-5">
+                  {aiError && (
+                    <div className="flex items-start gap-2 rounded-lg bg-red-50 border border-red-200 px-3 py-2.5 text-sm text-red-800">
+                      <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-red-500" />
+                      {aiError}
+                    </div>
+                  )}
+
+                  <div className="space-y-1.5">
+                    <Label>Job description or topic *</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Paste a job description, skill area, or topic — the more detail, the better the questions.
+                    </p>
+                    <textarea
+                      rows={6}
+                      className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
+                      placeholder="e.g. 'Senior React Developer — must know hooks, performance optimisation, testing with Jest…' or just 'SQL query optimisation fundamentals'"
+                      value={aiTopic}
+                      onChange={e => setAiTopic(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-5">
+                    <div className="space-y-1.5">
+                      <Label>Number of questions</Label>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="range" min={3} max={20} step={1}
+                          value={aiCount}
+                          onChange={e => setAiCount(Number(e.target.value))}
+                          className="flex-1"
+                        />
+                        <span className="text-sm font-semibold w-6 text-right">{aiCount}</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label>Difficulty</Label>
+                      <div className="flex gap-1.5 flex-wrap">
+                        {(['EASY', 'MEDIUM', 'HARD', 'MIXED'] as const).map(d => (
+                          <button
+                            key={d}
+                            onClick={() => setAiDifficulty(d)}
+                            className={cn(
+                              'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
+                              aiDifficulty === d
+                                ? d === 'EASY' ? 'bg-green-100 border-green-400 text-green-700'
+                                  : d === 'MEDIUM' ? 'bg-yellow-100 border-yellow-400 text-yellow-700'
+                                  : d === 'HARD' ? 'bg-red-100 border-red-400 text-red-700'
+                                  : 'bg-violet-100 border-violet-400 text-violet-700'
+                                : 'bg-background border-input text-muted-foreground hover:border-violet-300'
+                            )}
+                          >
+                            {d.charAt(0) + d.slice(1).toLowerCase()}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label>Question types</Label>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {[
+                        { id: 'MCQ_SINGLE', label: 'Multiple Choice' },
+                        { id: 'MCQ_MULTI', label: 'Multi-Select' },
+                        { id: 'TRUE_FALSE', label: 'True / False' },
+                        { id: 'SHORT_ANSWER', label: 'Short Answer' },
+                        { id: 'NUMERICAL', label: 'Numerical' },
+                      ].map(({ id, label }) => {
+                        const on = aiTypes.includes(id)
+                        return (
+                          <button
+                            key={id}
+                            onClick={() => setAiTypes(prev =>
+                              on ? prev.filter(t => t !== id).length === 0 ? prev : prev.filter(t => t !== id)
+                                 : [...prev, id]
+                            )}
+                            className={cn(
+                              'flex items-center gap-2 px-3 py-2 rounded-md border text-sm transition-colors text-left',
+                              on ? 'bg-violet-50 border-violet-300 text-violet-800' : 'border-input text-muted-foreground hover:border-violet-200'
+                            )}
+                          >
+                            <div className={cn('h-4 w-4 rounded border flex items-center justify-center shrink-0', on ? 'bg-violet-600 border-violet-600' : 'border-input')}>
+                              {on && <Check className="h-2.5 w-2.5 text-white" />}
+                            </div>
+                            {label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  <Button
+                    className="w-full bg-violet-600 hover:bg-violet-700 text-white"
+                    onClick={runAIGenerate}
+                    disabled={aiTopic.trim().length < 10 || aiTypes.length === 0}
+                  >
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    Generate {aiCount} Questions
+                  </Button>
+                </div>
+              )}
+
+              {/* ── Step: generating ── */}
+              {aiStep === 'generating' && (
+                <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+                  <div className="relative">
+                    <Sparkles className="h-10 w-10 text-violet-400 animate-pulse" />
+                  </div>
+                  <p className="font-medium text-gray-900">Generating {aiCount} questions…</p>
+                  <p className="text-sm text-muted-foreground max-w-xs">
+                    Claude is reading your topic and writing tailored questions. This usually takes 5–15 seconds.
+                  </p>
+                  <Loader2 className="h-5 w-5 animate-spin text-violet-500 mt-2" />
+                </div>
+              )}
+
+              {/* ── Step: review ── */}
+              {aiStep === 'review' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium">
+                      {aiAccepted.size} of {aiQuestions.length} questions selected
+                    </p>
+                    <div className="flex gap-3">
+                      <button
+                        className="text-xs text-primary hover:underline"
+                        onClick={() => setAiAccepted(new Set(aiQuestions.map((_, i) => i)))}
+                      >Select all</button>
+                      <button
+                        className="text-xs text-muted-foreground hover:underline"
+                        onClick={() => setAiAccepted(new Set())}
+                      >Deselect all</button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 max-h-[45vh] overflow-y-auto pr-1">
+                    {aiQuestions.map((q, i) => {
+                      const accepted = aiAccepted.has(i)
+                      const correctOptions = q.options?.filter((o: any) => o.isCorrect) ?? []
+                      return (
+                        <div
+                          key={i}
+                          onClick={() => setAiAccepted(prev => {
+                            const next = new Set(prev)
+                            accepted ? next.delete(i) : next.add(i)
+                            return next
+                          })}
+                          className={cn(
+                            'rounded-lg border p-3 cursor-pointer transition-all space-y-2',
+                            accepted ? 'border-violet-300 bg-violet-50/60' : 'border-gray-200 bg-gray-50 opacity-60'
+                          )}
+                        >
+                          <div className="flex items-start gap-2">
+                            <div className={cn(
+                              'h-4 w-4 rounded border shrink-0 mt-0.5 flex items-center justify-center',
+                              accepted ? 'bg-violet-600 border-violet-600' : 'border-gray-300 bg-white'
+                            )}>
+                              {accepted && <Check className="h-2.5 w-2.5 text-white" />}
+                            </div>
+                            <div className="flex-1 min-w-0 space-y-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <Badge variant="outline" className="text-[10px] h-4 py-0">{q.type?.replace('_', ' ')}</Badge>
+                                <Badge variant="outline" className={cn('text-[10px] h-4 py-0',
+                                  q.difficulty === 'EASY' ? 'text-green-700 border-green-300' :
+                                  q.difficulty === 'HARD' ? 'text-red-600 border-red-300' : 'text-yellow-700 border-yellow-300'
+                                )}>{q.difficulty}</Badge>
+                                <span className="text-[10px] text-muted-foreground">{q.points} pt{q.points !== 1 ? 's' : ''}</span>
+                              </div>
+                              <p className="text-sm font-medium leading-snug">{q.title}</p>
+                              {q.body && q.body !== q.title && (
+                                <p className="text-xs text-muted-foreground line-clamp-2">{q.body}</p>
+                              )}
+                              {correctOptions.length > 0 && (
+                                <p className="text-xs text-green-700">
+                                  ✓ {correctOptions.map((o: any) => o.text).join(' · ')}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  <div className="flex gap-3 pt-2 border-t">
+                    <Button
+                      className="bg-violet-600 hover:bg-violet-700 text-white"
+                      disabled={aiAccepted.size === 0}
+                      onClick={saveAIQuestions}
+                    >
+                      <Plus className="h-4 w-4 mr-1.5" />
+                      Add {aiAccepted.size} Question{aiAccepted.size !== 1 ? 's' : ''} to Test
+                    </Button>
+                    <Button variant="outline" onClick={() => setAiStep('settings')}>
+                      <ChevronLeft className="h-4 w-4 mr-1" />
+                      Back
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Step: saving ── */}
+              {aiStep === 'saving' && aiSaveProgress && (
+                <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+                  <Loader2 className="h-8 w-8 animate-spin text-violet-500" />
+                  <p className="font-medium">Adding questions…</p>
+                  <p className="text-sm text-muted-foreground">{aiSaveProgress.done} of {aiSaveProgress.total} done</p>
+                  <div className="w-48 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-violet-500 rounded-full transition-all duration-300"
+                      style={{ width: `${(aiSaveProgress.done / aiSaveProgress.total) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   )

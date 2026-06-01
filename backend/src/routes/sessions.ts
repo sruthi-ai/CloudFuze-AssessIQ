@@ -445,12 +445,7 @@ export async function sessionRoutes(server: FastifyInstance) {
     notifyRecruitersOnSubmission(sessionId, score).catch(() => {})
     fireCompletionWebhook(sessionId, score).catch(() => {})
 
-    return sendSuccess(reply, {
-      message: 'Assessment submitted successfully',
-      score: score
-        ? { percentage: score.percentage, passed: score.passed, totalPoints: score.totalPoints, earnedPoints: score.earnedPoints }
-        : null,
-    })
+    return sendSuccess(reply, { message: 'Assessment submitted successfully' })
   })
 
   // GET /api/sessions/:sessionId/result — show result to candidate (if allowed)

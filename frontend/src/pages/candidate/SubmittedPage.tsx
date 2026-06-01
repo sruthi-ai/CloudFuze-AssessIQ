@@ -2,7 +2,6 @@ import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { CheckCircle, Brain, FlaskConical } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 
 export function SubmittedPage() {
   const location = useLocation()
@@ -52,22 +51,7 @@ export function SubmittedPage() {
               </p>
             )}
 
-            {result?.score && (
-              <div className="pt-4 border-t space-y-3">
-                <p className="text-sm font-medium text-gray-700">Your score</p>
-                <p className="text-5xl font-bold text-primary">{Math.round(result.score.percentage)}%</p>
-                <p className="text-sm text-muted-foreground">
-                  {result.score.earnedPoints.toFixed(1)} / {result.score.totalPoints} points
-                </p>
-                {result.score.passed !== null && (
-                  <Badge variant={result.score.passed ? 'success' : 'destructive'} className="text-sm px-4 py-1">
-                    {result.score.passed ? 'Passed' : 'Did not pass'}
-                  </Badge>
-                )}
-              </div>
-            )}
-
-            {!result?.score && !isPractice && (
+            {!isPractice && (
               <p className="text-sm text-muted-foreground pt-2">
                 Results will be shared by the recruiter once reviewed.
               </p>

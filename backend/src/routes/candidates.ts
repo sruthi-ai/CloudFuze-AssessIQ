@@ -6,6 +6,20 @@ import { requireRole } from '../middleware/authenticate'
 import { sendInvitationEmail } from '../utils/email'
 import { logAudit } from '../utils/audit'
 
+// Unambiguous chars (no 0/O, 1/I/L)
+const PIN_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+function generatePin(): string {
+  return Array.from({ length: 8 }, () => PIN_CHARS[Math.floor(Math.random() * PIN_CHARS.length)]).join('')
+}
+async function uniquePin(): Promise<string> {
+  for (let i = 0; i < 10; i++) {
+    const pin = generatePin()
+    const exists = await prisma.invitation.findUnique({ where: { pin } })
+    if (!exists) return pin
+  }
+  throw new Error('Could not generate unique PIN')
+}
+
 const createCandidateSchema = z.object({
   email: z.string().email().transform(v => v.toLowerCase()),
   firstName: z.string().min(1).default('Candidate'),
@@ -177,8 +191,9 @@ export async function candidateRoutes(server: FastifyInstance) {
           return { email: c.email, status: 'skipped', reason: 'Already invited' }
         }
 
+        const pin = await uniquePin()
         const invitation = await prisma.invitation.create({
-          data: { testId, candidateId: candidate.id, sentById: request.user.sub, expiresAt, message, sentAt: new Date(), status: 'SENT' },
+          data: { testId, candidateId: candidate.id, sentById: request.user.sub, expiresAt, message, sentAt: new Date(), status: 'SENT', pin },
         })
 
         await sendInvitationEmail({
@@ -193,7 +208,7 @@ export async function candidateRoutes(server: FastifyInstance) {
         })
 
         logAudit({ tenantId: request.user.tenantId, userId: request.user.sub, action: 'INVITATION_SENT', entityType: 'invitation', entityId: invitation.id, metadata: { candidateEmail: c.email, testTitle: test.title, testId } })
-        return { email: c.email, status: 'invited', invitationId: invitation.id, token: invitation.token }
+        return { email: c.email, status: 'invited', invitationId: invitation.id, token: invitation.token, pin: invitation.pin }
       })
     )
 

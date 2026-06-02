@@ -47,7 +47,7 @@ function parseDeepLink(raw) {
     if (u.protocol !== 'assessiq:') return null
     if (u.hostname === 'test') {
       const tok = u.pathname.replace(/^\//, '')
-      return tok ? `${APP_URL}/test/${tok}` : APP_URL
+      return tok ? `${APP_URL}/take/${tok}` : APP_URL
     }
   } catch {}
   return null
@@ -196,7 +196,7 @@ ipcMain.on('allow-close', () => {
 
 app.whenReady().then(() => {
   const deepLinkArg = process.argv.find(a => a.startsWith('assessiq://'))
-  const startUrl = (deepLinkArg && parseDeepLink(deepLinkArg)) ?? APP_URL
+  const startUrl = (deepLinkArg && parseDeepLink(deepLinkArg)) ?? `${APP_URL}/secure-browser/start`
 
   createWindow(startUrl)
   registerShortcuts()

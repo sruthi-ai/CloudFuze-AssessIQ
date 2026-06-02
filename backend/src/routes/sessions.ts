@@ -62,6 +62,20 @@ const submitAnswerSchema = z.object({
 })
 
 export async function sessionRoutes(server: FastifyInstance) {
+  // GET /api/sessions/by-pin/:pin — resolve a PIN to an invite token (public, used by secure browser entry screen)
+  server.get('/by-pin/:pin', async (request, reply) => {
+    const { pin } = request.params as { pin: string }
+    const normalised = pin.toUpperCase().replace(/[^A-Z0-9]/g, '')
+    const invitation = await prisma.invitation.findUnique({
+      where: { pin: normalised },
+      select: { token: true, status: true, expiresAt: true, test: { select: { title: true } } },
+    })
+    if (!invitation) return sendError(reply, 404, 'Invalid PIN — no matching assessment found')
+    if (invitation.status === 'CANCELLED') return sendError(reply, 410, 'This assessment invitation has been cancelled')
+    if (invitation.expiresAt < new Date()) return sendError(reply, 410, 'This assessment invitation has expired')
+    return sendSuccess(reply, { token: invitation.token, testTitle: invitation.test.title })
+  })
+
   // GET /api/sessions/invite/:token — validate token, return test metadata
   server.get('/invite/:token', async (request, reply) => {
     const { token } = request.params as { token: string }

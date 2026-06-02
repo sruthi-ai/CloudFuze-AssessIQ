@@ -30,6 +30,7 @@ import { InviteLandingPage } from '@/pages/candidate/InviteLandingPage'
 import { DemoLandingPage } from '@/pages/candidate/DemoLandingPage'
 import { TestPage } from '@/pages/candidate/TestPage'
 import { SubmittedPage } from '@/pages/candidate/SubmittedPage'
+import { SecureBrowserStartPage } from '@/pages/candidate/SecureBrowserStartPage'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore(s => s.isAuthenticated)
@@ -70,6 +71,7 @@ export default function App() {
         <Route path="/demo/:practiceToken" element={<DemoLandingPage />} />
 
         {/* Candidate-facing — public */}
+        <Route path="/secure-browser/start" element={<SecureBrowserStartPage />} />
         <Route path="/take/:token" element={<InviteLandingPage />} />
         <Route path="/take/:token/test" element={<TestPage />} />
         <Route path="/take/:token/done" element={<SubmittedPage />} />

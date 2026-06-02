@@ -328,6 +328,7 @@ model Candidate {
 model Invitation {
   id          String           @id @default(cuid())
   token       String           @unique @default(cuid())
+  pin         String?          @unique  // 8-char alphanumeric for secure browser entry
   status      InvitationStatus @default(PENDING)
   expiresAt   DateTime
   openedAt    DateTime?

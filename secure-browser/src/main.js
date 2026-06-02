@@ -31,7 +31,7 @@ if (!gotLock) { app.quit(); process.exit(0) }
 app.on('second-instance', (_, argv) => {
   const link = argv.find(a => a.startsWith('assessiq://'))
   if (link) handleDeepLink(link)
-  if (mainWindow) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
     if (mainWindow.isMinimized()) mainWindow.restore()
     mainWindow.focus()
   }
@@ -55,7 +55,7 @@ function parseDeepLink(raw) {
 
 function handleDeepLink(raw) {
   const url = parseDeepLink(raw)
-  if (url && mainWindow) mainWindow.loadURL(url)
+  if (url && mainWindow && !mainWindow.isDestroyed()) mainWindow.loadURL(url)
 }
 
 app.on('open-url', (event, url) => { event.preventDefault(); handleDeepLink(url) })

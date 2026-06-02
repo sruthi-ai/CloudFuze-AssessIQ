@@ -93,7 +93,7 @@ function interpolate(template: string, vars: Record<string, string>): string {
 
 function buildInvitationHtml(params: {
   candidateName: string; testTitle: string; companyName: string
-  url: string; expiry: string; message?: string; settings?: TenantEmailSettings
+  url: string; expiry: string; pin?: string | null; message?: string; settings?: TenantEmailSettings
 }): string {
   const s = params.settings
   const color = s?.emailBrandColor ?? '#6366f1'
@@ -113,6 +113,13 @@ function buildInvitationHtml(params: {
     ? `<p style="color:#6b7280;font-size:12px;border-top:1px solid #e5e7eb;margin-top:24px;padding-top:12px;">${s.emailSignature}</p>`
     : ''
 
+  const pinHtml = params.pin ? `
+    <div style="margin:20px 0;padding:16px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;">
+      <p style="margin:0 0 8px;font-size:13px;color:#5b21b6;font-weight:600;">🔒 Secure Browser PIN</p>
+      <p style="margin:0 0 8px;font-size:13px;color:#6b7280;">If this assessment requires the AssessIQ Secure Browser, open the app and enter this PIN:</p>
+      <p style="margin:0;font-size:28px;font-weight:700;letter-spacing:6px;color:#1f2937;font-family:monospace;">${params.pin}</p>
+    </div>` : ''
+
   return `
     <div style="font-family:sans-serif;max-width:600px;margin:0 auto;color:#1f2937;">
       <div style="background:${color};padding:20px 24px;border-radius:8px 8px 0 0;">
@@ -125,6 +132,7 @@ function buildInvitationHtml(params: {
         <a href="${params.url}" style="display:inline-block;background:${color};color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;margin:16px 0;">
           Start Assessment
         </a>
+        ${pinHtml}
         ${footerHtml}
         ${signatureHtml}
       </div>
@@ -138,6 +146,7 @@ export async function sendInvitationEmail(params: {
   testTitle: string
   companyName: string
   token: string
+  pin?: string | null
   expiresAt: Date
   message?: string
   tenantSettings?: TenantEmailSettings
@@ -150,6 +159,7 @@ export async function sendInvitationEmail(params: {
     testTitle: params.testTitle,
     companyName: params.companyName,
     url, expiry,
+    pin: params.pin,
     message: params.message,
     settings: params.tenantSettings,
   })

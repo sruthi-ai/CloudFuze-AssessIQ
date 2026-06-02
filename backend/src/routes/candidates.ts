@@ -202,6 +202,7 @@ export async function candidateRoutes(server: FastifyInstance) {
           testTitle: test.title,
           companyName: test.tenant.name,
           token: invitation.token,
+          pin: invitation.pin,
           expiresAt,
           message,
           tenantSettings: (test.tenant.settings ?? undefined) as any,

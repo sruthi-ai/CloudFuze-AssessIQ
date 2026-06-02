@@ -3,6 +3,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 
 const DOWNLOAD_BASE = `${import.meta.env.VITE_API_URL ?? ''}/api/downloads/secure-browser`
+// GitHub Releases has trusted SmartScreen reputation — prefer it for Windows
+const GITHUB_WINDOWS_URL = 'https://github.com/sruthi-ai/assessiq-secure-browser/releases/latest/download/AssessIQ-Secure-Browser-Setup.exe'
 
 export function SecureBrowserGate({ testTitle, tenantName }: { testTitle?: string; tenantName?: string }) {
   const platform = getPlatform()
@@ -43,21 +45,13 @@ export function SecureBrowserGate({ testTitle, tenantName }: { testTitle?: strin
         <div className="space-y-3">
           <p className="text-sm font-medium text-gray-700">Step 1 — Download and install:</p>
           <div className="flex flex-col sm:flex-row gap-2">
-            <a
-              href={`${DOWNLOAD_BASE}/windows`}
-              className="flex-1"
-              download
-            >
+            <a href={GITHUB_WINDOWS_URL} className="flex-1" target="_blank" rel="noreferrer">
               <Button variant="outline" className="w-full gap-2">
                 <Download className="w-4 h-4" />
                 Download for Windows (.exe)
               </Button>
             </a>
-            <a
-              href={`${DOWNLOAD_BASE}/mac`}
-              className="flex-1"
-              download
-            >
+            <a href={`${DOWNLOAD_BASE}/mac`} className="flex-1" download>
               <Button variant="outline" className="w-full gap-2">
                 <Download className="w-4 h-4" />
                 Download for macOS (.dmg)
@@ -65,9 +59,22 @@ export function SecureBrowserGate({ testTitle, tenantName }: { testTitle?: strin
             </a>
           </div>
           {platform && (
-            <p className="text-xs text-center text-indigo-600">
-              Detected platform: {platform}
-            </p>
+            <p className="text-xs text-center text-indigo-600">Detected platform: {platform}</p>
+          )}
+
+          {/* Windows SmartScreen bypass instructions */}
+          {platform === 'Windows' && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-1">
+              <p className="text-xs font-semibold text-amber-800 flex items-center gap-1">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                Windows security warning — this is expected
+              </p>
+              <p className="text-xs text-amber-700">
+                Windows may warn "this app isn't commonly downloaded." This is normal for new software.
+                To proceed: in the download bar click <strong>Keep</strong> → <strong>Keep anyway</strong>,
+                then run the installer and click <strong>More info → Run anyway</strong> if prompted.
+              </p>
+            </div>
           )}
         </div>
 

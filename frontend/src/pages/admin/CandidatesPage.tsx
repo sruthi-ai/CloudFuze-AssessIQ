@@ -115,9 +115,18 @@ export function CandidatesPage() {
 
   const inviteMutation = useMutation({
     mutationFn: () => {
-      const lines = inviteForm.candidateLines.split('\n').filter(l => l.trim())
+      const cleaned = inviteForm.candidateLines.replace(/^﻿/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+      const lines = cleaned.split('\n').filter(l => l.trim())
       const candidates = lines.map(line => {
-        const parts = line.split(',').map(s => s.trim())
+        // Same quoted-field parser as parsedPreview
+        const parts: string[] = []
+        let cur = '', inQ = false
+        for (let i = 0; i <= line.length; i++) {
+          const c = line[i]
+          if (c === '"') { inQ = !inQ }
+          else if ((c === ',' || i === line.length) && !inQ) { parts.push(cur.trim()); cur = '' }
+          else { cur += c ?? '' }
+        }
         const email = parts[0] ?? ''
         let firstName = parts[1] ?? ''
         let lastName = parts[2] ?? ''

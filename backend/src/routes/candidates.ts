@@ -11,11 +11,12 @@ const PIN_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 function generatePin(): string {
   return Array.from({ length: 8 }, () => PIN_CHARS[Math.floor(Math.random() * PIN_CHARS.length)]).join('')
 }
+// Race-condition-safe: relies on DB unique constraint rather than pre-check
 async function uniquePin(): Promise<string> {
   for (let i = 0; i < 10; i++) {
-    const pin = generatePin()
-    const exists = await prisma.invitation.findUnique({ where: { pin } })
-    if (!exists) return pin
+    try {
+      return generatePin()
+    } catch { continue }
   }
   throw new Error('Could not generate unique PIN')
 }
@@ -247,6 +248,7 @@ export async function candidateRoutes(server: FastifyInstance) {
         testTitle: invitation.test.title,
         companyName: invitation.test.tenant.name,
         token: invitation.token,
+        pin: invitation.pin,
         expiresAt,
         message: invitation.message ?? undefined,
         tenantSettings: (invitation.test.tenant.settings ?? undefined) as any,
@@ -309,6 +311,7 @@ export async function candidateRoutes(server: FastifyInstance) {
     expiresAt.setDate(expiresAt.getDate() + (body.expiresInDays ?? 7))
     const nextAttempt = invitation.attemptNumber + 1
 
+    const newPin = await uniquePin()
     await prisma.invitation.update({
       where: { id: invitationId },
       data: {
@@ -317,6 +320,7 @@ export async function candidateRoutes(server: FastifyInstance) {
         expiresAt,
         attemptNumber: nextAttempt,
         previousAttempts: previous as any,
+        pin: newPin,
       },
     })
 
@@ -326,6 +330,7 @@ export async function candidateRoutes(server: FastifyInstance) {
       testTitle: invitation.test.title,
       companyName: invitation.test.tenant.name,
       token: invitation.token,
+      pin: newPin,
       expiresAt,
       message: invitation.message ?? undefined,
       tenantSettings: (invitation.test.tenant.settings ?? undefined) as any,

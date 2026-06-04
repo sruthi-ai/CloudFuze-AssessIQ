@@ -143,7 +143,7 @@ function registerShortcuts() {
 async function reportViolation(type, description) {
   const now = Date.now()
   const last = violationDebounce.get(type) ?? 0
-  if (now - last < 60_000) return
+  if (now - last < 10_000) return
   violationDebounce.set(type, now)
 
   if (!activeSessionId || !activeToken) return

@@ -555,11 +555,14 @@ export async function proctoringRoutes(server: FastifyInstance) {
     const { sessionId } = request.params as { sessionId: string }
     const { token, reason } = request.body as { token?: string; reason?: string }
 
+    if (!token) return sendError(reply, 400, 'token required')
     const session = await prisma.session.findFirst({
       where: { id: sessionId, invitation: { token } },
-      select: { id: true, status: true },
+      select: { id: true, status: true, invitation: { select: { token: true } } },
     })
     if (!session) return sendError(reply, 404, 'Session not found')
+    // Verify token matches exactly (prevents cross-candidate disqualification)
+    if (session.invitation?.token !== token) return sendError(reply, 403, 'Forbidden')
     if (!['IN_PROGRESS', 'NOT_STARTED'].includes(session.status)) {
       return sendError(reply, 400, 'Session is not active')
     }

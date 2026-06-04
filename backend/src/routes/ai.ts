@@ -98,7 +98,12 @@ Rules:
         return sendError(reply, 500, 'AI returned an unexpected format — please try again')
       }
 
-      return sendSuccess(reply, { questions: (questions as any[]).slice(0, count) })
+      const allowedTypes = new Set(types)
+      const valid = (questions as any[])
+        .filter(q => q && typeof q === 'object' && allowedTypes.has(q.type))
+        .slice(0, count)
+
+      return sendSuccess(reply, { questions: valid })
     } catch (err: any) {
       server.log.error(err, 'Anthropic API error')
       const msg = err?.error?.error?.message ?? err?.message ?? 'Unknown error'

@@ -43,7 +43,8 @@ export function TestPage() {
   const navigate = useNavigate()
   const { sessionId, inviteData, isPractice, practiceName } = location.state ?? {}
 
-  const [testStep, setTestStep] = useState<'setup' | 'room-scan' | 'test'>(isPractice ? 'test' : 'setup')
+  const [testStep, setTestStep] = useState<'instructions' | 'setup' | 'room-scan' | 'test'>(isPractice ? 'test' : 'instructions')
+  const [honorAccepted, setHonorAccepted] = useState(false)
   const [showMidScan, setShowMidScan] = useState(false)
   useEffect(() => { showMidScanRef.current = showMidScan }, [showMidScan])
   const [currentSectionIdx, setCurrentSectionIdx] = useState(0)
@@ -405,6 +406,110 @@ export function TestPage() {
         testTitle={inviteData?.test?.title}
         tenantName={inviteData?.test?.tenant?.name}
       />
+    )
+  }
+
+  // ── Instructions + honor code step ────────────────────────────────────────
+  if (testStep === 'instructions') {
+    const test = inviteData?.test
+    const sections = testData?.sections ?? []
+    const totalQ = sections.reduce((a: number, s: any) => a + (s.questions?.length ?? 0), 0)
+    const brandCol = brandColor
+
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="w-full max-w-2xl space-y-5">
+          {/* Header */}
+          <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+            <div className="h-2" style={{ background: brandCol }} />
+            <div className="p-6 space-y-1">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                <span>{test?.tenant?.name}</span>
+              </div>
+              <h1 className="text-2xl font-bold text-gray-900">{test?.title ?? 'Assessment'}</h1>
+              <div className="flex flex-wrap gap-4 mt-3 text-sm text-gray-600">
+                <span className="flex items-center gap-1.5">
+                  <Clock className="h-4 w-4 text-gray-400" />
+                  <strong>{test?.duration ?? '--'} minutes</strong>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="h-4 w-4 text-gray-400 text-center font-bold">Q</span>
+                  <strong>{totalQ} questions</strong>
+                </span>
+                {sections.length > 1 && (
+                  <span className="flex items-center gap-1.5">
+                    <span className="text-gray-400">§</span>
+                    <strong>{sections.length} sections</strong>
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Sections breakdown */}
+          {sections.length > 0 && (
+            <div className="bg-white rounded-xl border shadow-sm p-5 space-y-3">
+              <h2 className="font-semibold text-gray-800">Sections</h2>
+              <div className="divide-y">
+                {sections.map((s: any, i: number) => (
+                  <div key={s.id} className="flex items-center justify-between py-2.5 text-sm">
+                    <span className="font-medium text-gray-700">{i + 1}. {s.title}</span>
+                    <div className="flex gap-4 text-muted-foreground text-xs">
+                      <span>{s.questions?.length ?? 0} questions</span>
+                      {s.timeLimit && <span>{s.timeLimit} min</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Rules */}
+          <div className="bg-white rounded-xl border shadow-sm p-5 space-y-3">
+            <h2 className="font-semibold text-gray-800">Exam Rules</h2>
+            <ul className="space-y-2 text-sm text-gray-700">
+              {[
+                'The timer starts as soon as you click "Begin Assessment" and cannot be paused.',
+                'Do not switch browser tabs or open other applications — this will be recorded.',
+                'Your webcam must remain active and your face visible throughout the exam.',
+                'Do not seek help from any other person or resource during the assessment.',
+                'Refreshing the page will not reset the timer — your answers are auto-saved.',
+                'The assessment will auto-submit when the timer reaches zero.',
+                proctoring ? 'Your camera, microphone, and screen may be monitored during this assessment.' : null,
+              ].filter(Boolean).map((rule, i) => (
+                <li key={i} className="flex gap-2.5">
+                  <span className="shrink-0 w-5 h-5 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center text-xs font-medium">{i + 1}</span>
+                  {rule}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Honor code */}
+          <div className="bg-white rounded-xl border shadow-sm p-5">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 accent-indigo-600"
+                checked={honorAccepted}
+                onChange={e => setHonorAccepted(e.target.checked)}
+              />
+              <span className="text-sm text-gray-700">
+                I have read and understood the exam rules. I confirm that I will complete this assessment independently, without external assistance, and that my answers represent my own work. I understand that this session may be monitored and violations will be recorded.
+              </span>
+            </label>
+          </div>
+
+          <Button
+            className="w-full"
+            size="lg"
+            disabled={!honorAccepted}
+            onClick={() => setTestStep(proctoring ? 'setup' : 'test')}
+          >
+            {proctoring ? 'Continue to Camera Setup →' : 'Begin Assessment →'}
+          </Button>
+        </div>
+      </div>
     )
   }
 

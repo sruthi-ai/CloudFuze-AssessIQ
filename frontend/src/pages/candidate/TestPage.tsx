@@ -4,7 +4,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import {
   Clock, ChevronLeft, ChevronRight, Send, Loader2,
   Camera, CameraOff, Maximize, Video, FileText, CalculatorIcon, X as XIcon, XCircle, AlertTriangle,
-  Bookmark, BookmarkCheck,
+  Bookmark, BookmarkCheck, HelpCircle, MessageSquare,
 } from 'lucide-react'
 import MonacoEditor from '@monaco-editor/react'
 import { Button } from '@/components/ui/button'
@@ -66,6 +66,10 @@ export function TestPage() {
   const [flaggedQuestions, setFlaggedQuestions] = useState<Set<string>>(new Set())
   const [violationBanner, setViolationBanner] = useState<{ msg: string; critical: boolean } | null>(null)
   const [showReviewModal, setShowReviewModal] = useState(false)
+  const [showConcernPanel, setShowConcernPanel] = useState(false)
+  const [concernMsg, setConcernMsg] = useState('')
+  const [concernSending, setConcernSending] = useState(false)
+  const [concernSent, setConcernSent] = useState(false)
   const timerWarned5Ref = useRef(false)
   const timerWarned1Ref = useRef(false)
   const sectionExpireRef = useRef<(() => void) | null>(null)
@@ -732,6 +736,78 @@ export function TestPage() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Raise concern panel */}
+        {showConcernPanel && (
+          <div className="fixed bottom-20 left-4 w-80 bg-white rounded-xl shadow-2xl border z-50 overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 bg-indigo-600">
+              <div className="flex items-center gap-2 text-white">
+                <MessageSquare className="h-4 w-4" />
+                <span className="text-sm font-medium">Flag a concern</span>
+              </div>
+              <button onClick={() => { setShowConcernPanel(false); setConcernSent(false); setConcernMsg('') }} className="text-white/70 hover:text-white">
+                <XIcon className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              {concernSent ? (
+                <div className="text-center py-4 space-y-2">
+                  <div className="text-green-600 text-2xl">✓</div>
+                  <p className="text-sm font-medium text-gray-900">Concern received</p>
+                  <p className="text-xs text-muted-foreground">The proctor has been notified. Your timer is still running.</p>
+                  <Button size="sm" variant="outline" className="w-full mt-2" onClick={() => { setShowConcernPanel(false); setConcernSent(false); setConcernMsg('') }}>
+                    Close
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <p className="text-xs text-muted-foreground">Describe your issue. Your timer continues running — this will not pause the exam.</p>
+                  <textarea
+                    rows={3}
+                    maxLength={500}
+                    className="w-full text-sm border rounded-md p-2 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="e.g. Camera not working, question is unclear, technical issue..."
+                    value={concernMsg}
+                    onChange={e => setConcernMsg(e.target.value)}
+                  />
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">{concernMsg.length}/500</span>
+                    <Button
+                      size="sm"
+                      disabled={!concernMsg.trim() || concernSending}
+                      onClick={async () => {
+                        setConcernSending(true)
+                        try {
+                          await api.post(`/sessions/${sessionId}/raise-concern`, { token, message: concernMsg.trim() })
+                          setConcernSent(true)
+                        } catch {
+                          toast({ title: 'Could not send concern', description: 'Please try again', variant: 'destructive' })
+                        } finally {
+                          setConcernSending(false)
+                        }
+                      }}
+                    >
+                      {concernSending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                      Send to Proctor
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Raise concern floating button */}
+        {testStep === 'test' && !disqualified && (
+          <button
+            onClick={() => setShowConcernPanel(s => !s)}
+            className="fixed bottom-4 left-4 flex items-center gap-1.5 bg-white border shadow-md rounded-full px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 z-40 transition-colors"
+            title="Flag a concern to the proctor"
+          >
+            <HelpCircle className="h-4 w-4 text-indigo-500" />
+            Help
+          </button>
         )}
 
         </main>

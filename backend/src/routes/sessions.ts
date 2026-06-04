@@ -8,6 +8,7 @@ import { sendError, sendSuccess } from '../utils/errors'
 import { scoreSession } from '../services/scoring'
 import { sendSubmissionNotification } from '../utils/email'
 import { UPLOADS_DIR } from '../uploads'
+import { broadcastAlert } from '../alerts'
 
 function ipToInt(ip: string): number {
   const parts = ip.split('.').map(Number)
@@ -74,6 +75,53 @@ export async function sessionRoutes(server: FastifyInstance) {
     if (invitation.status === 'CANCELLED') return sendError(reply, 410, 'This assessment invitation has been cancelled')
     if (invitation.expiresAt < new Date()) return sendError(reply, 410, 'This assessment invitation has expired')
     return sendSuccess(reply, { token: invitation.token, testTitle: invitation.test.title })
+  })
+
+  // POST /api/sessions/:sessionId/raise-concern — candidate flags an issue to the proctor
+  server.post('/:sessionId/raise-concern', async (request, reply) => {
+    const { sessionId } = request.params as { sessionId: string }
+    const { token, message } = request.body as { token?: string; message?: string }
+
+    if (!token || !message?.trim()) return sendError(reply, 400, 'token and message required')
+    if (message.length > 500) return sendError(reply, 400, 'Message too long (max 500 characters)')
+
+    const session = await prisma.session.findFirst({
+      where: { id: sessionId, invitation: { token } },
+      select: {
+        id: true, status: true,
+        test: { select: { tenantId: true, title: true } },
+        candidate: { select: { firstName: true, lastName: true, email: true } },
+      },
+    })
+    if (!session) return sendError(reply, 404, 'Session not found')
+    if (session.status !== 'IN_PROGRESS') return sendError(reply, 409, 'Session is not active')
+
+    await prisma.proctoringEvent.create({
+      data: {
+        sessionId,
+        type: 'CUSTOM',
+        severity: 'HIGH',
+        description: `CANDIDATE_CONCERN: ${message.trim()}`,
+      },
+    })
+
+    // Broadcast to admin Live Monitor as a priority alert
+    broadcastAlert(session.test.tenantId, {
+      type: 'VIOLATION',
+      sessionId,
+      severity: 'HIGH',
+      eventType: 'CANDIDATE_CONCERN',
+      description: message.trim(),
+      occurredAt: new Date().toISOString(),
+      candidate: {
+        firstName: session.candidate.firstName,
+        lastName: session.candidate.lastName,
+        email: session.candidate.email,
+      },
+      test: { id: sessionId, title: session.test.title },
+    })
+
+    return sendSuccess(reply, { received: true })
   })
 
   // GET /api/sessions/invite/:token — validate token, return test metadata

@@ -1236,6 +1236,16 @@ export function TestBuilderPage() {
     onError: err => toast({ title: 'Reorder failed', description: getErrorMessage(err), variant: 'destructive' }),
   })
 
+  const previewMutation = useMutation({
+    mutationFn: () => api.post(`/tests/${testId}/practice`),
+    onSuccess: (res) => {
+      const token = res.data.data.practiceToken
+      window.open(`${window.location.origin}/demo/${token}`, '_blank')
+      qc.invalidateQueries({ queryKey: ['test', testId] })
+    },
+    onError: err => toast({ title: 'Preview failed', description: getErrorMessage(err), variant: 'destructive' }),
+  })
+
   const publishMutation = useMutation({
     mutationFn: (action: 'publish' | 'archive') =>
       api.patch(`/tests/${testId}/status`, {
@@ -1371,12 +1381,25 @@ export function TestBuilderPage() {
           </div>
         </div>
         {!isNew && (
-          <Button variant="outline" size="sm" asChild>
-            <Link to={`/admin/candidates?testId=${testId}`}>
-              <Eye className="h-4 w-4 mr-1" />
-              Invite Candidates
-            </Link>
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => previewMutation.mutate()}
+              disabled={previewMutation.isPending}
+              title="Preview test as a candidate (practice mode)"
+            >
+              {previewMutation.isPending
+                ? <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                : <Eye className="h-4 w-4 mr-1" />}
+              Preview
+            </Button>
+            <Button variant="outline" size="sm" asChild>
+              <Link to={`/admin/candidates?testId=${testId}`}>
+                Invite Candidates
+              </Link>
+            </Button>
+          </div>
         )}
       </div>
 

@@ -6,7 +6,7 @@ import {
   Camera, CameraOff, TabletSmartphone, Minimize2, Copy,
   MousePointer2, Code2, Users, UserX, Volume2, Smartphone,
   Navigation, MonitorPlay, ZoomIn, Video, Printer, EyeOff,
-  Sun, ShieldOff, Ban,
+  Sun, ShieldOff, Ban, FileDown,
 } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
@@ -390,6 +390,17 @@ export function ResultDetailPage() {
           <Printer className="h-4 w-4 mr-2" />
           Print Report
         </Button>
+        <a
+          href={`${import.meta.env.VITE_API_URL ?? ''}/api/scorecard/${sessionId}`}
+          target="_blank"
+          rel="noreferrer"
+          download
+        >
+          <Button variant="outline" size="sm">
+            <FileDown className="h-4 w-4 mr-2" />
+            Download PDF
+          </Button>
+        </a>
       </div>
 
       {/* Disqualified banner */}

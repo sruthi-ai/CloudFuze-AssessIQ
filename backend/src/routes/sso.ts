@@ -1,8 +1,27 @@
 import { FastifyInstance } from 'fastify'
 import { SAML } from '@node-saml/node-saml'
+import { createHmac } from 'crypto'
 import { prisma } from '../db'
 import { sendError } from '../utils/errors'
 import type { JWTPayload } from '../types'
+
+const STATE_SECRET = process.env.JWT_SECRET ?? 'dev-secret'
+function signState(data: string): string {
+  return createHmac('sha256', STATE_SECRET).update(data).digest('hex').slice(0, 16)
+}
+function buildState(slug: string, nonce: string): string {
+  const payload = JSON.stringify({ slug, n: nonce })
+  const sig = signState(payload)
+  return Buffer.from(JSON.stringify({ slug, n: nonce, sig })).toString('base64url')
+}
+function verifyState(state: string): string | null {
+  try {
+    const obj = JSON.parse(Buffer.from(state, 'base64url').toString()) as { slug: string; n: string; sig: string }
+    const expected = signState(JSON.stringify({ slug: obj.slug, n: obj.n }))
+    if (obj.sig !== expected) return null
+    return obj.slug
+  } catch { return null }
+}
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001'
@@ -97,7 +116,7 @@ export async function ssoRoutes(server: FastifyInstance) {
     if (!s.microsoftSsoEnabled) return sendError(reply, 400, 'Microsoft SSO is not enabled for this workspace')
 
     const redirectUri = `${BACKEND_URL}/api/sso/microsoft/callback`
-    const state = Buffer.from(JSON.stringify({ slug, n: Math.random().toString(36).slice(2) })).toString('base64url')
+    const state = buildState(slug, Math.random().toString(36).slice(2))
 
     const params = new URLSearchParams({
       client_id: clientId,
@@ -118,12 +137,8 @@ export async function ssoRoutes(server: FastifyInstance) {
     if (oauthError) return reply.redirect(`${FRONTEND_URL}/login?error=sso_failed`)
     if (!code || !state) return reply.redirect(`${FRONTEND_URL}/login?error=sso_missing_relay`)
 
-    let slug: string
-    try {
-      slug = (JSON.parse(Buffer.from(state, 'base64url').toString()) as { slug: string }).slug
-    } catch {
-      return reply.redirect(`${FRONTEND_URL}/login?error=sso_failed`)
-    }
+    const slug = verifyState(state)
+    if (!slug) return reply.redirect(`${FRONTEND_URL}/login?error=sso_failed`)
 
     const row = await prisma.tenant.findUnique({ where: { slug }, select: { id: true, slug: true, settings: true } })
     if (!row) return reply.redirect(`${FRONTEND_URL}/login?error=tenant_not_found`)

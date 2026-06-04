@@ -100,7 +100,12 @@ export function TestPage() {
     COPY_PASTE: 1,
     DEVTOOLS_OPEN: 1,
   }
-  const DISQUALIFY_THRESHOLD = inviteData?.test?.violationThreshold ?? 10
+  const disqualifyThresholdRef = useRef(10)
+  useEffect(() => {
+    if (inviteData?.test?.violationThreshold) {
+      disqualifyThresholdRef.current = inviteData.test.violationThreshold
+    }
+  }, [inviteData?.test?.violationThreshold])
   const violationScoreRef = useRef(0)
   const API_BASE = import.meta.env.VITE_API_URL ?? ''
 
@@ -118,20 +123,20 @@ export function TestPage() {
     if (
       roomScanEnabled &&
       !showMidScanRef.current &&
-      violationScoreRef.current >= Math.floor(DISQUALIFY_THRESHOLD / 2) &&
+      violationScoreRef.current >= Math.floor(disqualifyThresholdRef.current / 2) &&
       Date.now() - lastRoomScanTimeRef.current >= 10 * 60 * 1000
     ) {
       lastRoomScanTimeRef.current = Date.now()
       setShowMidScan(true)
     }
 
-    if (violationScoreRef.current >= DISQUALIFY_THRESHOLD && !disqualified) {
+    if (violationScoreRef.current >= disqualifyThresholdRef.current && !disqualified) {
       setDisqualified(true)
       // Fire-and-forget: mark session as disqualified on backend
       fetch(`${API_BASE}/api/proctoring/${sessionId}/disqualify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, reason: `Auto-disqualified: violation score ${violationScoreRef.current} exceeded threshold ${DISQUALIFY_THRESHOLD}` }),
+        body: JSON.stringify({ token, reason: `Auto-disqualified: violation score ${violationScoreRef.current} exceeded threshold ${disqualifyThresholdRef.current}` }),
       }).catch(() => {})
     }
   }, [disqualified, sessionId, token, API_BASE, roomScanEnabled])

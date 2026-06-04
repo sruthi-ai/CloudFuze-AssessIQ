@@ -4,6 +4,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import {
   Clock, ChevronLeft, ChevronRight, Send, Loader2,
   Camera, CameraOff, Maximize, Video, FileText, CalculatorIcon, X as XIcon, XCircle, AlertTriangle,
+  Bookmark, BookmarkCheck,
 } from 'lucide-react'
 import MonacoEditor from '@monaco-editor/react'
 import { Button } from '@/components/ui/button'
@@ -62,6 +63,11 @@ export function TestPage() {
   const [calcPrev, setCalcPrev] = useState('')
   const [calcOp, setCalcOp] = useState<string | null>(null)
   const [calcJustEval, setCalcJustEval] = useState(false)
+  const [flaggedQuestions, setFlaggedQuestions] = useState<Set<string>>(new Set())
+  const [violationBanner, setViolationBanner] = useState<{ msg: string; critical: boolean } | null>(null)
+  const [showReviewModal, setShowReviewModal] = useState(false)
+  const timerWarned5Ref = useRef(false)
+  const timerWarned1Ref = useRef(false)
   const sectionExpireRef = useRef<(() => void) | null>(null)
   const lastRoomScanTimeRef = useRef(0)
   const showMidScanRef = useRef(false)
@@ -118,6 +124,22 @@ export function TestPage() {
     const score = VIOLATION_SCORE[type] ?? 0
     if (score === 0) return
     violationScoreRef.current += score
+
+    // Show inline violation banner
+    const VIOLATION_BANNER_MSG: Partial<Record<string, { msg: string; critical: boolean }>> = {
+      TAB_SWITCH: { msg: 'Tab switching detected — this has been recorded', critical: false },
+      FULLSCREEN_EXIT: { msg: 'Fullscreen exit detected — please return to fullscreen', critical: false },
+      COPY_PASTE: { msg: 'Copy/paste detected — this has been recorded', critical: false },
+      NO_FACE_DETECTED: { msg: 'Face not visible in camera — please ensure your face is visible', critical: false },
+      PHONE_DETECTED: { msg: 'Phone detected in frame — this is a serious violation', critical: true },
+      MULTIPLE_FACES: { msg: 'Multiple faces detected — only you should be in frame', critical: true },
+      DEVTOOLS_OPEN: { msg: 'Developer tools detected — this has been recorded', critical: true },
+    }
+    const bannerInfo = VIOLATION_BANNER_MSG[type]
+    if (bannerInfo) {
+      setViolationBanner(bannerInfo)
+      setTimeout(() => setViolationBanner(null), 6000)
+    }
 
     // Trigger mid-test room scan at half the disqualification threshold (10-minute cooldown)
     if (
@@ -187,6 +209,15 @@ export function TestPage() {
   useEffect(() => {
     if (timeRemaining === null) return
     if (timeRemaining <= 0) { handleSubmit(); return }
+    // Timer warnings
+    if (timeRemaining <= 300 && !timerWarned5Ref.current) {
+      timerWarned5Ref.current = true
+      toast({ title: '⏰ 5 minutes remaining', description: 'Please review and submit your answers.', variant: 'default' })
+    }
+    if (timeRemaining <= 60 && !timerWarned1Ref.current) {
+      timerWarned1Ref.current = true
+      toast({ title: '🚨 1 minute remaining!', description: 'Your test will auto-submit when the timer reaches zero.', variant: 'destructive' })
+    }
     const timer = setInterval(() => setTimeRemaining(t => (t !== null ? Math.max(0, t - 1) : null)), 1000)
     return () => clearInterval(timer)
   }, [timeRemaining])
@@ -506,6 +537,22 @@ export function TestPage() {
         </div>
       </header>
 
+      {/* Violation banner */}
+      {violationBanner && (
+        <div className={cn(
+          'flex items-center gap-3 px-4 py-2.5 text-sm font-medium animate-in slide-in-from-top-1',
+          violationBanner.critical
+            ? 'bg-red-600 text-white'
+            : 'bg-amber-50 text-amber-900 border-b border-amber-200'
+        )}>
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span className="flex-1">{violationBanner.msg}</span>
+          <button onClick={() => setViolationBanner(null)} className="opacity-70 hover:opacity-100">
+            <XIcon className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {/* Webcam PIP */}
       {proctoring && (
         <video
@@ -592,6 +639,24 @@ export function TestPage() {
                     <Badge variant="outline">{currentQ.question.type.replace(/_/g, ' ')}</Badge>
                     <span className="text-xs text-muted-foreground">{currentQ.points} pt{currentQ.points !== 1 ? 's' : ''}</span>
                     {currentQ.isRequired && <span className="text-xs text-red-500">Required</span>}
+                    <button
+                      onClick={() => setFlaggedQuestions(prev => {
+                        const next = new Set(prev)
+                        if (next.has(currentQ.questionId)) next.delete(currentQ.questionId)
+                        else next.add(currentQ.questionId)
+                        return next
+                      })}
+                      className={cn('ml-auto flex items-center gap-1 text-xs px-2 py-1 rounded transition-colors',
+                        flaggedQuestions.has(currentQ.questionId)
+                          ? 'text-amber-600 bg-amber-50 hover:bg-amber-100'
+                          : 'text-gray-400 hover:text-amber-600 hover:bg-amber-50'
+                      )}
+                      title="Mark for review"
+                    >
+                      {flaggedQuestions.has(currentQ.questionId)
+                        ? <><BookmarkCheck className="h-3.5 w-3.5" /> Marked</>
+                        : <><Bookmark className="h-3.5 w-3.5" /> Mark for review</>}
+                    </button>
                   </div>
                   <p className="text-base font-medium leading-relaxed whitespace-pre-wrap">{currentQ.question.body}</p>
                 </div>
@@ -613,28 +678,62 @@ export function TestPage() {
             </Button>
 
             {isLastQuestion ? (
-              <>
-                {showSubmitConfirm ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-600">Submit {totalQuestions - answeredCount > 0 ? `(${totalQuestions - answeredCount} unanswered)` : ''}?</span>
-                    <Button onClick={handleSubmit} disabled={submitting} className="gap-2">
-                      {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                      Confirm Submit
-                    </Button>
-                    <Button variant="outline" onClick={() => setShowSubmitConfirm(false)}>Cancel</Button>
-                  </div>
-                ) : (
-                  <Button onClick={() => setShowSubmitConfirm(true)} className="gap-2">
-                    <Send className="h-4 w-4" />Submit Assessment
-                  </Button>
-                )}
-              </>
+              <Button onClick={() => setShowReviewModal(true)} className="gap-2">
+                <Send className="h-4 w-4" />Finish Test
+              </Button>
             ) : (
               <Button onClick={goToNext}>
                 Next<ChevronRight className="h-4 w-4 ml-1" />
               </Button>
             )}
           </div>
+        {/* Submission review modal */}
+        {showReviewModal && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5">
+              <h2 className="text-xl font-bold text-gray-900">Review before submitting</h2>
+
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div className="bg-green-50 rounded-lg p-3">
+                  <p className="text-2xl font-bold text-green-700">{answeredCount}</p>
+                  <p className="text-xs text-green-600 mt-0.5">Answered</p>
+                </div>
+                <div className="bg-amber-50 rounded-lg p-3">
+                  <p className="text-2xl font-bold text-amber-700">{flaggedQuestions.size}</p>
+                  <p className="text-xs text-amber-600 mt-0.5">For review</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-2xl font-bold text-gray-700">{totalQuestions - answeredCount}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Unanswered</p>
+                </div>
+              </div>
+
+              {totalQuestions - answeredCount > 0 && (
+                <div className="text-sm text-gray-600 bg-orange-50 border border-orange-200 rounded-lg p-3">
+                  <p className="font-medium text-orange-800 mb-1">⚠ Unanswered questions</p>
+                  <p>Unanswered questions will receive 0 points. You can go back and answer them before submitting.</p>
+                </div>
+              )}
+
+              {flaggedQuestions.size > 0 && (
+                <div className="text-sm text-gray-600 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <p className="font-medium text-amber-800">📌 You have {flaggedQuestions.size} question{flaggedQuestions.size > 1 ? 's' : ''} marked for review.</p>
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <Button variant="outline" className="flex-1" onClick={() => setShowReviewModal(false)}>
+                  Back to Test
+                </Button>
+                <Button className="flex-1 gap-2" onClick={() => { setShowReviewModal(false); handleSubmit() }} disabled={submitting}>
+                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  Confirm Submit
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
         </main>
 
         {/* Question navigator */}
@@ -654,6 +753,7 @@ export function TestPage() {
                     const ans = answers[q.questionId]
                     const answered = ans && (ans.selectedOptions.length > 0 || ans.responseText || ans.numericValue || ans.codeSubmission)
                     const isCurrent = sIdx === currentSectionIdx && qIdx === currentQIdx
+                    const isFlagged = flaggedQuestions.has(q.questionId)
                     return (
                       <button
                         key={q.questionId}
@@ -661,6 +761,7 @@ export function TestPage() {
                         className={cn(
                           'h-8 w-8 rounded text-xs font-medium transition-colors',
                           isCurrent ? 'bg-primary text-white' :
+                          isFlagged ? 'bg-amber-100 text-amber-700 border border-amber-300' :
                           answered ? 'bg-green-100 text-green-700 border border-green-200' :
                           'bg-gray-100 text-gray-600 hover:bg-gray-200'
                         )}
@@ -674,6 +775,7 @@ export function TestPage() {
             ))}
             <div className="pt-2 border-t space-y-1 text-xs text-muted-foreground">
               <div className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-green-100 border border-green-200" />Answered</div>
+              <div className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-amber-100 border border-amber-300" />For review</div>
               <div className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-gray-100" />Unanswered</div>
               <div className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-primary" />Current</div>
             </div>

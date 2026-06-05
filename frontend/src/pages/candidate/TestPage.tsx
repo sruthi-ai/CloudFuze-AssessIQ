@@ -386,6 +386,7 @@ export function TestPage() {
     a.selectedOptions.length > 0 || a.responseText || a.numericValue || a.codeSubmission
   ).length
   const isLastQuestion = currentSectionIdx === sections.length - 1 && currentQIdx === questions.length - 1
+  const isCodingQ = currentQ?.question.type === 'CODE'
 
   if (!sessionId) {
     return (
@@ -717,7 +718,58 @@ export function TestPage() {
         </div>
       )}
 
-      <div className="flex flex-1 max-w-5xl mx-auto w-full px-4 py-6 gap-6">
+      {/* ── Split-screen layout for CODE questions ── */}
+      {isCodingQ && currentQ && (
+        <div className="flex flex-1 w-full overflow-hidden" style={{ height: 'calc(100vh - 56px)' }}>
+          {/* Left: problem statement */}
+          <div className="w-[42%] min-w-0 border-r bg-white overflow-y-auto p-5 space-y-4">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Badge variant="outline">CODE</Badge>
+              <span className="text-xs text-muted-foreground">{currentQ.points} pt{currentQ.points !== 1 ? 's' : ''}</span>
+              {currentQ.isRequired && <span className="text-xs text-red-500">Required</span>}
+              <span className="text-xs text-muted-foreground ml-auto">Q{currentQIdx + 1}/{questions.length}</span>
+            </div>
+            <p className="text-base font-medium leading-relaxed whitespace-pre-wrap text-gray-900">{currentQ.question.body}</p>
+            <div className="flex items-center gap-2 pt-2 border-t">
+              <button
+                onClick={() => setFlaggedQuestions(prev => { const n = new Set(prev); n.has(currentQ.questionId) ? n.delete(currentQ.questionId) : n.add(currentQ.questionId); return n })}
+                className={cn('flex items-center gap-1 text-xs px-2 py-1 rounded transition-colors',
+                  flaggedQuestions.has(currentQ.questionId) ? 'text-amber-600 bg-amber-50' : 'text-gray-400 hover:text-amber-600 hover:bg-amber-50'
+                )}
+              >
+                {flaggedQuestions.has(currentQ.questionId) ? <><BookmarkCheck className="h-3.5 w-3.5" /> Marked</> : <><Bookmark className="h-3.5 w-3.5" /> Mark for review</>}
+              </button>
+              <div className="flex gap-2 ml-auto">
+                <Button variant="outline" size="sm" onClick={goToPrev} disabled={currentSectionIdx === 0 && currentQIdx === 0}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                {isLastQuestion ? (
+                  <Button size="sm" onClick={() => setShowReviewModal(true)} className="gap-1">
+                    <Send className="h-3.5 w-3.5" />Finish
+                  </Button>
+                ) : (
+                  <Button size="sm" onClick={goToNext}>
+                    Next <ChevronRight className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+          {/* Right: IDE */}
+          <div className="flex-1 min-w-0 overflow-hidden bg-gray-950 flex flex-col">
+            <QuestionInput
+              question={currentQ.question}
+              answer={currentAnswer}
+              onChange={updateAnswer}
+              sessionId={sessionId}
+              token={token ?? ''}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ── Standard layout for non-CODE questions ── */}
+      {!isCodingQ && <div className="flex flex-1 max-w-5xl mx-auto w-full px-4 py-6 gap-6">
         {/* Question panel */}
         <main className="flex-1 space-y-4 min-w-0">
           {currentSection && (
@@ -963,7 +1015,7 @@ export function TestPage() {
 
           </div>
         </aside>
-      </div>
+      </div>}
     </div>
   )
 }
@@ -1231,10 +1283,10 @@ function CodeQuestion({
         </div>
       </div>
 
-      {/* Monaco editor */}
-      <div className="rounded-lg overflow-hidden border">
+      {/* Monaco editor — height fills container in split-screen, fixed otherwise */}
+      <div className="rounded-lg overflow-hidden border flex-shrink-0" style={{ height: 'clamp(280px, 45vh, 520px)' }}>
         <MonacoEditor
-          height="300px"
+          height="100%"
           language={MONACO_LANG[lang] ?? 'plaintext'}
           value={answer.codeSubmission}
           onChange={val => onChange({ codeSubmission: val ?? '' })}

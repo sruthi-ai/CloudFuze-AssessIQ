@@ -5,7 +5,7 @@ import {
   MonitorPlay, RefreshCw, Clock, ShieldAlert, FileText,
   AlertTriangle, Loader2, Radio, Bell, BellOff, Wifi, WifiOff,
   TabletSmartphone, Eye, Copy, Code2, CameraOff, Users, UserX,
-  Volume2, Smartphone, Navigation, EyeOff, X, Maximize2,
+  Volume2, Smartphone, Navigation, EyeOff, X, Maximize2, MessageSquare,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -55,6 +55,10 @@ const EVENT_LABELS: Record<string, string> = {
   FACE_OBSTRUCTED: 'Face partially hidden',
   SUSPECTED_ASSISTANCE: 'Suspected off-camera help',
   IDENTITY_MISMATCH: 'Identity mismatch',
+  CANDIDATE_CONCERN: '🙋 Candidate raised a concern',
+  SECURE_BROWSER_BYPASSED: 'Secure browser bypassed',
+  MULTIPLE_MONITORS: 'Multiple monitors',
+  SUSPICIOUS_PROCESS: 'Suspicious process detected',
 }
 
 function EventTypeIcon({ type }: { type: string }) {
@@ -72,6 +76,7 @@ function EventTypeIcon({ type }: { type: string }) {
     case 'FACE_OBSTRUCTED': return <EyeOff className={cls} />
     case 'SUSPECTED_ASSISTANCE': return <ShieldAlert className={cls} />
     case 'IDENTITY_MISMATCH': return <ShieldAlert className={cls} />
+    case 'CANDIDATE_CONCERN': return <MessageSquare className={cn(cls, 'text-indigo-600')} />
     default: return <AlertTriangle className={cls} />
   }
 }
@@ -326,7 +331,13 @@ export function LiveMonitorPage() {
       qc.invalidateQueries({ queryKey: ['live-monitor'] })
     }
 
-    if (alert.severity === 'CRITICAL' || alert.severity === 'HIGH') {
+    if (alert.eventType === 'CANDIDATE_CONCERN') {
+      toast({
+        title: `🙋 ${alert.candidate?.firstName} ${alert.candidate?.lastName} needs help`,
+        description: alert.description ?? '',
+        variant: 'default',
+      })
+    } else if (alert.severity === 'CRITICAL' || alert.severity === 'HIGH') {
       toast({
         title: `⚠ ${EVENT_LABELS[alert.eventType ?? ''] ?? alert.eventType} — ${alert.candidate?.firstName} ${alert.candidate?.lastName}`,
         description: `${alert.test?.title} · ${alert.description ?? ''}`,
@@ -522,12 +533,16 @@ export function LiveMonitorPage() {
                   key={alert.id}
                   className={cn(
                     'rounded-lg border p-3 text-xs space-y-1.5 transition-all',
-                    SEVERITY_COLOR[alert.severity ?? 'MEDIUM'] ?? 'bg-gray-50 border-gray-200'
+                    alert.eventType === 'CANDIDATE_CONCERN'
+                      ? 'bg-indigo-50 border-indigo-300 ring-2 ring-indigo-200'
+                      : SEVERITY_COLOR[alert.severity ?? 'MEDIUM'] ?? 'bg-gray-50 border-gray-200'
                   )}
                 >
                   <div className="flex items-center gap-1.5 font-semibold">
                     <EventTypeIcon type={alert.eventType ?? ''} />
-                    {EVENT_LABELS[alert.eventType ?? ''] ?? alert.eventType}
+                    <span className={alert.eventType === 'CANDIDATE_CONCERN' ? 'text-indigo-700' : ''}>
+                      {EVENT_LABELS[alert.eventType ?? ''] ?? alert.eventType}
+                    </span>
                     <span className="ml-auto text-[10px] font-normal opacity-60">
                       {alert.occurredAt ? new Date(alert.occurredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : ''}
                     </span>

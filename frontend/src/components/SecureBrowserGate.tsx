@@ -100,8 +100,7 @@ export function SecureBrowserGate({ testTitle, tenantName }: { testTitle?: strin
 }
 
 function getDeepLink() {
-  const path = window.location.pathname + window.location.search
-  const token = path.split('/test/')[1] ?? ''
+  const token = window.location.pathname.split('/take/')[1]?.split('/')[0] ?? ''
   return token ? `assessiq://test/${token}` : 'assessiq://'
 }
 

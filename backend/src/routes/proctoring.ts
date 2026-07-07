@@ -247,6 +247,7 @@ export async function proctoringRoutes(server: FastifyInstance) {
   server.post('/:sessionId/snapshot', async (request, reply) => {
     const { sessionId } = request.params as { sessionId: string }
     const token = (request.query as { token?: string }).token
+    if (!token) return sendError(reply, 400, 'token required')
 
     const session = await prisma.session.findFirst({
       where: { id: sessionId, invitation: { token } },
@@ -272,6 +273,7 @@ export async function proctoringRoutes(server: FastifyInstance) {
   server.post('/:sessionId/screen-snapshot', async (request, reply) => {
     const { sessionId } = request.params as { sessionId: string }
     const token = (request.query as { token?: string }).token
+    if (!token) return sendError(reply, 400, 'token required')
 
     const session = await prisma.session.findFirst({
       where: { id: sessionId, invitation: { token } },
@@ -338,6 +340,7 @@ export async function proctoringRoutes(server: FastifyInstance) {
   server.post('/:sessionId/screen-recording', async (request, reply) => {
     const { sessionId } = request.params as { sessionId: string }
     const token = (request.query as { token?: string }).token
+    if (!token) return sendError(reply, 400, 'token required')
 
     const session = await prisma.session.findFirst({
       where: { id: sessionId, invitation: { token } },
@@ -436,6 +439,7 @@ export async function proctoringRoutes(server: FastifyInstance) {
   server.post('/:sessionId/room-scan', async (request, reply) => {
     const { sessionId } = request.params as { sessionId: string }
     const { token, trigger, quality } = request.query as { token?: string; trigger?: string; quality?: string }
+    if (!token) return sendError(reply, 400, 'token required')
 
     const session = await prisma.session.findFirst({
       where: { id: sessionId, invitation: { token } },
@@ -482,6 +486,7 @@ export async function proctoringRoutes(server: FastifyInstance) {
   server.post('/:sessionId/room-scan/:scanId/panorama', async (request, reply) => {
     const { sessionId, scanId } = request.params as { sessionId: string; scanId: string }
     const { token } = request.query as { token?: string }
+    if (!token) return sendError(reply, 400, 'token required')
 
     const scan = await prisma.roomScan.findFirst({
       where: { id: scanId, sessionId, session: { invitation: { token } } },

@@ -294,7 +294,7 @@ function useAlertStream(onAlert: (a: AlertPayload) => void) {
         const payload: AlertPayload = JSON.parse(e.data)
         if (payload.type === 'CONNECTED') { setConnected(true); return }
         onAlertRef.current(payload)
-      } catch {}
+      } catch { /* malformed SSE payload — skip this event */ }
     }
 
     return () => { es.close(); setConnected(false) }

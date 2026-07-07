@@ -1,4 +1,5 @@
 import { prisma } from '../db'
+import type { GradingStatus } from '@prisma/client'
 
 export async function scoreSession(sessionId: string) {
   const session = await prisma.session.findUnique({
@@ -49,7 +50,17 @@ export async function scoreSession(sessionId: string) {
       if (!answer) continue
 
       let pointsEarned = 0
-      let gradingStatus: 'AUTO_GRADED' | 'PENDING' = 'AUTO_GRADED'
+      let gradingStatus: GradingStatus = 'AUTO_GRADED'
+      // For types graded asynchronously (AI or human), never clobber an existing grade —
+      // only default to PENDING/0 the first time, before any grading has happened.
+      const preserveExistingGrade = () => {
+        if (answer.gradingStatus !== 'PENDING') {
+          pointsEarned = answer.pointsEarned ?? 0
+          gradingStatus = answer.gradingStatus
+        } else {
+          gradingStatus = 'PENDING'
+        }
+      }
 
       switch (q.type) {
         case 'MCQ_SINGLE':
@@ -116,13 +127,13 @@ export async function scoreSession(sessionId: string) {
                   data: { codeTestResults: results as any },
                 })
               } else {
-                gradingStatus = 'PENDING'
+                preserveExistingGrade()
               }
             } catch {
-              gradingStatus = 'PENDING'
+              preserveExistingGrade()
             }
           } else {
-            gradingStatus = 'PENDING'
+            preserveExistingGrade()
           }
           break
         }
@@ -131,11 +142,11 @@ export async function scoreSession(sessionId: string) {
         case 'SHORT_ANSWER':
         case 'FILE_UPLOAD':
         case 'AUDIO_RECORDING':
-          gradingStatus = 'PENDING'
+          preserveExistingGrade()
           break
 
         default:
-          gradingStatus = 'PENDING'
+          preserveExistingGrade()
       }
 
       earnedPoints += pointsEarned

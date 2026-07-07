@@ -97,6 +97,69 @@ function SecureVideo({ src, className }: { src: string; className?: string }) {
   return <video src={objectUrl} controls className={cn('bg-black rounded', className)} />
 }
 
+// ── SecureAudio: fetches with Authorization header, renders as blob URL ───────
+function SecureAudio({ src, className }: { src: string; className?: string }) {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null)
+  const [err, setErr] = useState(false)
+  const prevUrl = useRef<string | null>(null)
+
+  useEffect(() => {
+    setObjectUrl(null)
+    setErr(false)
+    let active = true
+    const token = localStorage.getItem('accessToken')
+    fetch(src, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then(r => { if (!r.ok) { if (active) setErr(true); throw new Error() } return r.blob() })
+      .then(blob => {
+        if (!active) return
+        if (prevUrl.current) URL.revokeObjectURL(prevUrl.current)
+        const url = URL.createObjectURL(blob)
+        prevUrl.current = url
+        setObjectUrl(url)
+      })
+      .catch(() => { if (active) setErr(true) })
+    return () => {
+      active = false
+      if (prevUrl.current) { URL.revokeObjectURL(prevUrl.current); prevUrl.current = null }
+    }
+  }, [src])
+
+  if (err) return <p className={cn('text-xs text-red-600', className)}>Audio unavailable</p>
+  if (!objectUrl) return <div className={cn('bg-gray-100 animate-pulse rounded h-10', className)} />
+  return <audio src={objectUrl} controls className={cn('w-full', className)} />
+}
+
+// ── SecureDownloadLink: fetches with Authorization header, triggers a download ─
+function SecureDownloadLink({ src, filename, label }: { src: string; filename: string; label: string }) {
+  const [downloading, setDownloading] = useState(false)
+
+  const handleClick = async () => {
+    setDownloading(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const res = await fetch(src, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      if (!res.ok) throw new Error()
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = filename; a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      toast({ title: 'Download failed', variant: 'destructive' })
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  return (
+    <button type="button" onClick={handleClick} disabled={downloading}
+      className="text-primary underline text-xs mt-2 inline-flex items-center gap-1 disabled:opacity-50">
+      <FileDown className="h-3 w-3" />
+      {downloading ? 'Downloading…' : label}
+    </button>
+  )
+}
+
 const EVENT_LABELS: Record<string, string> = {
   TAB_SWITCH: 'Tab switched',
   WINDOW_BLUR: 'Window lost focus',
@@ -501,6 +564,7 @@ export function ResultDetailPage() {
                   index={idx + 1}
                   question={tq.question}
                   answer={answer}
+                  sessionId={sessionId!}
                   maxPoints={tq.points ?? tq.question.points}
                   onGrade={(pts, fb) => gradeMutation.mutate({ answerId: answer?.id, pointsEarned: pts, feedback: fb })}
                 />
@@ -1000,8 +1064,8 @@ export function ResultDetailPage() {
   )
 }
 
-function AnswerReview({ index, question, answer, maxPoints, onGrade }: {
-  index: number; question: any; answer: any; maxPoints: number
+function AnswerReview({ index, question, answer, sessionId, maxPoints, onGrade }: {
+  index: number; question: any; answer: any; sessionId: string; maxPoints: number
   onGrade: (points: number, feedback: string) => void
 }) {
   const [grading, setGrading] = useState(false)
@@ -1044,6 +1108,61 @@ function AnswerReview({ index, question, answer, maxPoints, onGrade }: {
         <div className="bg-blue-50 border border-blue-200 rounded-md p-2 text-xs text-blue-800">
           <strong>AI Feedback:</strong> {answer.feedback}
         </div>
+      )}
+
+      {answer?.transcript && (
+        <div className="bg-slate-50 border border-slate-200 rounded-md p-2 text-xs text-slate-800">
+          <strong>Transcript (what the AI heard):</strong>
+          <p className="whitespace-pre-wrap mt-1 italic">{answer.transcript}</p>
+        </div>
+      )}
+
+      {answer?.aiRubricScores && (
+        answer.aiRubricScores.fluencyCoherence !== undefined ? (
+          // ── Speaking rubric ──
+          <div className="bg-purple-50 border border-purple-200 rounded-md p-2 text-xs text-purple-900 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold">AI Speaking Rubric (band 0-9)</span>
+              {answer.aiRubricScores.confidence < 0.6 && (
+                <Badge variant="outline" className="text-[10px] h-4 py-0 border-amber-400 text-amber-700">
+                  Low confidence — recommend review
+                </Badge>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+              <span>Fluency &amp; Coherence: <strong>{answer.aiRubricScores.fluencyCoherence}/9</strong></span>
+              <span>Lexical Resource: <strong>{answer.aiRubricScores.lexicalResource}/9</strong></span>
+              <span>Grammatical Range: <strong>{answer.aiRubricScores.grammaticalRange}/9</strong></span>
+            </div>
+            <div className="pt-0.5 border-t border-purple-200">
+              Overall band: <strong>{answer.aiRubricScores.overallBand}/9</strong>
+            </div>
+            <div className="mt-1 rounded bg-amber-50 border border-amber-200 px-2 py-1 text-[11px] text-amber-800">
+              Pronunciation: listen to the recording above and grade manually — it cannot be scored from a transcript.
+            </div>
+          </div>
+        ) : (
+          // ── Writing rubric ──
+          <div className="bg-purple-50 border border-purple-200 rounded-md p-2 text-xs text-purple-900 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold">AI Writing Rubric (band 0-9)</span>
+              {answer.aiRubricScores.confidence < 0.6 && (
+                <Badge variant="outline" className="text-[10px] h-4 py-0 border-amber-400 text-amber-700">
+                  Low confidence — recommend review
+                </Badge>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+              <span>Task Achievement: <strong>{answer.aiRubricScores.taskAchievement}/9</strong></span>
+              <span>Coherence &amp; Cohesion: <strong>{answer.aiRubricScores.coherenceCohesion}/9</strong></span>
+              <span>Lexical Resource: <strong>{answer.aiRubricScores.lexicalResource}/9</strong></span>
+              <span>Grammatical Range: <strong>{answer.aiRubricScores.grammaticalRange}/9</strong></span>
+            </div>
+            <div className="pt-0.5 border-t border-purple-200">
+              Overall band: <strong>{answer.aiRubricScores.overallBand}/9</strong>
+            </div>
+          </div>
+        )
       )}
 
       {answer && (
@@ -1119,6 +1238,20 @@ function AnswerReview({ index, question, answer, maxPoints, onGrade }: {
                   </div>
                 )
               })()}
+            </div>
+          )}
+          {answer.audioUrl && (
+            <div className="mt-2">
+              <SecureAudio src={`${import.meta.env.VITE_API_URL ?? ''}/api/results/${sessionId}/answers/${answer.id}/media`} />
+            </div>
+          )}
+          {answer.fileUrl && (
+            <div className="mt-2">
+              <SecureDownloadLink
+                src={`${import.meta.env.VITE_API_URL ?? ''}/api/results/${sessionId}/answers/${answer.id}/media`}
+                filename={`answer-${answer.id}${answer.fileUrl.match(/\.[^.]+$/)?.[0] ?? ''}`}
+                label="Download submitted file"
+              />
             </div>
           )}
           {answer.timeSpent != null && (

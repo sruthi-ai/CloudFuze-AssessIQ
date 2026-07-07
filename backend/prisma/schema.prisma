@@ -95,6 +95,7 @@ model Tenant {
   tests       Test[]
   questionBanks QuestionBank[]
   candidates  Candidate[]
+  audioAssets AudioAsset[]
 
   @@map("tenants")
 }
@@ -124,6 +125,7 @@ model User {
   auditLogs           AuditLog[]
 
   @@unique([email, tenantId])
+  @@index([tenantId])
   @@map("users")
 }
 
@@ -165,6 +167,7 @@ model QuestionBank {
   tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   questions Question[]
 
+  @@index([tenantId])
   @@map("question_banks")
 }
 
@@ -188,12 +191,36 @@ model Question {
   bankId         String
   bank           QuestionBank    @relation(fields: [bankId], references: [id], onDelete: Cascade)
 
+  audioAssetId   String?
+  audioAsset     AudioAsset?     @relation(fields: [audioAssetId], references: [id])
+
   options        QuestionOption[]
   codeTestCases  CodeTestCase[]
   testQuestions  TestQuestion[]
   answers        Answer[]
 
   @@map("questions")
+}
+
+model AudioAsset {
+  id           String   @id @default(cuid())
+  name         String
+  url          String                       // /uploads/audio-assets/<file>
+  sourceType   String                       // "TTS_GENERATED" | "UPLOADED"
+  accent       String?                      // e.g. "British English"
+  voice        String?                      // TTS voice used (e.g. "onyx")
+  transcript   String?  @db.Text            // the script — admin-only, never sent to candidates
+  durationSec  Int?
+  playLimit    Int      @default(0)         // 0 = unlimited; N = max plays per session
+
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  questions    Question[]
+
+  createdAt    DateTime @default(now())
+
+  @@index([tenantId])
+  @@map("audio_assets")
 }
 
 model CodeTestCase {
@@ -263,6 +290,8 @@ model Test {
   invitations      Invitation[]
   sessions         Session[]
 
+  @@index([tenantId])
+  @@index([tenantId, status])
   @@map("tests")
 }
 
@@ -320,6 +349,7 @@ model Candidate {
   sessions    Session[]
 
   @@unique([email, tenantId])
+  @@index([tenantId])
   @@map("candidates")
 }
 
@@ -368,6 +398,7 @@ model Session {
   deviceFingerprint String?
   currentQuestion Int          @default(0)
   questionOrder          Json?         // { sectionId: questionId[] } stored at session start when shuffleQuestions=true
+  audioPlays             Json?         // { audioAssetId: playCount } — server-side play-limit enforcement
   idVerified             Boolean    @default(false)
   idVerificationPhoto    String?    // URL of uploaded ID photo
   isPractice             Boolean    @default(false)
@@ -412,6 +443,8 @@ model Answer {
   gradingStatus  GradingStatus @default(PENDING)
   pointsEarned   Float?
   feedback       String?       // AI or human feedback
+  aiRubricScores Json?         // ESSAY: {taskAchievement,...}; SPEAKING: {fluencyCoherence,...} — see aiGrading.ts
+  transcript     String?  @db.Text // speech-to-text of a spoken answer (AUDIO_RECORDING)
   gradedAt       DateTime?
   timeSpent      Int?          // seconds spent on this question
   createdAt      DateTime      @default(now())

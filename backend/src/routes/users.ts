@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { prisma } from '../db'
 import { sendError, sendSuccess } from '../utils/errors'
 import { requireRole } from '../middleware/authenticate'
+import { logAudit } from '../utils/audit'
 
 const createUserSchema = z.object({
   email: z.string().email(),
@@ -53,6 +54,12 @@ export async function userRoutes(server: FastifyInstance) {
       data: { email, passwordHash, firstName, lastName, role, tenantId: request.user.tenantId },
       select: { id: true, email: true, firstName: true, lastName: true, role: true, isActive: true, createdAt: true },
     })
+
+    logAudit({
+      tenantId: request.user.tenantId, userId: request.user.sub, action: 'USER_CREATED',
+      entityType: 'user', entityId: user.id, metadata: { email: user.email, role: user.role },
+    })
+
     return sendSuccess(reply, user, 201)
   })
 
@@ -70,6 +77,22 @@ export async function userRoutes(server: FastifyInstance) {
       data: result.data,
       select: { id: true, email: true, firstName: true, lastName: true, role: true, isActive: true },
     })
+
+    if (result.data.role && result.data.role !== user.role) {
+      logAudit({
+        tenantId: request.user.tenantId, userId: request.user.sub, action: 'USER_ROLE_CHANGED',
+        entityType: 'user', entityId: id,
+        metadata: { email: user.email, previousRole: user.role, newRole: updated.role },
+      })
+    }
+    if (result.data.isActive !== undefined && result.data.isActive !== user.isActive) {
+      logAudit({
+        tenantId: request.user.tenantId, userId: request.user.sub,
+        action: updated.isActive ? 'USER_ACTIVATED' : 'USER_DEACTIVATED',
+        entityType: 'user', entityId: id, metadata: { email: user.email },
+      })
+    }
+
     return sendSuccess(reply, updated)
   })
 }

@@ -278,7 +278,9 @@ export async function testRoutes(server: FastifyInstance) {
     const result = createSectionSchema.partial().safeParse(request.body)
     if (!result.success) return sendError(reply, 400, 'Validation error', result.error.flatten())
 
-    const section = await prisma.testSection.findFirst({ where: { id: sectionId, testId: id } })
+    const section = await prisma.testSection.findFirst({
+      where: { id: sectionId, testId: id, test: { tenantId: request.user.tenantId } },
+    })
     if (!section) return sendError(reply, 404, 'Section not found')
 
     const updated = await prisma.testSection.update({ where: { id: sectionId }, data: result.data })
@@ -288,7 +290,9 @@ export async function testRoutes(server: FastifyInstance) {
   // DELETE /api/tests/:id/sections/:sectionId
   server.delete('/:id/sections/:sectionId', { preHandler: canEdit }, async (request, reply) => {
     const { id, sectionId } = request.params as { id: string; sectionId: string }
-    const section = await prisma.testSection.findFirst({ where: { id: sectionId, testId: id } })
+    const section = await prisma.testSection.findFirst({
+      where: { id: sectionId, testId: id, test: { tenantId: request.user.tenantId } },
+    })
     if (!section) return sendError(reply, 404, 'Section not found')
 
     await prisma.testSection.delete({ where: { id: sectionId } })
@@ -306,6 +310,11 @@ export async function testRoutes(server: FastifyInstance) {
     const test = await prisma.test.findFirst({ where: { id, tenantId: request.user.tenantId } })
     if (!test) return sendError(reply, 404, 'Test not found')
 
+    const question = await prisma.question.findFirst({
+      where: { id: result.data.questionId, bank: { tenantId: request.user.tenantId } },
+    })
+    if (!question) return sendError(reply, 404, 'Question not found')
+
     const existing = await prisma.testQuestion.findUnique({
       where: { testId_questionId: { testId: id, questionId: result.data.questionId } },
     })
@@ -322,7 +331,9 @@ export async function testRoutes(server: FastifyInstance) {
   // DELETE /api/tests/:id/questions/:tqId
   server.delete('/:id/questions/:tqId', { preHandler: canEdit }, async (request, reply) => {
     const { id, tqId } = request.params as { id: string; tqId: string }
-    const tq = await prisma.testQuestion.findFirst({ where: { id: tqId, testId: id } })
+    const tq = await prisma.testQuestion.findFirst({
+      where: { id: tqId, testId: id, test: { tenantId: request.user.tenantId } },
+    })
     if (!tq) return sendError(reply, 404, 'Question not found in test')
 
     await prisma.testQuestion.delete({ where: { id: tqId } })

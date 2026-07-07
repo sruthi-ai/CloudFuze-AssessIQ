@@ -30,6 +30,7 @@ const createQuestionSchema = z.object({
   tags: z.array(z.string()).optional(),
   domain: z.string().optional(),
   bankId: z.string().optional(),
+  audioAssetId: z.string().nullable().optional(), // optional Listening audio prompt
   options: z.array(optionSchema).optional(),
   testCases: z.array(testCaseSchema).optional(), // for CODE questions
 })
@@ -37,11 +38,20 @@ const createQuestionSchema = z.object({
 const QUESTION_INCLUDE = {
   options: { orderBy: { order: 'asc' } as const },
   codeTestCases: { orderBy: { order: 'asc' } as const },
+  audioAsset: true as const,
 }
 
 export async function questionRoutes(server: FastifyInstance) {
   const canEdit = requireRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'RECRUITER')
   const canView = requireRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'RECRUITER', 'VIEWER')
+
+  // Returns true if a supplied audioAssetId is missing/null (nothing to check) or
+  // belongs to the tenant; false if it's a non-null id that isn't the tenant's.
+  const audioAssetOk = async (audioAssetId: string | null | undefined, tenantId: string) => {
+    if (!audioAssetId) return true
+    const asset = await prisma.audioAsset.findFirst({ where: { id: audioAssetId, tenantId } })
+    return !!asset
+  }
 
   // GET /api/questions
   server.get('/', { preHandler: canView }, async (request, reply) => {
@@ -131,6 +141,10 @@ export async function questionRoutes(server: FastifyInstance) {
       if (!bank) return sendError(reply, 404, 'Question bank not found')
     }
 
+    if (!(await audioAssetOk(data.audioAssetId, request.user.tenantId))) {
+      return sendError(reply, 404, 'Audio asset not found')
+    }
+
     const question = await prisma.question.create({
       data: {
         ...data,
@@ -155,6 +169,10 @@ export async function questionRoutes(server: FastifyInstance) {
     if (!question) return sendError(reply, 404, 'Question not found')
 
     const { options, testCases, bankId: _, ...data } = result.data
+
+    if (!(await audioAssetOk(data.audioAssetId, request.user.tenantId))) {
+      return sendError(reply, 404, 'Audio asset not found')
+    }
 
     if (options !== undefined) {
       await prisma.questionOption.deleteMany({ where: { questionId: id } })
@@ -201,6 +219,11 @@ export async function questionRoutes(server: FastifyInstance) {
       })
       if (!defaultBank) return sendError(reply, 404, 'No default question bank')
       targetBankId = defaultBank.id
+    } else {
+      const bank = await prisma.questionBank.findFirst({
+        where: { id: targetBankId, tenantId: request.user.tenantId },
+      })
+      if (!bank) return sendError(reply, 404, 'Question bank not found')
     }
 
     const validated = questions.map(q => createQuestionSchema.parse(q))

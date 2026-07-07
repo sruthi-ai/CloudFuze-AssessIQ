@@ -4,7 +4,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import {
   Clock, ChevronLeft, ChevronRight, Send, Loader2,
   Camera, CameraOff, Maximize, Video, FileText, CalculatorIcon, X as XIcon, XCircle, AlertTriangle,
-  Bookmark, BookmarkCheck, HelpCircle, MessageSquare,
+  Bookmark, BookmarkCheck, HelpCircle, MessageSquare, Mic, Square, Volume2,
 } from 'lucide-react'
 import MonacoEditor from '@monaco-editor/react'
 import { Button } from '@/components/ui/button'
@@ -14,6 +14,7 @@ import { api, getErrorMessage } from '@/lib/api'
 import { toast } from '@/hooks/use-toast'
 import { useProctoring } from '@/hooks/useProctoring'
 import { useScreenRecorder } from '@/hooks/useScreenRecorder'
+import { useAudioRecorder } from '@/hooks/useAudioRecorder'
 import { ProctoringSetup } from '@/components/proctoring/ProctoringSetup'
 import { SecureBrowserGate } from '@/components/SecureBrowserGate'
 import { formatSeconds, cn } from '@/lib/utils'
@@ -25,11 +26,14 @@ interface AnswerState {
   codeSubmission: string
   language: string
   timeSpent: number
+  fileUrl: string
+  audioUrl: string
 }
 
 const emptyAnswer = (): AnswerState => ({
   selectedOptions: [], responseText: '', numericValue: '',
   codeSubmission: '', language: 'python', timeSpent: 0,
+  fileUrl: '', audioUrl: '',
 })
 
 const MONACO_LANG: Record<string, string> = {
@@ -207,7 +211,7 @@ export function TestPage() {
   // Register session with secure browser main process for violation reporting
   useEffect(() => {
     if (isSecureBrowser && sessionId && token) {
-      ;(window as any).__secureBrowserBridge__?.setSession(sessionId, token)
+      (window as any).__secureBrowserBridge__?.setSession(sessionId, token)
     }
   }, [isSecureBrowser, sessionId, token])
 
@@ -321,7 +325,7 @@ export function TestPage() {
       setSubmitting(false)
       // Notify secure browser that test is complete — unlocks the kiosk window
       if (isSecureBrowser) {
-        ;(window as any).__secureBrowserBridge__?.notifySubmitted()
+        (window as any).__secureBrowserBridge__?.notifySubmitted()
       }
       navigate(`/take/${token}/done`, { state: { result: res.data.data, isPractice }, replace: true })
     },
@@ -383,7 +387,7 @@ export function TestPage() {
 
   const totalQuestions = sections.reduce((a: number, s: any) => a + s.questions.length, 0)
   const answeredCount = Object.values(answers).filter(a =>
-    a.selectedOptions.length > 0 || a.responseText || a.numericValue || a.codeSubmission
+    a.selectedOptions.length > 0 || a.responseText || a.numericValue || a.codeSubmission || a.fileUrl || a.audioUrl
   ).length
   const isLastQuestion = currentSectionIdx === sections.length - 1 && currentQIdx === questions.length - 1
   const isCodingQ = currentQ?.question.type === 'CODE'
@@ -822,6 +826,14 @@ export function TestPage() {
                   <p className="text-base font-medium leading-relaxed whitespace-pre-wrap">{currentQ.question.body}</p>
                 </div>
 
+                {currentQ.question.audioAsset && (
+                  <AudioPrompt
+                    audioAsset={currentQ.question.audioAsset}
+                    sessionId={sessionId}
+                    token={token ?? ''}
+                  />
+                )}
+
                 <QuestionInput
                   question={currentQ.question}
                   answer={currentAnswer}
@@ -984,7 +996,7 @@ export function TestPage() {
                 <div className="grid grid-cols-5 gap-1">
                   {section.questions.map((q: any, qIdx: number) => {
                     const ans = answers[q.questionId]
-                    const answered = ans && (ans.selectedOptions.length > 0 || ans.responseText || ans.numericValue || ans.codeSubmission)
+                    const answered = ans && (ans.selectedOptions.length > 0 || ans.responseText || ans.numericValue || ans.codeSubmission || ans.fileUrl || ans.audioUrl)
                     const isCurrent = sIdx === currentSectionIdx && qIdx === currentQIdx
                     const isFlagged = flaggedQuestions.has(q.questionId)
                     return (
@@ -1038,7 +1050,7 @@ function Calculator({
   const handleEquals = () => {
     if (!op || !prev) return
     const a = parseFloat(prev), b = parseFloat(display)
-    let r = op === '+' ? a + b : op === '-' ? a - b : op === '×' ? a * b : b !== 0 ? a / b : NaN
+    const r = op === '+' ? a + b : op === '-' ? a - b : op === '×' ? a * b : b !== 0 ? a / b : NaN
     const res = isNaN(r) ? 'Error' : String(parseFloat(r.toFixed(10)))
     setDisplay(res); setPrev(''); setOp(null); setJustEval(true)
   }
@@ -1088,6 +1100,64 @@ function Calculator({
         {btn('.', () => handleDigit('.'), 'num')}
         {btn('=', handleEquals, 'eq')}
       </div>
+    </div>
+  )
+}
+
+function AudioPrompt({ audioAsset, sessionId, token }: {
+  audioAsset: { id: string; url: string; playLimit: number; playsUsed: number }
+  sessionId: string; token: string
+}) {
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const [playsUsed, setPlaysUsed] = useState(audioAsset.playsUsed)
+  const [playing, setPlaying] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const unlimited = audioAsset.playLimit === 0
+  const remaining = unlimited ? Infinity : Math.max(0, audioAsset.playLimit - playsUsed)
+  const canPlay = !playing && !loading && (unlimited || remaining > 0)
+  const fullUrl = `${import.meta.env.VITE_API_URL ?? ''}${audioAsset.url}`
+
+  const handlePlay = async () => {
+    setError('')
+    setLoading(true)
+    try {
+      const res = await api.post(`/sessions/${sessionId}/audio-play`, { token, assetId: audioAsset.id })
+      const { allowed, playsUsed: used } = res.data.data
+      setPlaysUsed(used)
+      if (!allowed) { setLoading(false); return }
+      const el = audioRef.current
+      if (el) {
+        el.currentTime = 0
+        await el.play()
+        setPlaying(true)
+      }
+    } catch (err) {
+      setError(getErrorMessage(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50 p-3 space-y-2">
+      <div className="flex items-center gap-3">
+        <Button type="button" variant="outline" onClick={handlePlay} disabled={!canPlay}>
+          {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Volume2 className="h-4 w-4 mr-2" />}
+          {playing ? 'Playing…' : 'Play audio'}
+        </Button>
+        <span className="text-xs text-indigo-800">
+          {unlimited
+            ? 'You may replay this audio as needed.'
+            : remaining > 0
+              ? `Plays remaining: ${remaining} of ${audioAsset.playLimit}`
+              : 'No plays remaining'}
+        </span>
+      </div>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      {/* No native controls — playback is gated through the server-side play-limit check */}
+      <audio ref={audioRef} src={fullUrl} onEnded={() => setPlaying(false)} className="hidden" />
     </div>
   )
 }
@@ -1183,9 +1253,118 @@ function QuestionInput({ question, answer, onChange, sessionId, token }: {
     case 'RANKING':
       return <RankingQuestion question={question} answer={answer} onChange={onChange} />
 
+    case 'AUDIO_RECORDING':
+      return (
+        <AudioRecordingQuestion
+          answer={answer} onChange={onChange}
+          questionId={question.id} sessionId={sessionId} token={token}
+        />
+      )
+
+    case 'FILE_UPLOAD':
+      return (
+        <FileUploadQuestion
+          answer={answer} onChange={onChange}
+          questionId={question.id} sessionId={sessionId} token={token}
+        />
+      )
+
     default:
       return <p className="text-sm text-muted-foreground italic">This question type is not yet supported.</p>
   }
+}
+
+function AudioRecordingQuestion({ answer, onChange, questionId, sessionId, token }: {
+  answer: AnswerState; onChange: (p: Partial<AnswerState>) => void
+  questionId: string; sessionId: string; token: string
+}) {
+  const { permission, recording, uploading, previewUrl, start, stopAndUpload } = useAudioRecorder()
+
+  const handleStop = async () => {
+    const audioUrl = await stopAndUpload(sessionId, token, questionId)
+    if (audioUrl) onChange({ audioUrl })
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-3">
+        {!recording ? (
+          <Button type="button" variant="outline" onClick={start} disabled={uploading}>
+            <Mic className="h-4 w-4 mr-2" />
+            {answer.audioUrl ? 'Re-record answer' : 'Start recording'}
+          </Button>
+        ) : (
+          <Button type="button" variant="destructive" onClick={handleStop}>
+            <Square className="h-4 w-4 mr-2" />
+            Stop recording
+          </Button>
+        )}
+        {recording && <span className="text-sm text-red-600 animate-pulse">Recording…</span>}
+        {uploading && <span className="text-sm text-muted-foreground">Uploading…</span>}
+      </div>
+      {permission === 'denied' && (
+        <p className="text-xs text-red-600">Microphone access was denied. Please allow microphone access to record your answer.</p>
+      )}
+      {previewUrl && !recording && (
+        <audio controls src={previewUrl} className="w-full" />
+      )}
+      {answer.audioUrl && !previewUrl && (
+        <p className="text-xs text-green-700">Your recorded answer has been saved.</p>
+      )}
+    </div>
+  )
+}
+
+function FileUploadQuestion({ answer, onChange, questionId, sessionId, token }: {
+  answer: AnswerState; onChange: (p: Partial<AnswerState>) => void
+  questionId: string; sessionId: string; token: string
+}) {
+  const [uploading, setUploading] = useState(false)
+  const [fileName, setFileName] = useState('')
+  const [error, setError] = useState('')
+
+  const handleFile = async (e: any) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setError('')
+    setUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL ?? ''}/api/sessions/${sessionId}/answers/${questionId}/media?token=${encodeURIComponent(token)}`,
+        { method: 'POST', body: fd }
+      )
+      const json = await res.json()
+      if (!res.ok) {
+        setError(json?.error ?? 'Upload failed')
+        return
+      }
+      setFileName(file.name)
+      onChange({ fileUrl: json.data.fileUrl })
+    } catch {
+      setError('Upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <input
+        type="file"
+        accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.txt"
+        disabled={uploading}
+        onChange={handleFile}
+        className="text-sm"
+      />
+      {uploading && <p className="text-xs text-muted-foreground">Uploading…</p>}
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      {answer.fileUrl && !uploading && (
+        <p className="text-xs text-green-700">File uploaded{fileName ? `: ${fileName}` : ''}.</p>
+      )}
+    </div>
+  )
 }
 
 interface TestCaseResult {

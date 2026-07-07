@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { prisma } from '../db'
 import { sendError, sendSuccess } from '../utils/errors'
 import { requireRole } from '../middleware/authenticate'
+import { logAudit } from '../utils/audit'
 
 export async function analyticsRoutes(server: FastifyInstance) {
   const canView = requireRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'RECRUITER', 'VIEWER')
@@ -275,6 +276,11 @@ export async function analyticsRoutes(server: FastifyInstance) {
       ].join(',')),
     ].join('\n')
 
+    logAudit({
+      tenantId: request.user.tenantId, userId: request.user.sub, action: 'RESULTS_EXPORTED',
+      entityType: 'test', entityId: testId, metadata: { testTitle: test.title, rowCount: sessions.length },
+    })
+
     reply.header('Content-Type', 'text/csv')
     reply.header('Content-Disposition', `attachment; filename="${test.title.replace(/[^a-z0-9]/gi, '_')}_results.csv"`)
     return reply.send(rows)
@@ -299,6 +305,11 @@ export async function analyticsRoutes(server: FastifyInstance) {
     await prisma.tenant.update({
       where: { id: request.user.tenantId },
       data: { settings: { ...existing, webhooks } },
+    })
+
+    logAudit({
+      tenantId: request.user.tenantId, userId: request.user.sub, action: 'WEBHOOK_REGISTERED',
+      entityType: 'tenant', entityId: request.user.tenantId, metadata: { url, events },
     })
 
     return sendSuccess(reply, newWebhook, 201)

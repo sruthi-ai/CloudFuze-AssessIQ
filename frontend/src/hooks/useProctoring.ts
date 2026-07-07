@@ -129,7 +129,7 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
         method: 'POST',
         body: fd,
       })
-    } catch {}
+    } catch { /* best-effort — a dropped snapshot upload shouldn't interrupt the exam */ }
   }, [sessionId, token])
 
   // Capture an immediate snapshot (used on high-severity violations)
@@ -207,7 +207,7 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
             speechWindow.length = 0
           }
         }, 3000)
-      } catch {}
+      } catch { /* mic permission denied or unsupported — noise detection just stays off */ }
     }
 
     const startPhoneDetection = () => {
@@ -233,7 +233,7 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
               consecutivePhone = 0
             }
           }, 8_000)
-        } catch {}
+        } catch { /* phone-detection model failed to load — feature just stays off */ }
       }, 3000)
     }
 
@@ -249,7 +249,7 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
           // Loads after the test starts so it doesn't block the setup screen.
           // Captures a baseline face descriptor from the first 3 good frames,
           // then compares every 60s (every 20th check at 3s interval).
-          let baselineDescriptors: Float32Array[] = []
+          const baselineDescriptors: Float32Array[] = []
           let baselineAvg: Float32Array | null = null
           let verifyCheckCount = 0
           const VERIFY_EVERY = 20 // every 60s at 3s interval
@@ -397,7 +397,7 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
           if (!cancelled) {
             faceCheckRef.current = window.setInterval(check, 3_000)
           }
-        } catch {}
+        } catch { /* face-detection model failed to load — feature just stays off */ }
       }, 2500)
     }
 

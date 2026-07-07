@@ -1,8 +1,18 @@
 import { FastifyInstance } from 'fastify'
+import { createReadStream, existsSync } from 'fs'
+import { extname, join } from 'path'
 import { prisma } from '../db'
 import { sendError, sendSuccess } from '../utils/errors'
 import { requireRole } from '../middleware/authenticate'
 import { aiGradeSession } from '../services/aiGrading'
+import { UPLOADS_DIR } from '../uploads'
+import { logAudit } from '../utils/audit'
+
+const MEDIA_MIME: Record<string, string> = {
+  '.webm': 'audio/webm', '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg',
+  '.pdf': 'application/pdf', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+  '.txt': 'text/plain',
+}
 
 export async function resultRoutes(server: FastifyInstance) {
   const canView = requireRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'RECRUITER', 'VIEWER')
@@ -79,7 +89,7 @@ export async function resultRoutes(server: FastifyInstance) {
     const { sessionId } = request.params as { sessionId: string }
     const session = await prisma.session.findFirst({
       where: { id: sessionId, test: { tenantId: request.user.tenantId } },
-      include: { invitation: true },
+      include: { invitation: true, candidate: { select: { email: true } }, test: { select: { title: true } } },
     })
     if (!session) return sendError(reply, 404, 'Session not found')
 
@@ -89,6 +99,12 @@ export async function resultRoutes(server: FastifyInstance) {
     await prisma.invitation.update({
       where: { id: session.invitationId },
       data: { status: 'CANCELLED' },
+    })
+
+    logAudit({
+      tenantId: request.user.tenantId, userId: request.user.sub, action: 'RESULT_DELETED',
+      entityType: 'session', entityId: sessionId,
+      metadata: { candidateEmail: session.candidate.email, testTitle: session.test.title, status: session.status },
     })
 
     return sendSuccess(reply, { deleted: true })
@@ -120,6 +136,12 @@ export async function resultRoutes(server: FastifyInstance) {
       },
     })
 
+    logAudit({
+      tenantId: request.user.tenantId, userId: request.user.sub, action: 'GRADE_OVERRIDDEN',
+      entityType: 'answer', entityId: answerId,
+      metadata: { sessionId, previousPoints: answer.pointsEarned, newPoints: updated.pointsEarned, previousStatus: answer.gradingStatus },
+    })
+
     // Recalculate total score
     const allAnswers = await prisma.answer.findMany({ where: { sessionId } })
     const earned = allAnswers.reduce((s, a) => s + (a.pointsEarned ?? 0), 0)
@@ -133,6 +155,29 @@ export async function resultRoutes(server: FastifyInstance) {
     }
 
     return sendSuccess(reply, updated)
+  })
+
+  // GET /api/results/:sessionId/answers/:answerId/media — serve a candidate's file/audio answer (admin)
+  server.get('/:sessionId/answers/:answerId/media', { preHandler: canView }, async (request, reply) => {
+    const { sessionId, answerId } = request.params as { sessionId: string; answerId: string }
+
+    const session = await prisma.session.findFirst({
+      where: { id: sessionId, test: { tenantId: request.user.tenantId } },
+    })
+    if (!session) return sendError(reply, 404, 'Session not found')
+
+    const answer = await prisma.answer.findFirst({ where: { id: answerId, sessionId } })
+    if (!answer) return sendError(reply, 404, 'Answer not found')
+
+    const mediaUrl = answer.audioUrl ?? answer.fileUrl
+    if (!mediaUrl) return sendError(reply, 404, 'No media on this answer')
+
+    const relativePath = mediaUrl.replace(/^\/uploads\//, '')
+    const filePath = join(UPLOADS_DIR, relativePath)
+    if (!existsSync(filePath)) return sendError(reply, 404, 'File missing from disk')
+
+    const mime = MEDIA_MIME[extname(filePath).toLowerCase()] ?? 'application/octet-stream'
+    return reply.type(mime).send(createReadStream(filePath))
   })
 
   // POST /api/results/:sessionId/ai-grade — trigger AI grading for pending answers
@@ -149,7 +194,15 @@ export async function resultRoutes(server: FastifyInstance) {
     }
 
     const result = await aiGradeSession(sessionId)
-    return sendSuccess(reply, { message: `AI graded ${result.graded} answers, skipped ${result.skipped}`, ...result })
+
+    logAudit({
+      tenantId: request.user.tenantId, userId: request.user.sub, action: 'AI_GRADE_TRIGGERED',
+      entityType: 'session', entityId: sessionId,
+      metadata: { graded: result.graded, skipped: result.skipped, failed: result.failed },
+    })
+
+    const failedNote = result.failed > 0 ? `, ${result.failed} failed (left pending for retry)` : ''
+    return sendSuccess(reply, { message: `AI graded ${result.graded} answers, skipped ${result.skipped}${failedNote}`, ...result })
   })
 
   // POST /api/results/ai-grade-all — grade all pending sessions in tenant
@@ -166,12 +219,20 @@ export async function resultRoutes(server: FastifyInstance) {
     })
 
     let totalGraded = 0
+    let totalFailed = 0
     for (const s of sessions) {
       const r = await aiGradeSession(s.id)
       totalGraded += r.graded
+      totalFailed += r.failed
     }
 
-    return sendSuccess(reply, { sessionsProcessed: sessions.length, answersGraded: totalGraded })
+    logAudit({
+      tenantId: request.user.tenantId, userId: request.user.sub, action: 'AI_GRADE_ALL_TRIGGERED',
+      entityType: 'tenant', entityId: request.user.tenantId,
+      metadata: { sessionsProcessed: sessions.length, answersGraded: totalGraded, answersFailed: totalFailed },
+    })
+
+    return sendSuccess(reply, { sessionsProcessed: sessions.length, answersGraded: totalGraded, answersFailed: totalFailed })
   })
 
   // GET /api/results/dashboard — summary stats for tenant

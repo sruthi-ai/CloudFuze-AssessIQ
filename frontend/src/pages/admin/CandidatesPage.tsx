@@ -56,7 +56,7 @@ export function CandidatesPage() {
   const parsedPreview = useMemo(() => {
     if (!inviteForm.candidateLines.trim()) return []
     // Strip UTF-8 BOM (added by Excel), normalise line endings
-    const cleaned = inviteForm.candidateLines.replace(/^﻿/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    const cleaned = inviteForm.candidateLines.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
     return cleaned.split('\n')
       .filter(l => l.trim())
       .map(line => {
@@ -115,7 +115,7 @@ export function CandidatesPage() {
 
   const inviteMutation = useMutation({
     mutationFn: () => {
-      const cleaned = inviteForm.candidateLines.replace(/^﻿/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+      const cleaned = inviteForm.candidateLines.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
       const lines = cleaned.split('\n').filter(l => l.trim())
       const candidates = lines.map(line => {
         // Same quoted-field parser as parsedPreview

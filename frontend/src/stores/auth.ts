@@ -47,7 +47,7 @@ export const useAuthStore = create<AuthState>()(
       async logout() {
         try {
           await api.post('/auth/logout', { refreshToken: get().refreshToken })
-        } catch {}
+        } catch { /* server-side revoke failed — still clear local session state below */ }
         localStorage.removeItem('accessToken')
         localStorage.removeItem('refreshToken')
         set({ user: null, tenant: null, accessToken: null, refreshToken: null, isAuthenticated: false })

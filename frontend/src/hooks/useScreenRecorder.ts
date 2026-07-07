@@ -28,7 +28,7 @@ export function useScreenRecorder({ sessionId, token, enabled, onStopped }: UseS
         `${API_BASE}/api/proctoring/${sessionId}/screen-snapshot?token=${encodeURIComponent(token)}`,
         { method: 'POST', body: fd }
       )
-    } catch {}
+    } catch { /* best-effort — a dropped screenshot upload shouldn't interrupt the exam */ }
   }, [sessionId, token])
 
   const startScreenshots = useCallback((stream: MediaStream) => {
@@ -134,6 +134,7 @@ export function useScreenRecorder({ sessionId, token, enabled, onStopped }: UseS
               { method: 'POST', body: fd }
             )
           } catch {
+            /* best-effort — a dropped recording upload shouldn't block exam submission */
           } finally {
             setUploading(false)
           }

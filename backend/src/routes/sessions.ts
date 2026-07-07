@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { createWriteStream } from 'fs'
-import { join } from 'path'
+import { createReadStream, createWriteStream, existsSync } from 'fs'
+import { extname, join } from 'path'
 import { pipeline } from 'stream/promises'
 import { prisma } from '../db'
 import { sendError, sendSuccess } from '../utils/errors'
@@ -315,6 +315,7 @@ export async function sessionRoutes(server: FastifyInstance) {
   server.post('/:sessionId/id-verify', async (request, reply) => {
     const { sessionId } = request.params as { sessionId: string }
     const { token } = request.query as { token?: string }
+    if (!token) return sendError(reply, 400, 'token required')
 
     const session = await prisma.session.findFirst({
       where: { id: sessionId, invitation: { token } },
@@ -340,7 +341,8 @@ export async function sessionRoutes(server: FastifyInstance) {
   // GET /api/sessions/:sessionId/questions — get full test questions for the session
   server.get('/:sessionId/questions', async (request, reply) => {
     const { sessionId } = request.params as { sessionId: string }
-    const { token } = request.query as { token: string }
+    const { token } = request.query as { token?: string }
+    if (!token) return sendError(reply, 400, 'token required')
 
     const session = await prisma.session.findFirst({
       where: { id: sessionId, invitation: { token } },
@@ -359,6 +361,8 @@ export async function sessionRoutes(server: FastifyInstance) {
                           select: { id: true, description: true, input: true, expectedOutput: true, points: true, order: true },
                           orderBy: { order: 'asc' as const },
                         },
+                        // NOTE: select only non-sensitive fields — transcript must never reach the candidate
+                        audioAsset: { select: { id: true, playLimit: true } },
                       },
                     },
                   },
@@ -384,6 +388,7 @@ export async function sessionRoutes(server: FastifyInstance) {
     const answeredIds = new Set(session.answers.map(a => a.questionId))
     const questionOrder = session.questionOrder as Record<string, string[]> | null
     const shuffleOptions = session.test.shuffleOptions
+    const audioPlays = (session.audioPlays as Record<string, number> | null) ?? {}
 
     return sendSuccess(reply, {
       sections: session.test.sections.map(s => {
@@ -391,6 +396,7 @@ export async function sessionRoutes(server: FastifyInstance) {
           const opts = shuffleOptions && tq.question.options.length > 1
             ? seededShuffle(tq.question.options, session.id + tq.question.id)
             : tq.question.options
+          const asset = (tq.question as any).audioAsset
           return {
             testQuestionId: tq.id,
             questionId: tq.question.id,
@@ -406,6 +412,14 @@ export async function sessionRoutes(server: FastifyInstance) {
               timeLimit: tq.question.timeLimit,
               options: opts,
               codeTestCases: (tq.question as any).codeTestCases ?? [],
+              audioAsset: asset
+                ? {
+                    id: asset.id,
+                    url: `/api/sessions/${session.id}/audio/${asset.id}?token=${encodeURIComponent(token)}`,
+                    playLimit: asset.playLimit,
+                    playsUsed: audioPlays[asset.id] ?? 0,
+                  }
+                : null,
             },
           }
         })
@@ -424,10 +438,71 @@ export async function sessionRoutes(server: FastifyInstance) {
     })
   })
 
+  // Resolves an audio asset only if it's referenced by a question in this session's test.
+  // Returns the asset (id, url, playLimit) or null.
+  async function resolveSessionAudioAsset(sessionId: string, assetId: string, token: string) {
+    const session = await prisma.session.findFirst({
+      where: { id: sessionId, invitation: { token } },
+      select: { id: true, status: true, audioPlays: true, testId: true },
+    })
+    if (!session) return { session: null, asset: null }
+    const question = await prisma.question.findFirst({
+      where: { audioAssetId: assetId, testQuestions: { some: { testId: session.testId } } },
+      select: { audioAsset: { select: { id: true, url: true, playLimit: true } } },
+    })
+    return { session, asset: question?.audioAsset ?? null }
+  }
+
+  // GET /api/sessions/:sessionId/audio/:assetId?token= — stream a listening-prompt clip (candidate)
+  server.get('/:sessionId/audio/:assetId', async (request, reply) => {
+    const { sessionId, assetId } = request.params as { sessionId: string; assetId: string }
+    const { token } = request.query as { token?: string }
+    if (!token) return sendError(reply, 400, 'token required')
+
+    const { session, asset } = await resolveSessionAudioAsset(sessionId, assetId, token)
+    if (!session || !asset) return sendError(reply, 404, 'Audio not found')
+
+    const filePath = join(UPLOADS_DIR, asset.url.replace(/^\/uploads\//, ''))
+    if (!existsSync(filePath)) return sendError(reply, 404, 'Audio file missing from disk')
+
+    const ext = extname(filePath).toLowerCase()
+    const mime = ext === '.mp3' ? 'audio/mpeg' : ext === '.wav' ? 'audio/wav'
+      : ext === '.ogg' ? 'audio/ogg' : ext === '.webm' ? 'audio/webm' : 'application/octet-stream'
+    return reply.type(mime).send(createReadStream(filePath))
+  })
+
+  // POST /api/sessions/:sessionId/audio-play — record a play, enforce the play limit (candidate)
+  server.post('/:sessionId/audio-play', async (request, reply) => {
+    const { sessionId } = request.params as { sessionId: string }
+    const { token, assetId } = request.body as { token?: string; assetId?: string }
+    if (!token) return sendError(reply, 400, 'token required')
+    if (!assetId) return sendError(reply, 400, 'assetId required')
+
+    const { session, asset } = await resolveSessionAudioAsset(sessionId, assetId, token)
+    if (!session || !asset) return sendError(reply, 404, 'Audio not found')
+    if (session.status !== 'IN_PROGRESS') return sendError(reply, 409, 'Session is not active')
+
+    const plays = (session.audioPlays as Record<string, number> | null) ?? {}
+    const used = plays[assetId] ?? 0
+
+    // playLimit 0 = unlimited
+    if (asset.playLimit > 0 && used >= asset.playLimit) {
+      return sendSuccess(reply, { allowed: false, playsUsed: used, remaining: 0 })
+    }
+
+    const nextUsed = used + 1
+    plays[assetId] = nextUsed
+    await prisma.session.update({ where: { id: sessionId }, data: { audioPlays: plays } })
+
+    const remaining = asset.playLimit > 0 ? Math.max(0, asset.playLimit - nextUsed) : null
+    return sendSuccess(reply, { allowed: true, playsUsed: nextUsed, remaining })
+  })
+
   // POST /api/sessions/:sessionId/answers — save or update a single answer
   server.post('/:sessionId/answers', async (request, reply) => {
     const { sessionId } = request.params as { sessionId: string }
-    const { token, ...answerData } = request.body as { token: string } & z.infer<typeof submitAnswerSchema>
+    const { token, ...answerData } = request.body as { token?: string } & z.infer<typeof submitAnswerSchema>
+    if (!token) return sendError(reply, 400, 'token required')
 
     const result = submitAnswerSchema.safeParse(answerData)
     if (!result.success) return sendError(reply, 400, 'Validation error', result.error.flatten())
@@ -457,10 +532,76 @@ export async function sessionRoutes(server: FastifyInstance) {
     return sendSuccess(reply, answer)
   })
 
+  // POST /api/sessions/:sessionId/answers/:questionId/media — upload a file/audio answer
+  const AUDIO_MIME_ALLOWLIST = ['audio/webm', 'audio/mpeg', 'audio/wav', 'audio/ogg']
+  const FILE_MIME_ALLOWLIST = [
+    'application/pdf', 'image/png', 'image/jpeg',
+    'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'text/plain',
+  ]
+  const MIME_TO_EXT: Record<string, string> = {
+    'audio/webm': 'webm', 'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/ogg': 'ogg',
+    'application/pdf': 'pdf', 'image/png': 'png', 'image/jpeg': 'jpg',
+    'application/msword': 'doc',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+    'text/plain': 'txt',
+  }
+
+  server.post('/:sessionId/answers/:questionId/media', async (request, reply) => {
+    const { sessionId, questionId } = request.params as { sessionId: string; questionId: string }
+    const { token } = request.query as { token?: string }
+    if (!token) return sendError(reply, 400, 'token required')
+
+    const session = await prisma.session.findFirst({
+      where: { id: sessionId, invitation: { token } },
+    })
+    if (!session) return sendError(reply, 404, 'Session not found')
+    if (session.status !== 'IN_PROGRESS') return sendError(reply, 409, 'Session is not active')
+    if (session.timeoutAt && session.timeoutAt < new Date()) {
+      await autoSubmit(session.id)
+      return sendError(reply, 410, 'Time has expired')
+    }
+
+    const validQuestion = await prisma.testQuestion.findFirst({
+      where: { testId: session.testId, questionId },
+      include: { question: { select: { type: true } } },
+    })
+    if (!validQuestion) return sendError(reply, 403, 'Question does not belong to this assessment')
+
+    const questionType = validQuestion.question.type
+    if (questionType !== 'FILE_UPLOAD' && questionType !== 'AUDIO_RECORDING') {
+      return sendError(reply, 400, 'This question does not accept a media answer')
+    }
+
+    const data = await request.file()
+    if (!data) return sendError(reply, 400, 'No file uploaded')
+
+    const allowlist = questionType === 'AUDIO_RECORDING' ? AUDIO_MIME_ALLOWLIST : FILE_MIME_ALLOWLIST
+    if (!allowlist.includes(data.mimetype)) {
+      return sendError(reply, 400, `Unsupported file type: ${data.mimetype}`)
+    }
+
+    const ext = MIME_TO_EXT[data.mimetype]
+    const filename = `${sessionId}_${Date.now()}.${ext}`
+    const filePath = join(UPLOADS_DIR, 'answers', filename)
+    await pipeline(data.file, createWriteStream(filePath))
+    const url = `/uploads/answers/${filename}`
+
+    const field = questionType === 'AUDIO_RECORDING' ? 'audioUrl' : 'fileUrl'
+    await prisma.answer.upsert({
+      where: { sessionId_questionId: { sessionId, questionId } },
+      create: { sessionId, questionId, [field]: url },
+      update: { [field]: url },
+    })
+
+    return sendSuccess(reply, { [field]: url })
+  })
+
   // POST /api/sessions/:sessionId/heartbeat — periodic liveness ping from candidate
   server.post('/:sessionId/heartbeat', async (request, reply) => {
     const { sessionId } = request.params as { sessionId: string }
-    const { token } = request.body as { token: string }
+    const { token } = request.body as { token?: string }
+    if (!token) return sendError(reply, 400, 'token required')
 
     const session = await prisma.session.findFirst({
       where: { id: sessionId, invitation: { token }, status: 'IN_PROGRESS' },
@@ -488,7 +629,8 @@ export async function sessionRoutes(server: FastifyInstance) {
   // POST /api/sessions/:sessionId/submit — final submit
   server.post('/:sessionId/submit', async (request, reply) => {
     const { sessionId } = request.params as { sessionId: string }
-    const { token } = request.body as { token: string }
+    const { token } = request.body as { token?: string }
+    if (!token) return sendError(reply, 400, 'token required')
 
     const session = await prisma.session.findFirst({
       where: { id: sessionId, invitation: { token } },
@@ -514,7 +656,8 @@ export async function sessionRoutes(server: FastifyInstance) {
   // GET /api/sessions/:sessionId/result — show result to candidate (if allowed)
   server.get('/:sessionId/result', async (request, reply) => {
     const { sessionId } = request.params as { sessionId: string }
-    const { token } = request.query as { token: string }
+    const { token } = request.query as { token?: string }
+    if (!token) return sendError(reply, 400, 'token required')
 
     const session = await prisma.session.findFirst({
       where: { id: sessionId, invitation: { token } },

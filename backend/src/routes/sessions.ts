@@ -351,6 +351,9 @@ export async function sessionRoutes(server: FastifyInstance) {
           include: {
             sections: {
               include: {
+                // Section-level Listening audio (one clip played once for all its questions).
+                // NOTE: transcript must never reach the candidate.
+                audioAsset: { select: { id: true, playLimit: true } },
                 testQuestions: {
                   include: {
                     question: {
@@ -434,14 +437,29 @@ export async function sessionRoutes(server: FastifyInstance) {
           questions = questions.sort((a, b) => (orderMap.get(a.questionId) ?? 0) - (orderMap.get(b.questionId) ?? 0))
         }
 
-        return { id: s.id, title: s.title, description: s.description, timeLimit: s.timeLimit, questions }
+        const sectionAsset = (s as any).audioAsset
+        return {
+          id: s.id,
+          title: s.title,
+          description: s.description,
+          timeLimit: s.timeLimit,
+          audioAsset: sectionAsset
+            ? {
+                id: sectionAsset.id,
+                url: `/api/sessions/${session.id}/audio/${sectionAsset.id}?token=${encodeURIComponent(token)}`,
+                playLimit: sectionAsset.playLimit,
+                playsUsed: audioPlays[sectionAsset.id] ?? 0,
+              }
+            : null,
+          questions,
+        }
       }),
       timeRemaining: session.timeoutAt ? Math.max(0, Math.floor((session.timeoutAt.getTime() - Date.now()) / 1000)) : null,
     })
   })
 
-  // Resolves an audio asset only if it's referenced by a question in this session's test.
-  // Returns the asset (id, url, playLimit) or null.
+  // Resolves an audio asset only if it's referenced by a question OR a section in this
+  // session's test. Returns the asset (id, url, playLimit) or null.
   async function resolveSessionAudioAsset(sessionId: string, assetId: string, token: string) {
     const session = await prisma.session.findFirst({
       where: { id: sessionId, invitation: { token } },
@@ -452,7 +470,13 @@ export async function sessionRoutes(server: FastifyInstance) {
       where: { audioAssetId: assetId, testQuestions: { some: { testId: session.testId } } },
       select: { audioAsset: { select: { id: true, url: true, playLimit: true } } },
     })
-    return { session, asset: question?.audioAsset ?? null }
+    if (question?.audioAsset) return { session, asset: question.audioAsset }
+    // Section-level Listening audio
+    const section = await prisma.testSection.findFirst({
+      where: { audioAssetId: assetId, testId: session.testId },
+      select: { audioAsset: { select: { id: true, url: true, playLimit: true } } },
+    })
+    return { session, asset: section?.audioAsset ?? null }
   }
 
   // GET /api/sessions/:sessionId/audio/:assetId?token= — stream a listening-prompt clip (candidate)

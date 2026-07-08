@@ -226,6 +226,7 @@ model AudioAsset {
   tenantId     String
   tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   questions    Question[]
+  sections     TestSection[]
 
   createdAt    DateTime @default(now())
 
@@ -313,6 +314,8 @@ model TestSection {
   timeLimit    Int?     // per-section time limit in seconds
   pickCount    Int?     // if set, randomly pick this many questions per session
   skill        SkillArea?  // which IELTS/TOEFL skill this section assesses (for band report)
+  audioAssetId String?     // section-level audio (e.g. Listening passage played once for all its questions)
+  audioAsset   AudioAsset? @relation(fields: [audioAssetId], references: [id])
   createdAt    DateTime @default(now())
 
   testId       String

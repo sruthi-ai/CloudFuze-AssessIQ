@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { api, getErrorMessage } from '@/lib/api'
+import { AudioPromptEditor } from '@/components/AudioPromptEditor'
 import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 
@@ -448,6 +449,26 @@ function SectionSkillEditor({ sectionId, testId, initialSkill }: {
       <option value="">· skill</option>
       {SKILL_OPTIONS.map(s => <option key={s} value={s}>{SKILL_LABEL[s]}</option>)}
     </select>
+  )
+}
+
+// Section-level Listening audio: one clip played once at the top of the section, for all its questions.
+function SectionAudioEditor({ sectionId, testId, initialAudioAssetId }: {
+  sectionId: string; testId: string; initialAudioAssetId: string | null
+}) {
+  const qc = useQueryClient()
+  const mutation = useMutation({
+    mutationFn: (audioAssetId: string | null) => api.patch(`/tests/${testId}/sections/${sectionId}`, { audioAssetId }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['test', testId] }),
+    onError: err => toast({ title: 'Error', description: getErrorMessage(err), variant: 'destructive' }),
+  })
+
+  return (
+    <AudioPromptEditor
+      value={initialAudioAssetId}
+      onChange={id => mutation.mutate(id)}
+      label="Section audio (Listening passage — played once for every question below)"
+    />
   )
 }
 
@@ -1804,7 +1825,12 @@ export function TestBuilderPage() {
                 </div>
               </CardHeader>
 
-              <CardContent className="pt-0">
+              <CardContent className="pt-0 space-y-3">
+                <SectionAudioEditor
+                  sectionId={section.id}
+                  testId={testId!}
+                  initialAudioAssetId={section.audioAsset?.id ?? section.audioAssetId ?? null}
+                />
                 {section.testQuestions.length === 0 ? (
                   <p className="text-sm text-muted-foreground py-4 text-center">
                     No questions yet. Add from the question bank.

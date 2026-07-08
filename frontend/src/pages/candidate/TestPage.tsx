@@ -796,6 +796,25 @@ export function TestPage() {
             </div>
           )}
 
+          {/* Section-level Listening audio: one clip for all questions in this section.
+              Keyed by section id so playback state persists as the candidate moves
+              between questions, and resets (re-mounts) when the section changes. */}
+          {currentSection?.audioAsset && (
+            <Card className="border-indigo-200">
+              <CardContent className="p-4">
+                <p className="text-sm font-semibold text-indigo-900 mb-2">
+                  Listening audio — for the questions in “{currentSection.title}”
+                </p>
+                <AudioPrompt
+                  key={currentSection.id}
+                  audioAsset={currentSection.audioAsset}
+                  sessionId={sessionId}
+                  token={token ?? ''}
+                />
+              </CardContent>
+            </Card>
+          )}
+
           {currentQ && (
             <Card>
               <CardContent className="p-6 space-y-5">

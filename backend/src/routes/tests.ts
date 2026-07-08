@@ -44,6 +44,7 @@ const createSectionSchema = z.object({
   timeLimit: z.number().int().optional(),
   pickCount: z.number().int().min(1).optional().nullable(),
   skill: z.enum(['LISTENING', 'READING', 'WRITING', 'SPEAKING', 'GENERAL']).nullable().optional(),
+  audioAssetId: z.string().nullable().optional(), // section-level Listening audio (one clip for all its questions)
 })
 
 export async function testRoutes(server: FastifyInstance) {
@@ -87,6 +88,7 @@ export async function testRoutes(server: FastifyInstance) {
         createdBy: { select: { id: true, firstName: true, lastName: true } },
         sections: {
           include: {
+            audioAsset: true,
             testQuestions: {
               include: { question: { include: { options: true } } },
               orderBy: { order: 'asc' },
@@ -269,6 +271,11 @@ export async function testRoutes(server: FastifyInstance) {
     const test = await prisma.test.findFirst({ where: { id, tenantId: request.user.tenantId } })
     if (!test) return sendError(reply, 404, 'Test not found')
 
+    if (result.data.audioAssetId) {
+      const asset = await prisma.audioAsset.findFirst({ where: { id: result.data.audioAssetId, tenantId: request.user.tenantId } })
+      if (!asset) return sendError(reply, 400, 'Audio asset not found')
+    }
+
     const section = await prisma.testSection.create({ data: { ...result.data, testId: id } })
     return sendSuccess(reply, section, 201)
   })
@@ -283,6 +290,11 @@ export async function testRoutes(server: FastifyInstance) {
       where: { id: sectionId, testId: id, test: { tenantId: request.user.tenantId } },
     })
     if (!section) return sendError(reply, 404, 'Section not found')
+
+    if (result.data.audioAssetId) {
+      const asset = await prisma.audioAsset.findFirst({ where: { id: result.data.audioAssetId, tenantId: request.user.tenantId } })
+      if (!asset) return sendError(reply, 400, 'Audio asset not found')
+    }
 
     const updated = await prisma.testSection.update({ where: { id: sectionId }, data: result.data })
     return sendSuccess(reply, updated)

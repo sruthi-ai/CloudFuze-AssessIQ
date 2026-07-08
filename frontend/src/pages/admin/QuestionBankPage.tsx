@@ -106,6 +106,8 @@ export function QuestionBankPage() {
   const [options, setOptions] = useState([{ text: '', isCorrect: false }, { text: '', isCorrect: false }])
   const [testCases, setTestCases] = useState<TestCase[]>([emptyTestCase()])
   const [audioAssetId, setAudioAssetId] = useState<string | null>(null)
+  const [prepSeconds, setPrepSeconds] = useState(0)          // AUDIO_RECORDING prep countdown
+  const [speakSeconds, setSpeakSeconds] = useState('')       // AUDIO_RECORDING speak limit ('' = untimed)
   const [showImport, setShowImport] = useState(false)
   const [importRows, setImportRows] = useState<CsvRow[]>([])
   const [importErrors, setImportErrors] = useState<string[]>([])
@@ -130,6 +132,7 @@ export function QuestionBankPage() {
   const questionType = watch('type')
   const needsOptions = ['MCQ_SINGLE', 'MCQ_MULTI', 'TRUE_FALSE'].includes(questionType)
   const isCode = questionType === 'CODE'
+  const isAudio = questionType === 'AUDIO_RECORDING'
 
   const saveMutation = useMutation({
     mutationFn: (values: QuestionFormValues) => {
@@ -143,6 +146,8 @@ export function QuestionBankPage() {
               .map((tc, i) => ({ ...tc, order: i }))
           : undefined,
         audioAssetId: audioAssetId ?? null,
+        prepSeconds: isAudio ? prepSeconds : undefined,
+        speakSeconds: isAudio ? (speakSeconds === '' ? null : parseInt(speakSeconds)) : undefined,
       }
       if (editId) return api.patch(`/questions/${editId}`, payload)
       return api.post('/questions', payload)
@@ -168,6 +173,8 @@ export function QuestionBankPage() {
     setOptions([{ text: '', isCorrect: false }, { text: '', isCorrect: false }])
     setTestCases([emptyTestCase()])
     setAudioAssetId(null)
+    setPrepSeconds(0)
+    setSpeakSeconds('')
   }
 
   const handleEdit = async (q: any) => {
@@ -185,6 +192,8 @@ export function QuestionBankPage() {
         domain: detail.domain ?? '',
       })
       setAudioAssetId(detail.audioAssetId ?? null)
+      setPrepSeconds(detail.prepSeconds ?? 0)
+      setSpeakSeconds(detail.speakSeconds != null ? String(detail.speakSeconds) : '')
       if (['MCQ_SINGLE', 'MCQ_MULTI', 'TRUE_FALSE'].includes(detail.type)) {
         setOptions(detail.options.map((o: any) => ({ text: o.text, isCorrect: o.isCorrect })))
       }
@@ -544,6 +553,28 @@ export function QuestionBankPage() {
                 </div>
 
                 <AudioPromptEditor value={audioAssetId} onChange={setAudioAssetId} />
+
+                {isAudio && (
+                  <div className="space-y-2 rounded-lg border border-indigo-200 bg-indigo-50/40 p-3">
+                    <Label className="text-sm font-semibold">Speaking timing (optional)</Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label className="text-[11px]">Preparation time (seconds, 0 = none)</Label>
+                        <Input type="number" min="0" value={prepSeconds}
+                          onChange={e => setPrepSeconds(Math.max(0, parseInt(e.target.value) || 0))} />
+                      </div>
+                      <div>
+                        <Label className="text-[11px]">Speaking time limit (seconds, blank = untimed)</Label>
+                        <Input type="number" min="1" value={speakSeconds}
+                          onChange={e => setSpeakSeconds(e.target.value)} placeholder="e.g. 60" />
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      When a speaking limit is set, the candidate gets a prep countdown, recording auto-starts,
+                      and it auto-stops &amp; advances when time runs out (like IELTS/TOEFL). Leave the limit blank for free-form recording.
+                    </p>
+                  </div>
+                )}
 
                 <div className="flex gap-3 pt-2">
                   <Button type="submit" disabled={saveMutation.isPending}>

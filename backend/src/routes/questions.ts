@@ -27,6 +27,8 @@ const createQuestionSchema = z.object({
   difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']).optional(),
   points: z.number().optional(),
   timeLimit: z.number().int().optional(),
+  prepSeconds: z.number().int().min(0).nullable().optional(),
+  speakSeconds: z.number().int().min(0).nullable().optional(),
   tags: z.array(z.string()).optional(),
   domain: z.string().optional(),
   bankId: z.string().optional(),

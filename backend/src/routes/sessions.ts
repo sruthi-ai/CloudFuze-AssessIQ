@@ -410,6 +410,8 @@ export async function sessionRoutes(server: FastifyInstance) {
               title: tq.question.title,
               body: tq.question.body,
               timeLimit: tq.question.timeLimit,
+              prepSeconds: tq.question.prepSeconds,
+              speakSeconds: tq.question.speakSeconds,
               options: opts,
               codeTestCases: (tq.question as any).codeTestCases ?? [],
               audioAsset: asset

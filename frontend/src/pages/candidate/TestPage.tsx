@@ -840,6 +840,7 @@ export function TestPage() {
                   onChange={updateAnswer}
                   sessionId={sessionId}
                   token={token ?? ''}
+                  onAutoAdvance={goToNext}
                 />
               </CardContent>
             </Card>
@@ -1162,9 +1163,9 @@ function AudioPrompt({ audioAsset, sessionId, token }: {
   )
 }
 
-function QuestionInput({ question, answer, onChange, sessionId, token }: {
+function QuestionInput({ question, answer, onChange, sessionId, token, onAutoAdvance }: {
   question: any; answer: AnswerState; onChange: (p: Partial<AnswerState>) => void
-  sessionId: string; token: string
+  sessionId: string; token: string; onAutoAdvance?: () => void
 }) {
   switch (question.type) {
     case 'MCQ_SINGLE':
@@ -1258,6 +1259,8 @@ function QuestionInput({ question, answer, onChange, sessionId, token }: {
         <AudioRecordingQuestion
           answer={answer} onChange={onChange}
           questionId={question.id} sessionId={sessionId} token={token}
+          prepSeconds={question.prepSeconds ?? 0} speakSeconds={question.speakSeconds ?? null}
+          onAutoAdvance={onAutoAdvance}
         />
       )
 
@@ -1274,17 +1277,38 @@ function QuestionInput({ question, answer, onChange, sessionId, token }: {
   }
 }
 
-function AudioRecordingQuestion({ answer, onChange, questionId, sessionId, token }: {
+function AudioRecordingQuestion({ answer, onChange, questionId, sessionId, token, prepSeconds, speakSeconds, onAutoAdvance }: {
   answer: AnswerState; onChange: (p: Partial<AnswerState>) => void
   questionId: string; sessionId: string; token: string
+  prepSeconds: number; speakSeconds: number | null; onAutoAdvance?: () => void
 }) {
   const { permission, recording, uploading, previewUrl, start, stopAndUpload } = useAudioRecorder()
+  const timed = typeof speakSeconds === 'number' && speakSeconds > 0
 
   const handleStop = async () => {
     const audioUrl = await stopAndUpload(sessionId, token, questionId)
     if (audioUrl) onChange({ audioUrl })
+    return audioUrl
   }
 
+  // ── Timed Speaking mode: prep countdown → auto-record → speak countdown → auto-stop → advance ──
+  if (timed) {
+    return (
+      <TimedSpeaking
+        prepSeconds={prepSeconds}
+        speakSeconds={speakSeconds as number}
+        uploading={uploading}
+        permission={permission}
+        previewUrl={previewUrl}
+        alreadyAnswered={!!answer.audioUrl}
+        start={start}
+        stopAndUpload={handleStop}
+        onAutoAdvance={onAutoAdvance}
+      />
+    )
+  }
+
+  // ── Free-form mode (unchanged): manual start/stop/re-record ──
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-3">
@@ -1310,6 +1334,93 @@ function AudioRecordingQuestion({ answer, onChange, questionId, sessionId, token
       )}
       {answer.audioUrl && !previewUrl && (
         <p className="text-xs text-green-700">Your recorded answer has been saved.</p>
+      )}
+    </div>
+  )
+}
+
+function TimedSpeaking({ prepSeconds, speakSeconds, uploading, permission, previewUrl, alreadyAnswered, start, stopAndUpload, onAutoAdvance }: {
+  prepSeconds: number; speakSeconds: number
+  uploading: boolean; permission: string; previewUrl: string | null
+  alreadyAnswered: boolean
+  start: () => Promise<boolean>
+  stopAndUpload: () => Promise<string | null>
+  onAutoAdvance?: () => void
+}) {
+  // phase: 'prep' → 'recording' → 'done'.  If already answered (revisiting), go straight to done.
+  const [phase, setPhase] = useState<'prep' | 'recording' | 'done'>(alreadyAnswered ? 'done' : (prepSeconds > 0 ? 'prep' : 'recording'))
+  const [remaining, setRemaining] = useState(prepSeconds > 0 ? prepSeconds : speakSeconds)
+  const startedRef = useRef(false)
+  const finishedRef = useRef(false)
+
+  const beginRecording = useCallback(async () => {
+    if (startedRef.current) return
+    startedRef.current = true
+    setPhase('recording')
+    setRemaining(speakSeconds)
+    await start()
+  }, [start, speakSeconds])
+
+  const finish = useCallback(async () => {
+    if (finishedRef.current) return
+    finishedRef.current = true
+    await stopAndUpload()
+    setPhase('done')
+    // brief pause so the candidate sees "recorded", then advance
+    setTimeout(() => onAutoAdvance?.(), 800)
+  }, [stopAndUpload, onAutoAdvance])
+
+  // Single countdown driving both phases
+  useEffect(() => {
+    if (phase === 'done') return
+    if (remaining <= 0) {
+      if (phase === 'prep') { beginRecording() }
+      else if (phase === 'recording') { finish() }
+      return
+    }
+    const t = setTimeout(() => setRemaining(r => r - 1), 1000)
+    return () => clearTimeout(t)
+  }, [remaining, phase, beginRecording, finish])
+
+  if (phase === 'done') {
+    return (
+      <div className="space-y-2">
+        <p className="text-sm text-green-700 font-medium">✓ Answer recorded.</p>
+        {uploading && <p className="text-xs text-muted-foreground">Uploading…</p>}
+        {previewUrl && <audio controls src={previewUrl} className="w-full" />}
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      {phase === 'prep' ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-2">
+          <div className="flex items-center gap-2 text-amber-800">
+            <Clock className="h-5 w-5" />
+            <span className="font-semibold">Preparation time</span>
+          </div>
+          <p className="text-3xl font-bold tabular-nums text-amber-900">{formatSeconds(remaining)}</p>
+          <p className="text-xs text-amber-700">Recording starts automatically when this reaches 0:00.</p>
+          <Button type="button" variant="outline" size="sm" onClick={beginRecording}>
+            <Mic className="h-4 w-4 mr-2" /> Start speaking now
+          </Button>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 space-y-2">
+          <div className="flex items-center gap-2 text-red-700">
+            <span className="h-3 w-3 rounded-full bg-red-600 animate-pulse" />
+            <span className="font-semibold">Recording — speak now</span>
+          </div>
+          <p className="text-3xl font-bold tabular-nums text-red-800">{formatSeconds(remaining)}</p>
+          <p className="text-xs text-red-600">Recording stops and submits automatically at 0:00.</p>
+          <Button type="button" variant="destructive" size="sm" onClick={finish} disabled={uploading}>
+            <Square className="h-4 w-4 mr-2" /> Stop &amp; submit
+          </Button>
+        </div>
+      )}
+      {permission === 'denied' && (
+        <p className="text-xs text-red-600">Microphone access was denied — please allow it so your answer can be recorded.</p>
       )}
     </div>
   )

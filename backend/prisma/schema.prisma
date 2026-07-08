@@ -182,6 +182,8 @@ model Question {
   difficulty     DifficultyLevel @default(MEDIUM)
   points         Float           @default(1)
   timeLimit      Int?            // seconds, null = inherit from test
+  prepSeconds    Int?            // AUDIO_RECORDING: prep countdown before recording auto-starts (0/null = none)
+  speakSeconds   Int?            // AUDIO_RECORDING: max speaking seconds; null = untimed free-form
   tags           Json            @default("[]")
   domain         String?
   isArchived     Boolean         @default(false)

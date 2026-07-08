@@ -4,8 +4,12 @@ set -e
 echo "→ Running database migrations..."
 npx prisma migrate deploy
 
-echo "→ Seeding database (skipped if data already exists)..."
-npx tsx prisma/seed.ts 2>/dev/null || true
+echo "→ Seeding database (idempotent; demo tenant/admin via upsert)..."
+if npx tsx prisma/seed.ts; then
+  echo "✔ Seed step complete"
+else
+  echo "⚠️  SEED STEP FAILED — see the error above. The DB may be empty and login may not work until it is seeded (run: npx tsx prisma/seed.ts). Starting backend anyway so an already-seeded DB is not taken offline." >&2
+fi
 
 echo "→ Starting AssessIQ backend..."
 exec node dist/server.js

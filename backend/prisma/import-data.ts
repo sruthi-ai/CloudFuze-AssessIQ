@@ -10,7 +10,7 @@
  * candidates, invitations and tokens are left untouched.
  */
 import { PrismaClient } from '@prisma/client'
-import { readFileSync } from 'node:fs'
+import { readFileSync, copyFileSync, mkdirSync, readdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 const prisma = new PrismaClient()
@@ -35,6 +35,26 @@ function revive(row: Record<string, unknown>): Record<string, unknown> {
   return r
 }
 
+// Copy bundled media (Listening clips, etc.) into the live uploads dir so the
+// AudioAsset.url paths resolve. UPLOADS_DIR matches the app's own resolution
+// (env in prod = /app/uploads; falls back to <cwd>/uploads locally).
+function copyMedia() {
+  const src = join(process.cwd(), 'prisma', 'seed-media')
+  if (!existsSync(src)) { console.log('• no prisma/seed-media — skipping media copy'); return }
+  const uploadsDir = process.env.UPLOADS_DIR ?? join(process.cwd(), 'uploads')
+  let n = 0
+  for (const sub of readdirSync(src)) {
+    const subSrc = join(src, sub)
+    const subDst = join(uploadsDir, sub)
+    mkdirSync(subDst, { recursive: true })
+    for (const f of readdirSync(subSrc)) {
+      copyFileSync(join(subSrc, f), join(subDst, f))
+      n++
+    }
+  }
+  console.log(`✔ media: ${n} file(s) copied into ${uploadsDir}`)
+}
+
 async function main() {
   const file = join(process.cwd(), 'prisma', 'seed-data.json')
   const data = JSON.parse(readFileSync(file, 'utf8')) as Record<string, Record<string, unknown>[]>
@@ -53,6 +73,8 @@ async function main() {
     }
     console.log(`✔ ${table}: ${n} upserted`)
   }
+
+  copyMedia()
   console.log('✅ Import complete.')
 }
 

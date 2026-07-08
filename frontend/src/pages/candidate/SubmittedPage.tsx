@@ -1,12 +1,24 @@
-import { useEffect } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useLocation, useParams } from 'react-router-dom'
 import { CheckCircle, Brain, FlaskConical } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
+import { api } from '@/lib/api'
+
+interface SkillBand { skill: string; band: number; pending: number }
+interface ResultData {
+  submitted: boolean
+  message?: string
+  testTitle?: string
+  score?: { percentage: number; earnedPoints: number; totalPoints: number } | null
+  skillBands?: { skills: SkillBand[]; overall: number | null }
+}
 
 export function SubmittedPage() {
   const location = useLocation()
-  const result = location.state?.result
+  const { token } = useParams()
   const isPractice: boolean = location.state?.isPractice ?? false
+  const sessionId: string | undefined = location.state?.sessionId
+  const [result, setResult] = useState<ResultData | null>(null)
 
   // Prevent back-navigation to the test
   useEffect(() => {
@@ -15,6 +27,17 @@ export function SubmittedPage() {
     window.addEventListener('popstate', block)
     return () => window.removeEventListener('popstate', block)
   }, [])
+
+  // Fetch the candidate's result (only shows a score if the test has "show results" on)
+  useEffect(() => {
+    if (isPractice || !sessionId || !token) return
+    api.get(`/sessions/${sessionId}/result?token=${encodeURIComponent(token)}`)
+      .then(r => setResult(r.data.data))
+      .catch(() => { /* results just stay hidden */ })
+  }, [isPractice, sessionId, token])
+
+  const bands = result?.skillBands
+  const showBands = bands && bands.skills.length > 0
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-white flex items-center justify-center p-4">
@@ -32,7 +55,7 @@ export function SubmittedPage() {
         )}
 
         <Card>
-          <CardContent className="py-12 space-y-4">
+          <CardContent className="py-10 space-y-4">
             <div className="flex justify-center">
               <div className={`h-16 w-16 rounded-full flex items-center justify-center ${isPractice ? 'bg-indigo-100' : 'bg-green-100'}`}>
                 <CheckCircle className={`h-9 w-9 ${isPractice ? 'text-indigo-600' : 'text-green-600'}`} />
@@ -41,20 +64,43 @@ export function SubmittedPage() {
             <h1 className="text-2xl font-bold text-gray-900">
               {isPractice ? 'Practice complete!' : 'Assessment submitted!'}
             </h1>
-            {isPractice ? (
-              <p className="text-muted-foreground">
-                Great job finishing the practice run. Use this to get familiar with the format before your real attempt.
-              </p>
-            ) : (
-              <p className="text-muted-foreground">
-                Your responses have been recorded. The recruiter will review your submission and be in touch.
-              </p>
+
+            {/* Band report (shown only if the test releases results to candidates) */}
+            {showBands && (
+              <div className="pt-2 space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  {bands!.skills.map(s => (
+                    <div key={s.skill} className="rounded-lg border p-2">
+                      <p className="text-xl font-bold text-primary">{s.band.toFixed(1)}</p>
+                      <p className="text-[11px] text-muted-foreground capitalize">{s.skill.toLowerCase()}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="rounded-lg border-2 border-primary bg-primary/5 p-3">
+                  <p className="text-3xl font-bold text-primary">
+                    {bands!.overall != null ? bands!.overall.toFixed(1) : '—'}
+                  </p>
+                  <p className="text-xs font-semibold text-primary">Overall band</p>
+                </div>
+                {bands!.skills.some(s => s.pending > 0) && (
+                  <p className="text-[11px] text-amber-600">Some sections are still being graded — final bands may change.</p>
+                )}
+                <p className="text-[10px] text-muted-foreground">
+                  Bands are a 0–9 proportional mapping of your score. Not an official IELTS/TOEFL conversion.
+                </p>
+              </div>
             )}
 
-            {!isPractice && (
-              <p className="text-sm text-muted-foreground pt-2">
-                Results will be shared by the recruiter once reviewed.
-              </p>
+            {!showBands && (
+              isPractice ? (
+                <p className="text-muted-foreground">
+                  Great job finishing the practice run. Use this to get familiar with the format before your real attempt.
+                </p>
+              ) : (
+                <p className="text-muted-foreground">
+                  Your responses have been recorded. The recruiter will review your submission and be in touch.
+                </p>
+              )
             )}
           </CardContent>
         </Card>

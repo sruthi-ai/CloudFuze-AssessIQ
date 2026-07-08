@@ -3,6 +3,7 @@ import PDFDocument from 'pdfkit'
 import { prisma } from '../db'
 import { sendError } from '../utils/errors'
 import { requireRole } from '../middleware/authenticate'
+import { computeSkillBands } from '../services/scoring'
 
 export async function scorecardRoutes(server: FastifyInstance) {
   const canView = requireRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'RECRUITER', 'VIEWER')
@@ -95,6 +96,32 @@ export async function scorecardRoutes(server: FastifyInstance) {
     }
     doc.fillColor(BLACK)
     y += 80
+
+    // ── Band Report (IELTS/TOEFL-style per-skill bands) ──────────────────────
+    const bands = computeSkillBands(session as any)
+    if (bands.skills.length > 0) {
+      doc.fontSize(13).font('Helvetica-Bold').fillColor(BLACK).text('Band Report', 48, y)
+      y += 20
+      const cellW = (doc.page.width - 96) / (bands.skills.length + 1)
+      const cellsY = y
+      bands.skills.forEach((s, i) => {
+        const x = 48 + i * cellW
+        doc.rect(x, cellsY, cellW - 6, 52).fill('#f5f3ff')
+        doc.fontSize(20).font('Helvetica-Bold').fillColor(COLOR).text(s.band.toFixed(1), x, cellsY + 8, { width: cellW - 6, align: 'center' })
+        doc.fontSize(9).font('Helvetica').fillColor(GRAY).text(s.skill.charAt(0) + s.skill.slice(1).toLowerCase(), x, cellsY + 34, { width: cellW - 6, align: 'center' })
+      })
+      // Overall band cell
+      const ox = 48 + bands.skills.length * cellW
+      doc.rect(ox, cellsY, cellW - 6, 52).fill(COLOR)
+      doc.fontSize(20).font('Helvetica-Bold').fillColor('#fff').text(bands.overall != null ? bands.overall.toFixed(1) : '—', ox, cellsY + 8, { width: cellW - 6, align: 'center' })
+      doc.fontSize(9).font('Helvetica').fillColor('#fff').text('Overall', ox, cellsY + 34, { width: cellW - 6, align: 'center' })
+      doc.fillColor(BLACK)
+      y += 62
+      doc.fontSize(7).font('Helvetica').fillColor(GRAY)
+         .text('Bands are a 0-9 proportional mapping of each skill’s score. Not an official IELTS/TOEFL conversion.', 48, y)
+      doc.fillColor(BLACK)
+      y += 18
+    }
 
     // ── Section Breakdown ────────────────────────────────────────────────────
     doc.fontSize(13).font('Helvetica-Bold').fillColor(BLACK).text('Section Breakdown', 48, y)

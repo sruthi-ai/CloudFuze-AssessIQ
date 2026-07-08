@@ -5,7 +5,7 @@ import { extname, join } from 'path'
 import { pipeline } from 'stream/promises'
 import { prisma } from '../db'
 import { sendError, sendSuccess } from '../utils/errors'
-import { scoreSession } from '../services/scoring'
+import { scoreSession, computeSkillBands } from '../services/scoring'
 import { sendSubmissionNotification } from '../utils/email'
 import { UPLOADS_DIR } from '../uploads'
 import { broadcastAlert } from '../alerts'
@@ -664,8 +664,13 @@ export async function sessionRoutes(server: FastifyInstance) {
     const session = await prisma.session.findFirst({
       where: { id: sessionId, invitation: { token } },
       include: {
-        test: { select: { showResults: true, title: true, passingScore: true } },
+        test: {
+          include: {
+            sections: { include: { testQuestions: { include: { question: true } } } },
+          },
+        },
         score: true,
+        answers: { select: { questionId: true, pointsEarned: true, gradingStatus: true } },
       },
     })
     if (!session) return sendError(reply, 404, 'Session not found')
@@ -678,10 +683,12 @@ export async function sessionRoutes(server: FastifyInstance) {
       })
     }
 
+    const skillBands = computeSkillBands(session as any)
     return sendSuccess(reply, {
       submitted: true,
       testTitle: session.test.title,
       score: session.score,
+      skillBands,
     })
   })
 }

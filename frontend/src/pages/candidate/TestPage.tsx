@@ -327,7 +327,7 @@ export function TestPage() {
       if (isSecureBrowser) {
         (window as any).__secureBrowserBridge__?.notifySubmitted()
       }
-      navigate(`/take/${token}/done`, { state: { result: res.data.data, isPractice }, replace: true })
+      navigate(`/take/${token}/done`, { state: { result: res.data.data, isPractice, sessionId }, replace: true })
     },
     onError: err => {
       setSubmitting(false)

@@ -43,6 +43,14 @@ enum QuestionType {
   NUMERICAL
 }
 
+enum SkillArea {
+  LISTENING
+  READING
+  WRITING
+  SPEAKING
+  GENERAL
+}
+
 enum DifficultyLevel {
   EASY
   MEDIUM
@@ -304,6 +312,7 @@ model TestSection {
   order        Int      @default(0)
   timeLimit    Int?     // per-section time limit in seconds
   pickCount    Int?     // if set, randomly pick this many questions per session
+  skill        SkillArea?  // which IELTS/TOEFL skill this section assesses (for band report)
   createdAt    DateTime @default(now())
 
   testId       String

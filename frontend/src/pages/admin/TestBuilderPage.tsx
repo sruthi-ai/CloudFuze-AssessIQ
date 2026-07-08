@@ -421,6 +421,36 @@ function TimeLimitEditor({ sectionId, testId, initialTimeLimit }: {
   )
 }
 
+// ─── Section skill picker (for IELTS/TOEFL band report) ─────────────────────────
+
+const SKILL_OPTIONS = ['LISTENING', 'READING', 'WRITING', 'SPEAKING', 'GENERAL'] as const
+const SKILL_LABEL: Record<string, string> = {
+  LISTENING: 'Listening', READING: 'Reading', WRITING: 'Writing', SPEAKING: 'Speaking', GENERAL: 'General',
+}
+
+function SectionSkillEditor({ sectionId, testId, initialSkill }: {
+  sectionId: string; testId: string; initialSkill: string | null
+}) {
+  const qc = useQueryClient()
+  const mutation = useMutation({
+    mutationFn: (skill: string | null) => api.patch(`/tests/${testId}/sections/${sectionId}`, { skill }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['test', testId] }),
+    onError: err => toast({ title: 'Error', description: getErrorMessage(err), variant: 'destructive' }),
+  })
+
+  return (
+    <select
+      title="Tag which IELTS/TOEFL skill this section assesses — drives the per-skill band report."
+      className="text-xs border rounded px-1.5 py-0.5 bg-background text-muted-foreground shrink-0"
+      value={initialSkill ?? ''}
+      onChange={e => mutation.mutate(e.target.value || null)}
+    >
+      <option value="">· skill</option>
+      {SKILL_OPTIONS.map(s => <option key={s} value={s}>{SKILL_LABEL[s]}</option>)}
+    </select>
+  )
+}
+
 // ─── Practice Mode Card ────────────────────────────────────────────────────────
 
 const FRONTEND_URL = window.location.origin
@@ -1718,6 +1748,11 @@ export function TestBuilderPage() {
                     sectionId={section.id}
                     testId={testId!}
                     initialTimeLimit={section.timeLimit ?? null}
+                  />
+                  <SectionSkillEditor
+                    sectionId={section.id}
+                    testId={testId!}
+                    initialSkill={section.skill ?? null}
                   />
                   <div className="flex items-center gap-2 shrink-0">
                     {/* Delete section */}

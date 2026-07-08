@@ -209,3 +209,50 @@ export function scoreRanking(selectedOrder: string[], correctOrder: string[], ma
   }
   return totalPairs > 0 ? (correctPairs / totalPairs) * maxPoints : 0
 }
+
+const roundHalf = (n: number) => Math.round(n * 2) / 2
+
+// Computes an IELTS-style 0-9 band per skill (from sections tagged with a skill) plus an
+// overall band. Uses a transparent proportional mapping: band = (earned/total) * 9, rounded
+// to the nearest 0.5. Writing/Speaking points were derived as band/9*max, so this round-trips
+// their rubric bands; objective Listening/Reading map by percentage. Computed live from the
+// passed-in session so it always reflects the latest AI/human grades.
+export interface SkillBandResult {
+  skills: Array<{ skill: string; band: number; earned: number; total: number; pending: number }>
+  overall: number | null
+}
+
+export function computeSkillBands(session: {
+  test: { sections: Array<{ skill: string | null; testQuestions: Array<{ points: number | null; questionId: string; question: { points: number } }> }> }
+  answers: Array<{ questionId: string; pointsEarned: number | null; gradingStatus: string }>
+}): SkillBandResult {
+  const answerByQ = new Map(session.answers.map(a => [a.questionId, a]))
+  const acc = new Map<string, { earned: number; total: number; pending: number }>()
+
+  for (const section of session.test.sections) {
+    if (!section.skill) continue
+    const bucket = acc.get(section.skill) ?? { earned: 0, total: 0, pending: 0 }
+    for (const tq of section.testQuestions) {
+      const max = tq.points ?? tq.question.points
+      bucket.total += max
+      const ans = answerByQ.get(tq.questionId)
+      bucket.earned += ans?.pointsEarned ?? 0
+      if (!ans || ans.gradingStatus === 'PENDING') bucket.pending += 1
+    }
+    acc.set(section.skill, bucket)
+  }
+
+  const skills = [...acc.entries()].map(([skill, b]) => ({
+    skill,
+    earned: Math.round(b.earned * 10) / 10,
+    total: b.total,
+    pending: b.pending,
+    band: b.total > 0 ? roundHalf((b.earned / b.total) * 9) : 0,
+  }))
+
+  const overall = skills.length > 0
+    ? roundHalf(skills.reduce((s, x) => s + x.band, 0) / skills.length)
+    : null
+
+  return { skills, overall }
+}

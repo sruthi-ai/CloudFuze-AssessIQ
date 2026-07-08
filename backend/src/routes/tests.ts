@@ -43,6 +43,7 @@ const createSectionSchema = z.object({
   order: z.number().int().optional(),
   timeLimit: z.number().int().optional(),
   pickCount: z.number().int().min(1).optional().nullable(),
+  skill: z.enum(['LISTENING', 'READING', 'WRITING', 'SPEAKING', 'GENERAL']).nullable().optional(),
 })
 
 export async function testRoutes(server: FastifyInstance) {

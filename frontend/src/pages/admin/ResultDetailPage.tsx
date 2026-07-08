@@ -534,6 +534,40 @@ export function ResultDetailPage() {
         </Card>
       </div>
 
+      {/* Band report (IELTS/TOEFL-style per-skill bands) */}
+      {session.skillBands?.skills?.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Band report</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap items-stretch gap-3">
+              {session.skillBands.skills.map((s: any) => (
+                <div key={s.skill} className="flex-1 min-w-[120px] rounded-lg border p-3 text-center">
+                  <p className="text-2xl font-bold text-primary">{s.band.toFixed(1)}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5 capitalize">{s.skill.toLowerCase()}</p>
+                  {s.pending > 0 && (
+                    <p className="text-[10px] text-amber-600 mt-1">{s.pending} ungraded</p>
+                  )}
+                </div>
+              ))}
+              <div className="flex-1 min-w-[120px] rounded-lg border-2 border-primary bg-primary/5 p-3 text-center">
+                <p className="text-2xl font-bold text-primary">
+                  {session.skillBands.overall != null ? session.skillBands.overall.toFixed(1) : '—'}
+                </p>
+                <p className="text-xs font-semibold text-primary mt-0.5">Overall band</p>
+              </div>
+            </div>
+            {session.skillBands.skills.some((s: any) => s.pending > 0) && (
+              <p className="text-xs text-amber-600 mt-2">Some answers are still ungraded — grade them for final bands.</p>
+            )}
+            <p className="text-[10px] text-muted-foreground mt-2">
+              Bands are a 0–9 proportional mapping of each skill's score. Not an official IELTS/TOEFL conversion.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Tabs */}
       <div className="flex gap-1 border-b">
         {(['answers', 'proctoring'] as const).map(t => (

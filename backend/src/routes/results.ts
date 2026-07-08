@@ -5,6 +5,7 @@ import { prisma } from '../db'
 import { sendError, sendSuccess } from '../utils/errors'
 import { requireRole } from '../middleware/authenticate'
 import { aiGradeSession } from '../services/aiGrading'
+import { computeSkillBands } from '../services/scoring'
 import { UPLOADS_DIR } from '../uploads'
 import { logAudit } from '../utils/audit'
 
@@ -79,7 +80,8 @@ export async function resultRoutes(server: FastifyInstance) {
     })
 
     if (!session) return sendError(reply, 404, 'Session not found')
-    return sendSuccess(reply, session)
+    const skillBands = computeSkillBands(session as any)
+    return sendSuccess(reply, { ...session, skillBands })
   })
 
   // DELETE /api/results/:sessionId — remove a session and reset the invitation

@@ -225,8 +225,7 @@ async function quitSecure() {
 
   if (response !== 1) { quitting = false; return } // chose Cancel/Keep
 
-  // CUSTOM is the backend's whitelisted type for events without a dedicated enum.
-  if (inTest) await reportViolationImmediate('CUSTOM', 'Candidate quit the secure browser before submitting (exited early)')
+  if (inTest) await reportViolationImmediate('SECURE_BROWSER_QUIT', 'Candidate quit the secure browser before submitting (exited early)')
 
   canClose = true
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setClosable(true)

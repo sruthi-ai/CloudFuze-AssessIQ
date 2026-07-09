@@ -399,6 +399,15 @@ export async function sessionRoutes(server: FastifyInstance) {
     // Safe Exam Browser enforcement (defense-in-depth: also verified at session start)
     const sebCheck = verifySeb(request, session.test)
     if (!sebCheck.ok) {
+      // Record the bypass attempt so it surfaces in the risk score / timeline.
+      await prisma.proctoringEvent.create({
+        data: {
+          sessionId: session.id,
+          type: 'SECURE_BROWSER_BYPASSED',
+          severity: 'CRITICAL',
+          description: sebCheck.reason ?? 'Safe Exam Browser verification failed',
+        },
+      }).catch(() => { /* best-effort */ })
       return sendError(reply, 403, sebCheck.reason ?? 'This test requires Safe Exam Browser.', { sebRequired: true })
     }
 

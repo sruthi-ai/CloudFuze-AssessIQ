@@ -28,6 +28,11 @@ const SEVERITY_MAP: Record<string, 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'> = {
   SUSPECTED_ASSISTANCE: 'CRITICAL',
   IDENTITY_MISMATCH: 'CRITICAL',
   SECURE_BROWSER_BYPASSED: 'CRITICAL',
+  SECURE_BROWSER_QUIT: 'HIGH',
+  NAVIGATION_BLOCKED: 'HIGH',
+  SHORTCUT_BLOCKED: 'MEDIUM',
+  MULTIPLE_MONITORS: 'HIGH',
+  SUSPICIOUS_PROCESS: 'CRITICAL',
   CUSTOM: 'MEDIUM',
 }
 
@@ -49,7 +54,12 @@ const EVENT_RISK: Record<string, { weight: number; maxPts: number }> = {
   SUSPECTED_ASSISTANCE:     { weight: 60, maxPts: 60  }, // repeated same-direction gaze pattern
   IDENTITY_MISMATCH:        { weight: 70, maxPts: 70  }, // face during test doesn't match baseline
   SECURE_BROWSER_BYPASSED:  { weight: 80, maxPts: 80  }, // test requires lockdown browser but candidate bypassed it
+  SUSPICIOUS_PROCESS:       { weight: 60, maxPts: 60  }, // remote-access / screen-recording tool detected
+  MULTIPLE_MONITORS:        { weight: 30, maxPts: 30  }, // second display connected during a locked exam
+  SECURE_BROWSER_QUIT:      { weight: 25, maxPts: 25  }, // quit the lockdown browser before submitting
+  NAVIGATION_BLOCKED:       { weight: 15, maxPts: 45  }, // tried to navigate outside the exam
   WINDOW_BLUR:              { weight:  6, maxPts: 18  }, // window lost focus (can be accidental)
+  SHORTCUT_BLOCKED:         { weight:  3, maxPts: 15  }, // used a blocked keyboard shortcut
   RIGHT_CLICK:              { weight:  2, maxPts:  6  }, // right-click (often accidental)
   NOISE_DETECTED:           { weight:  2, maxPts:  8  }, // background noise (common)
   SCREENSHOT_TAKEN:         { weight:  0, maxPts:  0  }, // system monitoring — not a violation
@@ -61,7 +71,8 @@ const EVENT_TYPES = [
   'WEBCAM_BLOCKED', 'MULTIPLE_FACES', 'NO_FACE_DETECTED', 'NOISE_DETECTED',
   'SCREENSHOT_TAKEN', 'DEVTOOLS_OPEN', 'PHONE_DETECTED', 'HEAD_TURNED',
   'SCREEN_RECORDING_STOPPED', 'FACE_OBSTRUCTED', 'SUSPECTED_ASSISTANCE', 'IDENTITY_MISMATCH',
-  'SECURE_BROWSER_BYPASSED', 'CUSTOM',
+  'SECURE_BROWSER_BYPASSED', 'SECURE_BROWSER_QUIT', 'NAVIGATION_BLOCKED', 'SHORTCUT_BLOCKED',
+  'MULTIPLE_MONITORS', 'SUSPICIOUS_PROCESS', 'CUSTOM',
 ] as const
 
 const eventSchema = z.object({

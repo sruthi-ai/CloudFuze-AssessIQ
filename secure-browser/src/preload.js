@@ -11,4 +11,7 @@ contextBridge.exposeInMainWorld('__secureBrowserBridge__', {
     ipcRenderer.send('set-session', { sessionId, token }),
   notifySubmitted: () =>
     ipcRenderer.send('allow-close'),
+  // Ask the main process to quit (it shows a confirmation dialog first).
+  requestQuit: () =>
+    ipcRenderer.send('request-quit'),
 })

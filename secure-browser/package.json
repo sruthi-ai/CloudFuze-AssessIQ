@@ -1,7 +1,7 @@
 {
   "name": "assessiq-secure-browser",
   "productName": "AssessIQ Secure Browser",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Lockdown browser for AssessIQ online assessments",
   "main": "src/main.js",
   "scripts": {

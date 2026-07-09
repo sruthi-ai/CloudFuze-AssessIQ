@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth'
 import { Toaster } from '@/components/ui/toaster'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { SecureBrowserQuitButton } from '@/components/SecureBrowserQuitButton'
 
 // Auth pages
 import { LoginPage } from '@/pages/auth/LoginPage'
@@ -81,6 +82,7 @@ export default function App() {
         <Route path="/" element={<Navigate to="/admin/dashboard" replace />} />
         <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
       </Routes>
+      <SecureBrowserQuitButton />
       <Toaster />
     </ErrorBoundary>
   )

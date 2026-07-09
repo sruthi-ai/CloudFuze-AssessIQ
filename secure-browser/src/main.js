@@ -1,6 +1,6 @@
 'use strict'
 
-const { app, BrowserWindow, globalShortcut, screen, ipcMain, Menu } = require('electron')
+const { app, BrowserWindow, globalShortcut, screen, ipcMain, Menu, dialog } = require('electron')
 const path = require('path')
 const { execSync } = require('child_process')
 
@@ -8,7 +8,7 @@ const { execSync } = require('child_process')
 if (require('electron-squirrel-startup')) { app.quit(); process.exit(0) }
 
 const APP_URL = 'https://neutaraassessment.cftools.live'
-const SECURE_BROWSER_UA_TAG = 'AssessIQ-Secure-Browser/1.0.0'
+const SECURE_BROWSER_UA_TAG = 'AssessIQ-Secure-Browser/1.1.0'
 
 // Processes that indicate remote access or screen recording
 const BLOCKED_PROCESSES = [
@@ -19,6 +19,7 @@ const BLOCKED_PROCESSES = [
 
 let mainWindow = null
 let canClose = false
+let quitting = false
 let activeSessionId = null
 let activeToken = null
 const violationDebounce = new Map()
@@ -74,6 +75,9 @@ function createWindow(startUrl) {
     minimizable: false,
     maximizable: false,
     movable: false,
+    alwaysOnTop: true,
+    fullscreen: true,
+    skipTaskbar: true,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -89,6 +93,12 @@ function createWindow(startUrl) {
 
   // Block screenshots and screen recording at OS level (macOS + Windows)
   mainWindow.setContentProtection(true)
+
+  // Keep the window pinned above everything (taskbar, other apps) so a candidate
+  // who Alt+Tabs away — which globalShortcut cannot fully block on Windows — is
+  // snapped back and can't view other windows behind it.
+  mainWindow.setAlwaysOnTop(true, 'screen-saver')
+  mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
 
   // Block navigation to any domain outside AssessIQ
   mainWindow.webContents.on('will-navigate', (event, url) => {
@@ -110,8 +120,17 @@ function createWindow(startUrl) {
   // Block right-click context menu
   mainWindow.webContents.on('context-menu', e => e.preventDefault())
 
-  // Prevent focus loss
-  mainWindow.on('blur', () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.focus() })
+  // Prevent focus loss — re-assert top-most and grab focus back if the candidate
+  // manages to switch away (e.g. via Alt+Tab, which the OS may not let us block).
+  mainWindow.on('blur', () => {
+    // Skip while our own quit-confirmation dialog is open (it legitimately blurs the window).
+    if (!mainWindow || mainWindow.isDestroyed() || canClose || quitting) return
+    mainWindow.setAlwaysOnTop(true, 'screen-saver')
+    mainWindow.moveTop()
+    mainWindow.focus()
+    // WINDOW_BLUR is the backend's whitelisted type for "left the test window".
+    reportViolation('WINDOW_BLUR', 'Candidate attempted to leave the secure browser')
+  })
 
   mainWindow.loadURL(startUrl)
 }
@@ -145,7 +164,12 @@ async function reportViolation(type, description) {
   const last = violationDebounce.get(type) ?? 0
   if (now - last < 10_000) return
   violationDebounce.set(type, now)
+  await reportViolationImmediate(type, description)
+}
 
+// Non-debounced, awaited reporter — use when the event must be delivered before
+// the app exits (e.g. an early quit).
+async function reportViolationImmediate(type, description) {
   if (!activeSessionId || !activeToken) return
   try {
     await fetch(`${APP_URL}/api/proctoring/${activeSessionId}/event`, {
@@ -176,12 +200,47 @@ function checkSuspiciousProcesses() {
   } catch {}
 }
 
+// ── Quit ───────────────────────────────────────────────────────────────────--
+
+// Confirmed exit. If a test is in progress this is recorded as an early exit so
+// the recruiter can see the attempt was abandoned. Always available so a
+// candidate is never trapped in the locked-down window.
+async function quitSecure() {
+  if (quitting || !mainWindow || mainWindow.isDestroyed()) return
+  quitting = true
+
+  const inTest = !!activeSessionId
+  const { response } = await dialog.showMessageBox(mainWindow, {
+    type: 'warning',
+    buttons: inTest ? ['Keep taking the test', 'Quit and exit'] : ['Cancel', 'Quit'],
+    defaultId: 0,
+    cancelId: 0,
+    title: 'Quit Secure Browser',
+    message: 'Exit the AssessIQ Secure Browser?',
+    detail: inTest
+      ? 'Your assessment is still in progress. Quitting now will leave the test unfinished, and the attempt will be recorded as exited early.'
+      : 'You can reopen the secure browser and your test link at any time.',
+    noLink: true,
+  })
+
+  if (response !== 1) { quitting = false; return } // chose Cancel/Keep
+
+  // CUSTOM is the backend's whitelisted type for events without a dedicated enum.
+  if (inTest) await reportViolationImmediate('CUSTOM', 'Candidate quit the secure browser before submitting (exited early)')
+
+  canClose = true
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setClosable(true)
+  app.exit(0)
+}
+
 // ── IPC ──────────────────────────────────────────────────────────────────────
 
 ipcMain.on('set-session', (_, { sessionId, token }) => {
   activeSessionId = sessionId
   activeToken = token
 })
+
+ipcMain.on('request-quit', () => { quitSecure() })
 
 ipcMain.on('allow-close', () => {
   canClose = true
@@ -200,6 +259,9 @@ app.whenReady().then(() => {
 
   createWindow(startUrl)
   registerShortcuts()
+
+  // Escape hatch: confirmed quit via keyboard, always available.
+  try { globalShortcut.register('CommandOrControl+Shift+Q', () => quitSecure()) } catch {}
 
   setInterval(checkMultipleMonitors, 10_000)
   setInterval(checkSuspiciousProcesses, 15_000)

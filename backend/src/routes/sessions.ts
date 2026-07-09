@@ -6,6 +6,7 @@ import { pipeline } from 'stream/promises'
 import { prisma } from '../db'
 import { sendError, sendSuccess } from '../utils/errors'
 import { scoreSession, computeSkillBands } from '../services/scoring'
+import { verifySeb } from '../services/seb'
 import { sendSubmissionNotification } from '../utils/email'
 import { UPLOADS_DIR } from '../uploads'
 import { broadcastAlert } from '../alerts'
@@ -195,6 +196,7 @@ export async function sessionRoutes(server: FastifyInstance) {
         roomScanIntervalMins: invitation.test.roomScanIntervalMins,
         requireIdVerification: invitation.test.requireIdVerification,
         requireSecureBrowser: invitation.test.requireSecureBrowser,
+        sebRequired: invitation.test.sebRequired,
         allowedIPs: invitation.test.allowedIPs as string[] | null,
         openAt: invitation.test.openAt,
         closeAt: invitation.test.closeAt,
@@ -245,12 +247,18 @@ export async function sessionRoutes(server: FastifyInstance) {
       if (invitation.test.closeAt && invitation.test.closeAt < now) {
         return sendError(reply, 410, 'Test window has closed', { closeAt: invitation.test.closeAt })
       }
-      // Secure browser enforcement
+      // Secure browser enforcement (legacy AssessIQ Electron browser)
       if (invitation.test.requireSecureBrowser) {
         const ua = (userAgent || request.headers['user-agent'] || '')
         if (!ua.includes('AssessIQ-Secure-Browser')) {
           return sendError(reply, 403, 'This test requires the AssessIQ Secure Browser. Please download and use it to start the test.')
         }
+      }
+
+      // Safe Exam Browser enforcement (cryptographic — cannot be spoofed like a UA)
+      const seb = verifySeb(request, invitation.test)
+      if (!seb.ok) {
+        return sendError(reply, 403, seb.reason ?? 'This test requires Safe Exam Browser.', { sebRequired: true })
       }
 
       // IP restriction check
@@ -386,6 +394,12 @@ export async function sessionRoutes(server: FastifyInstance) {
       // Auto-submit timed out session
       await autoSubmit(session.id)
       return sendError(reply, 410, 'Time has expired')
+    }
+
+    // Safe Exam Browser enforcement (defense-in-depth: also verified at session start)
+    const sebCheck = verifySeb(request, session.test)
+    if (!sebCheck.ok) {
+      return sendError(reply, 403, sebCheck.reason ?? 'This test requires Safe Exam Browser.', { sebRequired: true })
     }
 
     const answeredIds = new Set(session.answers.map(a => a.questionId))

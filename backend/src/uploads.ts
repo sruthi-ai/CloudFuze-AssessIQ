@@ -12,4 +12,5 @@ export function initUploads(): void {
   mkdirSync(join(UPLOADS_DIR, 'secure-browser-installers'), { recursive: true })
   mkdirSync(join(UPLOADS_DIR, 'answers'), { recursive: true })
   mkdirSync(join(UPLOADS_DIR, 'audio-assets'), { recursive: true })
+  mkdirSync(join(UPLOADS_DIR, 'seb-configs'), { recursive: true })
 }

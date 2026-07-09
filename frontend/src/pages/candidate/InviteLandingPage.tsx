@@ -9,6 +9,7 @@ import { api, getErrorMessage } from '@/lib/api'
 import { toast } from '@/hooks/use-toast'
 import { formatDuration } from '@/lib/utils'
 import { SecureBrowserGate } from '@/components/SecureBrowserGate'
+import { SebGate } from '@/components/SebGate'
 
 function useCountdown(target: Date | null) {
   const [remaining, setRemaining] = useState<number | null>(null)
@@ -270,6 +271,18 @@ export function InviteLandingPage() {
           onVerified={() => navigate(`/take/${token}/test`, { state: { sessionId: idVerifySession.sessionId, inviteData: data } })}
         />
       </div>
+    )
+  }
+
+  // Safe Exam Browser gate (preferred lockdown). SEB's User-Agent contains "SEB".
+  const inSeb = /\bSEB\b/.test(navigator.userAgent)
+  if (data?.test?.sebRequired && !inSeb) {
+    return (
+      <SebGate
+        testTitle={data?.test?.title}
+        tenantName={data?.test?.tenant?.name}
+        token={token ?? ''}
+      />
     )
   }
 

@@ -286,6 +286,13 @@ model Test {
   openAt                   DateTime?  // null = always open
   closeAt                  DateTime?  // null = no close deadline
   requireSecureBrowser     Boolean    @default(false)
+  // Safe Exam Browser (SEB) lockdown. When sebRequired, the backend verifies the
+  // X-SafeExamBrowser-ConfigKeyHash / RequestHash headers against these keys, so
+  // the exam can only be taken inside SEB running our config (not a normal browser).
+  sebRequired              Boolean    @default(false)
+  sebConfigKeys            String[]   @default([])   // accepted Config Key(s) from the SEB Config Tool
+  sebBrowserExamKeys       String[]   @default([])   // accepted Browser Exam Key(s)
+  sebConfigFileUrl         String?                    // hosted .seb config candidates download to launch SEB
   practiceEnabled          Boolean    @default(false)
   practiceToken            String?    @unique
   createdAt            DateTime   @default(now())

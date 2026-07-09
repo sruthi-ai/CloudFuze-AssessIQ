@@ -18,6 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { api, getErrorMessage } from '@/lib/api'
 import { AudioPromptEditor } from '@/components/AudioPromptEditor'
+import { SebConfigEditor } from '@/components/SebConfigEditor'
 import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 
@@ -1596,6 +1597,19 @@ export function TestBuilderPage() {
                       <input type="checkbox" className="rounded" {...register('requireSecureBrowser')} />
                       <span className="text-sm">Require Secure Browser (candidates must use the AssessIQ lockdown app — blocks other tabs, screen recording, remote desktop)</span>
                     </label>
+                    {testId ? (
+                      <SebConfigEditor
+                        testId={testId}
+                        initial={{
+                          sebRequired: test?.sebRequired,
+                          sebConfigKeys: test?.sebConfigKeys,
+                          sebBrowserExamKeys: test?.sebBrowserExamKeys,
+                          sebConfigFileUrl: test?.sebConfigFileUrl,
+                        }}
+                      />
+                    ) : (
+                      <p className="text-xs text-muted-foreground ml-6">Save the test first to configure Safe Exam Browser.</p>
+                    )}
                     <div className="flex items-center gap-2">
                       <Label htmlFor="violationThreshold" className="text-sm whitespace-nowrap">Auto-disqualify at</Label>
                       <Input

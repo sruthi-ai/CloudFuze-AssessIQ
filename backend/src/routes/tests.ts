@@ -1,11 +1,15 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import crypto from 'crypto'
+import { createWriteStream } from 'fs'
+import { join } from 'path'
+import { pipeline } from 'stream/promises'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../db'
 import { sendError, sendSuccess } from '../utils/errors'
 import { authenticate, requireRole } from '../middleware/authenticate'
 import { logAudit } from '../utils/audit'
+import { UPLOADS_DIR } from '../uploads'
 
 const createTestSchema = z.object({
   title: z.string().min(1),
@@ -24,6 +28,9 @@ const createTestSchema = z.object({
   roomScanIntervalMins: z.coerce.number().int().min(1).max(120).optional(),
   requireIdVerification: z.boolean().optional(),
   requireSecureBrowser: z.boolean().optional(),
+  sebRequired: z.boolean().optional(),
+  sebConfigKeys: z.array(z.string().trim().min(1)).optional(),
+  sebBrowserExamKeys: z.array(z.string().trim().min(1)).optional(),
   allowedIPs: z.array(z.string()).optional().nullable(),
   negativeMarking: z.coerce.number().min(0).max(1).optional().nullable(),
   openAt: z.string().datetime().optional().nullable(),
@@ -310,6 +317,30 @@ export async function testRoutes(server: FastifyInstance) {
 
     await prisma.testSection.delete({ where: { id: sectionId } })
     return sendSuccess(reply, { message: 'Section deleted' })
+  })
+
+  // POST /api/tests/:id/seb-config — upload the .seb config file candidates open
+  // to launch Safe Exam Browser. Its keys should match the Config/Browser Exam
+  // Keys pasted into the test settings.
+  server.post('/:id/seb-config', { preHandler: canEdit }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const test = await prisma.test.findFirst({ where: { id, tenantId: request.user.tenantId } })
+    if (!test) return sendError(reply, 404, 'Test not found')
+
+    const data = await (request as any).file()
+    if (!data) return sendError(reply, 400, 'No file uploaded')
+    if (!/\.seb$/i.test(data.filename ?? '')) return sendError(reply, 400, 'File must be a .seb config')
+
+    const filename = `${id}-${Date.now()}.seb`
+    const filePath = join(UPLOADS_DIR, 'seb-configs', filename)
+    await pipeline(data.file, createWriteStream(filePath))
+
+    const updated = await prisma.test.update({
+      where: { id },
+      data: { sebConfigFileUrl: `/uploads/seb-configs/${filename}` },
+    })
+    logAudit({ tenantId: request.user.tenantId, userId: request.user.sub, action: 'SEB_CONFIG_UPLOADED', entityType: 'test', entityId: id })
+    return sendSuccess(reply, { sebConfigFileUrl: updated.sebConfigFileUrl })
   })
 
   // ── Test Questions ─────────────────────────────────────────────────────────

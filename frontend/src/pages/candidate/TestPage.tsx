@@ -16,7 +16,7 @@ import { useProctoring } from '@/hooks/useProctoring'
 import { useScreenRecorder } from '@/hooks/useScreenRecorder'
 import { useAudioRecorder } from '@/hooks/useAudioRecorder'
 import { ProctoringSetup } from '@/components/proctoring/ProctoringSetup'
-import { SecureBrowserGate } from '@/components/SecureBrowserGate'
+import { SebGate } from '@/components/SebGate'
 import { formatSeconds, cn } from '@/lib/utils'
 
 interface AnswerState {
@@ -86,7 +86,10 @@ export function TestPage() {
   const roomScanIntervalMins: number = inviteData?.test?.roomScanIntervalMins ?? 20
   const brandColor = inviteData?.test?.tenant?.primaryColor ?? '#6366f1'
 
-  const requireSecureBrowser = !isPractice && inviteData?.test?.requireSecureBrowser === true
+  // Lockdown is Safe Exam Browser now (legacy AssessIQ Electron browser retired).
+  const lockdownRequired = !isPractice && (inviteData?.test?.sebRequired === true || inviteData?.test?.requireSecureBrowser === true)
+  const inSeb = /\bSEB\b/.test(navigator.userAgent)
+  // Legacy AssessIQ Electron bridge (no-op unless that browser is still in use).
   const isSecureBrowser = !!(window as any).__SECURE_BROWSER__
 
   useEffect(() => {
@@ -404,12 +407,13 @@ export function TestPage() {
     return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
   }
 
-  // ── Secure browser gate ────────────────────────────────────────────────────
-  if (requireSecureBrowser && !isSecureBrowser) {
+  // ── Safe Exam Browser gate ─────────────────────────────────────────────────
+  if (lockdownRequired && !inSeb) {
     return (
-      <SecureBrowserGate
+      <SebGate
         testTitle={inviteData?.test?.title}
         tenantName={inviteData?.test?.tenant?.name}
+        token={token ?? ''}
       />
     )
   }

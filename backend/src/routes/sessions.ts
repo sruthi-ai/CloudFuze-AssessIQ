@@ -247,16 +247,11 @@ export async function sessionRoutes(server: FastifyInstance) {
       if (invitation.test.closeAt && invitation.test.closeAt < now) {
         return sendError(reply, 410, 'Test window has closed', { closeAt: invitation.test.closeAt })
       }
-      // Secure browser enforcement (legacy AssessIQ Electron browser)
-      if (invitation.test.requireSecureBrowser) {
-        const ua = (userAgent || request.headers['user-agent'] || '')
-        if (!ua.includes('AssessIQ-Secure-Browser')) {
-          return sendError(reply, 403, 'This test requires the AssessIQ Secure Browser. Please download and use it to start the test.')
-        }
-      }
-
-      // Safe Exam Browser enforcement (cryptographic — cannot be spoofed like a UA)
-      const seb = verifySeb(request, invitation.test)
+      // Lockdown enforcement via Safe Exam Browser (cryptographic — cannot be
+      // spoofed like a UA). The legacy AssessIQ Electron browser is retired, so a
+      // test still flagged with the old requireSecureBrowser now enforces SEB too.
+      const lockdownRequired = invitation.test.sebRequired || invitation.test.requireSecureBrowser
+      const seb = verifySeb(request, { ...invitation.test, sebRequired: lockdownRequired })
       if (!seb.ok) {
         return sendError(reply, 403, seb.reason ?? 'This test requires Safe Exam Browser.', { sebRequired: true })
       }
@@ -397,7 +392,8 @@ export async function sessionRoutes(server: FastifyInstance) {
     }
 
     // Safe Exam Browser enforcement (defense-in-depth: also verified at session start)
-    const sebCheck = verifySeb(request, session.test)
+    const lockdownRequired = session.test.sebRequired || session.test.requireSecureBrowser
+    const sebCheck = verifySeb(request, { ...session.test, sebRequired: lockdownRequired })
     if (!sebCheck.ok) {
       // Record the bypass attempt so it surfaces in the risk score / timeline.
       await prisma.proctoringEvent.create({

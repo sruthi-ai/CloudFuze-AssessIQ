@@ -8,7 +8,6 @@ import { Badge } from '@/components/ui/badge'
 import { api, getErrorMessage } from '@/lib/api'
 import { toast } from '@/hooks/use-toast'
 import { formatDuration } from '@/lib/utils'
-import { SecureBrowserGate } from '@/components/SecureBrowserGate'
 import { SebGate } from '@/components/SebGate'
 
 function useCountdown(target: Date | null) {
@@ -226,7 +225,7 @@ export function InviteLandingPage() {
       const status = err?.response?.status
       if (status === 403) {
         const serverMsg: string = err?.response?.data?.error ?? ''
-        if (serverMsg.toLowerCase().includes('secure browser')) {
+        if (/secure browser|safe exam browser|\bseb\b/i.test(serverMsg)) {
           setSecureBrowserBlocked(true)
         } else {
           toast({ title: 'Network not allowed', description: serverMsg || 'This assessment is restricted to specific IP addresses. Contact the organizer if you believe this is an error.', variant: 'destructive' })
@@ -274,24 +273,16 @@ export function InviteLandingPage() {
     )
   }
 
-  // Safe Exam Browser gate (preferred lockdown). SEB's User-Agent contains "SEB".
+  // Lockdown gate — Safe Exam Browser is the single lockdown path (the legacy
+  // AssessIQ Electron browser has been retired). SEB's User-Agent contains "SEB".
   const inSeb = /\bSEB\b/.test(navigator.userAgent)
-  if (data?.test?.sebRequired && !inSeb) {
+  const lockdownRequired = !!(data?.test?.sebRequired || data?.test?.requireSecureBrowser)
+  if (secureBrowserBlocked || (lockdownRequired && !inSeb)) {
     return (
       <SebGate
         testTitle={data?.test?.title}
         tenantName={data?.test?.tenant?.name}
         token={token ?? ''}
-      />
-    )
-  }
-
-  const isSecureBrowser = !!(window as any).__SECURE_BROWSER__
-  if (secureBrowserBlocked || (data?.test?.requireSecureBrowser && !isSecureBrowser)) {
-    return (
-      <SecureBrowserGate
-        testTitle={data?.test?.title}
-        tenantName={data?.test?.tenant?.name}
       />
     )
   }

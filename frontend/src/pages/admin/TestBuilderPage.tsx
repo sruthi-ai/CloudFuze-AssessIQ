@@ -1593,10 +1593,6 @@ export function TestBuilderPage() {
                       <input type="checkbox" className="rounded" {...register('roomScanEnabled')} />
                       <span className="text-sm">Enable room scan (60-second video of environment)</span>
                     </label>
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <input type="checkbox" className="rounded" {...register('requireSecureBrowser')} />
-                      <span className="text-sm">Require Secure Browser (candidates must use the AssessIQ lockdown app — blocks other tabs, screen recording, remote desktop)</span>
-                    </label>
                     {testId ? (
                       <SebConfigEditor
                         testId={testId}

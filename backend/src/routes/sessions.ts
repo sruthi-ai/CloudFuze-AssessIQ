@@ -6,6 +6,7 @@ import { pipeline } from 'stream/promises'
 import { prisma } from '../db'
 import { sendError, sendSuccess } from '../utils/errors'
 import { scoreSession, computeSkillBands } from '../services/scoring'
+import { aiGradeSession } from '../services/aiGrading'
 import { verifySeb } from '../services/seb'
 import { sendSubmissionNotification } from '../utils/email'
 import { UPLOADS_DIR } from '../uploads'
@@ -691,6 +692,12 @@ export async function sessionRoutes(server: FastifyInstance) {
 
     const score = await scoreSession(sessionId)
 
+    // Auto-evaluate subjective answers (essays, short answers, spoken/communication
+    // responses) with the AI rubric grader, which re-scores the session when done.
+    // Fire-and-forget so the candidate's submit returns immediately; the final
+    // score + band report are updated in the background within seconds.
+    aiGradeSession(sessionId).catch(err => request.log.error({ err, sessionId }, 'auto AI-grade failed'))
+
     // Notify recruiters/admins asynchronously (fire-and-forget)
     notifyRecruitersOnSubmission(sessionId, score).catch(() => {})
     fireCompletionWebhook(sessionId, score).catch(() => {})
@@ -813,4 +820,6 @@ async function autoSubmit(sessionId: string) {
     await prisma.invitation.update({ where: { id: session.invitation.id }, data: { status: 'COMPLETED' } })
   }
   await scoreSession(sessionId)
+  // Auto-grade subjective answers on timeout too (background; re-scores when done).
+  aiGradeSession(sessionId).catch(() => {})
 }

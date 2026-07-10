@@ -86,8 +86,10 @@ export async function downloadRoutes(server: FastifyInstance) {
       }
     }
 
-    // Fallback: generate one on the fly
-    const startUrl = `${FRONTEND_URL}/take/${token}`
+    // Fallback: generate one on the fly. Start on the PIN entry page so the
+    // candidate logs in with their unique PIN inside SEB (the same config can be
+    // handed to a whole batch — the PIN is the per-candidate credential).
+    const startUrl = `${FRONTEND_URL}/secure-browser/start`
     const quitUrl = `${FRONTEND_URL}/take/${token}/done`
     return reply.send(buildSebConfig(startUrl, quitUrl))
   })

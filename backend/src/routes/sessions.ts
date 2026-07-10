@@ -5,7 +5,7 @@ import { extname, join } from 'path'
 import { pipeline } from 'stream/promises'
 import { prisma } from '../db'
 import { sendError, sendSuccess } from '../utils/errors'
-import { scoreSession, computeSkillBands } from '../services/scoring'
+import { scoreSession, computeSkillBands, recalculatePercentiles } from '../services/scoring'
 import { aiGradeSession } from '../services/aiGrading'
 import { verifySeb } from '../services/seb'
 import { sendSubmissionNotification } from '../utils/email'
@@ -65,8 +65,9 @@ const submitAnswerSchema = z.object({
 })
 
 export async function sessionRoutes(server: FastifyInstance) {
-  // GET /api/sessions/by-pin/:pin — resolve a PIN to an invite token (public, used by secure browser entry screen)
-  server.get('/by-pin/:pin', async (request, reply) => {
+  // GET /api/sessions/by-pin/:pin — resolve a PIN to an invite token (public, used by secure browser entry screen).
+  // PINs are login credentials, so rate-limit to blunt enumeration/brute-force.
+  server.get('/by-pin/:pin', { config: { rateLimit: { max: 10, timeWindow: '5 minutes' } } }, async (request, reply) => {
     const { pin } = request.params as { pin: string }
     const normalised = pin.toUpperCase().replace(/[^A-Z0-9]/g, '')
     const invitation = await prisma.invitation.findUnique({
@@ -698,6 +699,9 @@ export async function sessionRoutes(server: FastifyInstance) {
     // score + band report are updated in the background within seconds.
     aiGradeSession(sessionId).catch(err => request.log.error({ err, sessionId }, 'auto AI-grade failed'))
 
+    // Ranking recompute off the hot path (serialized per-test; safe under bursts)
+    recalculatePercentiles(session.testId).catch(() => {})
+
     // Notify recruiters/admins asynchronously (fire-and-forget)
     notifyRecruitersOnSubmission(sessionId, score).catch(() => {})
     fireCompletionWebhook(sessionId, score).catch(() => {})
@@ -822,4 +826,5 @@ async function autoSubmit(sessionId: string) {
   await scoreSession(sessionId)
   // Auto-grade subjective answers on timeout too (background; re-scores when done).
   aiGradeSession(sessionId).catch(() => {})
+  if (session?.testId) recalculatePercentiles(session.testId).catch(() => {})
 }

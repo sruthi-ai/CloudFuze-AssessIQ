@@ -171,27 +171,39 @@ export async function scoreSession(sessionId: string) {
     update: { totalPoints, earnedPoints, percentage, passed, sectionBreakdown },
   })
 
-  // Calculate percentile among all completed sessions for this test
-  await recalculatePercentiles(session.testId)
+  // NOTE: percentile recomputation is intentionally NOT done here. It rewrites
+  // every score row for the test, so running it inside the submit path caused
+  // deadlocks (and O(N²) writes) when many candidates of the same test submit at
+  // once. Callers trigger recalculatePercentiles() off the hot path instead.
 
   return score
 }
 
+// Recompute each candidate's percentile rank within a test. Serialized per-test
+// with a Postgres advisory lock so concurrent submits can't deadlock on the
+// shared score rows, and best-effort (never throws into the caller).
 export async function recalculatePercentiles(testId: string) {
-  const scores = await prisma.score.findMany({
-    where: { session: { testId, status: { in: ['SUBMITTED', 'TIMED_OUT'] } } },
-    select: { id: true, sessionId: true, percentage: true },
-    orderBy: { percentage: 'asc' },
-  })
+  try {
+    await prisma.$transaction(async tx => {
+      // Only one percentile pass per test runs at a time; others queue on this lock.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${testId})::bigint)`
 
-  if (scores.length === 0) return
+      const scores = await tx.score.findMany({
+        where: { session: { testId, status: { in: ['SUBMITTED', 'TIMED_OUT'] } } },
+        select: { id: true, percentage: true },
+        orderBy: [{ percentage: 'asc' }, { id: 'asc' }], // deterministic order
+      })
+      if (scores.length === 0) return
 
-  await prisma.$transaction(
-    scores.map((s, idx) => {
-      const percentile = Math.round((idx / scores.length) * 100)
-      return prisma.score.update({ where: { id: s.id }, data: { percentile } })
-    })
-  )
+      for (let idx = 0; idx < scores.length; idx++) {
+        const percentile = Math.round((idx / scores.length) * 100)
+        await tx.score.update({ where: { id: scores[idx].id }, data: { percentile } })
+      }
+    }, { timeout: 30000 })
+  } catch (err) {
+    // Ranking is best-effort — never let it fail a submission.
+    console.error(`recalculatePercentiles failed for test ${testId}:`, err)
+  }
 }
 
 // RANKING question scoring: award points based on how close the order is to the correct order

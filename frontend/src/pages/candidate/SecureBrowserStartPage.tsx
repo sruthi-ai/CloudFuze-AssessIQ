@@ -53,8 +53,8 @@ export function SecureBrowserStartPage() {
               <ShieldCheck className="w-10 h-10 text-white" />
             </div>
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">AssessIQ Secure Browser</h1>
-          <p className="text-gray-500 text-sm">Enter your invite link or PIN to begin your assessment</p>
+          <h1 className="text-2xl font-bold text-gray-900">Enter your exam PIN</h1>
+          <p className="text-gray-500 text-sm">Type the unique PIN from your invitation email to begin your assessment</p>
         </div>
 
         {/* Entry form */}

@@ -62,6 +62,10 @@ const server = Fastify({
   logger: {
     level: process.env.NODE_ENV === 'production' ? 'warn' : 'info',
   },
+  // Behind nginx (which sets X-Forwarded-For/-Proto). Without this, request.ip is
+  // the proxy's IP for EVERY candidate — so per-IP rate limiting would throttle all
+  // concurrent candidates as one bucket, and IP restrictions/audit IPs would be wrong.
+  trustProxy: true,
 })
 
 // No error-tracking service is wired in yet — these are the two places to add

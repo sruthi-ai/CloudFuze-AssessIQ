@@ -207,6 +207,7 @@ export async function candidateRoutes(server: FastifyInstance) {
           expiresAt,
           message,
           tenantSettings: (test.tenant.settings ?? undefined) as any,
+          sebRequired: test.sebRequired,
         })
 
         logAudit({ tenantId: request.user.tenantId, userId: request.user.sub, action: 'INVITATION_SENT', entityType: 'invitation', entityId: invitation.id, metadata: { candidateEmail: c.email, testTitle: test.title, testId } })

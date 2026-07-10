@@ -66,7 +66,8 @@ export function SebGate({ testTitle, tenantName, token }: { testTitle?: string; 
           <p className="text-sm font-medium text-gray-700">Step 2 — Open your exam:</p>
           <p className="text-sm text-gray-600">
             After installing SEB, click below to download this exam's configuration. Opening the downloaded
-            <strong> exam.seb</strong> file launches Safe Exam Browser locked to your test.
+            <strong> exam.seb</strong> file launches Safe Exam Browser, where you'll enter the
+            <strong> unique PIN</strong> from your invitation email to start your test.
           </p>
           <a href={configUrl} className="block" download>
             <Button className="w-full gap-2 bg-indigo-600 hover:bg-indigo-700">

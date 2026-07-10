@@ -94,6 +94,7 @@ function interpolate(template: string, vars: Record<string, string>): string {
 function buildInvitationHtml(params: {
   candidateName: string; testTitle: string; companyName: string
   url: string; expiry: string; pin?: string | null; message?: string; settings?: TenantEmailSettings
+  sebRequired?: boolean; sebConfigUrl?: string
 }): string {
   const s = params.settings
   const color = s?.emailBrandColor ?? '#6366f1'
@@ -113,13 +114,55 @@ function buildInvitationHtml(params: {
     ? `<p style="color:#6b7280;font-size:12px;border-top:1px solid #e5e7eb;margin-top:24px;padding-top:12px;">${s.emailSignature}</p>`
     : ''
 
+  // The PIN block — prominent, since the PIN is the candidate's login credential.
+  const pinLabel = params.sebRequired
+    ? 'Your exam PIN (enter this in Safe Exam Browser to log in):'
+    : 'If this assessment requires the secure browser, enter this PIN to log in:'
   const pinHtml = params.pin ? `
     <div style="margin:20px 0;padding:16px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;">
-      <p style="margin:0 0 8px;font-size:13px;color:#5b21b6;font-weight:600;">🔒 Secure Browser PIN</p>
-      <p style="margin:0 0 8px;font-size:13px;color:#6b7280;">If this assessment requires the AssessIQ Secure Browser, open the app and enter this PIN:</p>
+      <p style="margin:0 0 8px;font-size:13px;color:#5b21b6;font-weight:600;">🔒 ${params.sebRequired ? 'Exam PIN' : 'Secure Browser PIN'}</p>
+      <p style="margin:0 0 8px;font-size:13px;color:#6b7280;">${pinLabel}</p>
       <p style="margin:0;font-size:28px;font-weight:700;letter-spacing:6px;color:#1f2937;font-family:monospace;">${params.pin}</p>
     </div>` : ''
 
+  // ── Safe Exam Browser flow ────────────────────────────────────────────────
+  if (params.sebRequired) {
+    const requirements = [
+      'A laptop or desktop (Windows or macOS) — SEB does not run on phones or tablets',
+      'A working webcam and microphone (this is a proctored exam)',
+      'A quiet, well-lit room (and your photo ID if requested)',
+      'A stable internet connection',
+    ].map(r => `<li style="margin:2px 0;">${r}</li>`).join('')
+
+    return `
+      <div style="font-family:sans-serif;max-width:600px;margin:0 auto;color:#1f2937;">
+        <div style="background:${color};padding:20px 24px;border-radius:8px 8px 0 0;">
+          <h2 style="color:#fff;margin:0;font-size:20px;">You've been invited to take an assessment</h2>
+        </div>
+        <div style="padding:24px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px;">
+          ${headerHtml}
+          ${params.message ? `<p style="background:#f3f4f6;padding:12px;border-radius:6px;">${params.message}</p>` : ''}
+          <p>This exam runs in <strong>Safe Exam Browser (SEB)</strong>, a secure lockdown browser. Please complete these steps:</p>
+          <ol style="font-size:14px;color:#374151;padding-left:20px;">
+            <li style="margin:6px 0;"><strong>Install Safe Exam Browser</strong> (free, one-time) —
+              <a href="https://safeexambrowser.org/download_en.html" style="color:${color};">Download for Windows / macOS</a>.</li>
+            <li style="margin:6px 0;"><strong>Open your exam</strong> —
+              <a href="${params.sebConfigUrl ?? params.url}" style="color:${color};">download the exam configuration</a>,
+              then open the downloaded <strong>exam.seb</strong> file to launch SEB.</li>
+            <li style="margin:6px 0;"><strong>Log in with your PIN</strong> below when SEB opens.</li>
+          </ol>
+          ${pinHtml}
+          <p style="font-size:13px;color:#374151;margin-top:16px;"><strong>Before you begin, make sure you have:</strong></p>
+          <ul style="font-size:13px;color:#6b7280;padding-left:20px;margin-top:4px;">${requirements}</ul>
+          <p style="font-size:12px;color:#9ca3af;">This invitation expires on <strong>${params.expiry}</strong>.</p>
+          ${footerHtml}
+          ${signatureHtml}
+        </div>
+      </div>
+    `
+  }
+
+  // ── Standard (no secure browser) flow ─────────────────────────────────────
   return `
     <div style="font-family:sans-serif;max-width:600px;margin:0 auto;color:#1f2937;">
       <div style="background:${color};padding:20px 24px;border-radius:8px 8px 0 0;">
@@ -150,8 +193,10 @@ export async function sendInvitationEmail(params: {
   expiresAt: Date
   message?: string
   tenantSettings?: TenantEmailSettings
+  sebRequired?: boolean
 }) {
   const url = `${FRONTEND_URL}/take/${params.token}`
+  const sebConfigUrl = `${FRONTEND_URL}/api/downloads/seb/${params.token}`
   const expiry = params.expiresAt.toLocaleDateString('en-US', { dateStyle: 'long' })
 
   const html = buildInvitationHtml({
@@ -162,6 +207,8 @@ export async function sendInvitationEmail(params: {
     pin: params.pin,
     message: params.message,
     settings: params.tenantSettings,
+    sebRequired: params.sebRequired,
+    sebConfigUrl,
   })
 
   const vars = { candidateName: params.candidateName, testTitle: params.testTitle, companyName: params.companyName }

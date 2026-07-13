@@ -647,8 +647,8 @@ export function TestPage() {
           <div className="text-sm text-muted-foreground shrink-0">{answeredCount}/{totalQuestions}</div>
           <button
             onClick={() => setShowTools(s => !s)}
-            title="Help — scratch pad & calculator"
-            aria-label="Help — scratch pad and calculator"
+            title="Notes — scratch pad"
+            aria-label="Notes — scratch pad"
             className="shrink-0 p-1.5 rounded-full hover:bg-gray-100 text-gray-500 hover:text-gray-700"
           >
             <HelpCircle className="h-5 w-5" />
@@ -684,46 +684,24 @@ export function TestPage() {
         />
       )}
 
-      {/* Scratch pad + calculator panel */}
+      {/* Scratch pad (notes only) */}
       {showTools && (
         <div className="fixed bottom-32 right-4 w-72 bg-white rounded-xl shadow-2xl border z-40 overflow-hidden">
           <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b">
-            <div className="flex gap-1">
-              <button
-                onClick={() => setToolsTab('notes')}
-                className={cn('px-3 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1',
-                  toolsTab === 'notes' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'
-                )}
-              >
-                <FileText className="h-3 w-3" />Notes
-              </button>
-              <button
-                onClick={() => setToolsTab('calc')}
-                className={cn('px-3 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1',
-                  toolsTab === 'calc' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'
-                )}
-              >
-                <CalculatorIcon className="h-3 w-3" />Calc
-              </button>
-            </div>
+            <span className="px-1 py-1 text-xs font-medium text-gray-900 flex items-center gap-1">
+              <FileText className="h-3 w-3" />Notes
+            </span>
             <button onClick={() => setShowTools(false)} className="text-gray-400 hover:text-gray-600">
               <XIcon className="h-4 w-4" />
             </button>
           </div>
 
-          {toolsTab === 'notes' ? (
-            <textarea
-              className="w-full h-48 p-3 text-sm resize-none focus:outline-none font-mono"
-              placeholder="Scratch pad — notes are not saved"
-              value={scratchpad}
-              onChange={e => setScratchpad(e.target.value)}
-            />
-          ) : (
-            <Calculator
-              display={calcDisplay} prev={calcPrev} op={calcOp} justEval={calcJustEval}
-              setDisplay={setCalcDisplay} setPrev={setCalcPrev} setOp={setCalcOp} setJustEval={setCalcJustEval}
-            />
-          )}
+          <textarea
+            className="w-full h-48 p-3 text-sm resize-none focus:outline-none font-mono"
+            placeholder="Scratch pad — notes are not saved"
+            value={scratchpad}
+            onChange={e => setScratchpad(e.target.value)}
+          />
         </div>
       )}
 

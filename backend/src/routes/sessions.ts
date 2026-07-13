@@ -393,8 +393,9 @@ export async function sessionRoutes(server: FastifyInstance) {
       return sendError(reply, 410, 'Time has expired')
     }
 
-    // Safe Exam Browser enforcement (defense-in-depth: also verified at session start)
-    const lockdownRequired = session.test.sebRequired || session.test.requireSecureBrowser
+    // Safe Exam Browser enforcement (defense-in-depth: also verified at session start).
+    // Practice runs happen in a normal browser, so they are exempt from the lockdown.
+    const lockdownRequired = !session.isPractice && (session.test.sebRequired || session.test.requireSecureBrowser)
     const sebCheck = verifySeb(request, { ...session.test, sebRequired: lockdownRequired })
     if (!sebCheck.ok) {
       // Record the bypass attempt so it surfaces in the risk score / timeline.

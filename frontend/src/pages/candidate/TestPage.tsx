@@ -645,13 +645,7 @@ export function TestPage() {
             {timeRemaining !== null ? formatSeconds(timeRemaining) : '--:--'}
           </div>
           <div className="text-sm text-muted-foreground shrink-0">{answeredCount}/{totalQuestions}</div>
-          <button
-            onClick={() => setShowTools(s => !s)}
-            title="Scratch pad & calculator"
-            className="shrink-0 p-1.5 rounded hover:bg-gray-100 text-gray-500"
-          >
-            <FileText className="h-4 w-4" />
-          </button>
+          {/* Scratch pad & calculator intentionally disabled for this assessment. */}
         </div>
       </header>
 

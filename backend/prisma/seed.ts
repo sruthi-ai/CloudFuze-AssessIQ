@@ -6,21 +6,23 @@ const prisma = new PrismaClient()
 async function main() {
   console.log('Seeding database...')
 
-  const passwordHash = await bcrypt.hash('Password123!', 12)
+  // Real admin password is set via env (kept out of git); fallback only for fresh dev.
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'ChangeMe@2026'
+  const passwordHash = await bcrypt.hash(adminPassword, 12)
 
   const tenant = await prisma.tenant.upsert({
-    where: { slug: 'demo-company' },
+    where: { slug: 'neutara-assessments' },
     update: {},
     create: {
-      name: 'Demo Company',
-      slug: 'demo-company',
+      name: 'Neutara Technologies Pvt Ltd',
+      slug: 'neutara-assessments',
       plan: 'PRO',
       users: {
         create: {
-          email: 'admin@demo.com',
+          email: 'assessments@neutara.com',
           passwordHash,
-          firstName: 'Admin',
-          lastName: 'User',
+          firstName: 'Neutara',
+          lastName: 'Admin',
           role: 'COMPANY_ADMIN',
         },
       },
@@ -35,7 +37,7 @@ async function main() {
   })
 
   console.log(`Created tenant: ${tenant.name}`)
-  console.log(`Admin login: admin@demo.com / Password123! (tenant slug: demo-company)`)
+  console.log(`Admin login: assessments@neutara.com (tenant slug: neutara-assessments)`)
 
   // Seed some sample questions
   const bank = tenant.questionBanks[0]

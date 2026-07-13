@@ -645,7 +645,14 @@ export function TestPage() {
             {timeRemaining !== null ? formatSeconds(timeRemaining) : '--:--'}
           </div>
           <div className="text-sm text-muted-foreground shrink-0">{answeredCount}/{totalQuestions}</div>
-          {/* Scratch pad & calculator intentionally disabled for this assessment. */}
+          <button
+            onClick={() => setShowTools(s => !s)}
+            title="Help — scratch pad & calculator"
+            aria-label="Help — scratch pad and calculator"
+            className="shrink-0 p-1.5 rounded-full hover:bg-gray-100 text-gray-500 hover:text-gray-700"
+          >
+            <HelpCircle className="h-5 w-5" />
+          </button>
         </div>
       </header>
 

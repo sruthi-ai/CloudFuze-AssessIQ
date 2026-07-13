@@ -148,3 +148,43 @@ These are documented tradeoffs, not blockers, but decide on them consciously:
    host. Back up the `uploads_data` volume, or move to object storage, before treating
    candidate recordings as long-term records of record.
 4. **Rotate any secret that has ever been shared** — especially the OpenAI key.
+
+---
+
+## 7. Backups (do this before any real hiring round)
+
+Candidate responses (answers + audio recordings) are written to Postgres and the
+`uploads_data` volume as candidates go — durable across restarts, but on **one host**.
+`deploy/backup.sh` snapshots both, with retention, so a host/disk failure can't lose data.
+
+**Run a backup manually:**
+```bash
+cd /opt/neutaraassessment && bash deploy/backup.sh
+```
+Writes `backups/db/assessiq-<ts>.sql.gz` and `backups/uploads/uploads-<ts>.tar.gz`.
+
+**Schedule it daily (host crontab)** — 2 AM every day, keep 14 days:
+```bash
+crontab -e
+# add:
+0 2 * * * cd /opt/neutaraassessment && RETENTION_DAYS=14 bash deploy/backup.sh >> /var/log/assessiq-backup.log 2>&1
+```
+Run it **more often on assessment days** (e.g. hourly) — add a second cron line with
+`0 * * * *`, or just run `bash deploy/backup.sh` before/after each batch.
+
+**Copy backups off-host (recommended)** — set an rclone remote once, then backups sync
+automatically:
+```bash
+# after `rclone config` (S3/R2/Google Drive/etc.):
+0 2 * * * cd /opt/neutaraassessment && BACKUP_RCLONE_REMOTE=myremote:assessiq-backups bash deploy/backup.sh >> /var/log/assessiq-backup.log 2>&1
+```
+
+**Restore the database** (destructive — overwrites current data):
+```bash
+bash deploy/restore-db.sh backups/db/assessiq-<ts>.sql.gz
+```
+Restore uploaded media from a matching `uploads-<ts>.tar.gz` (command noted at the
+bottom of `restore-db.sh`).
+
+> This closes gap #3 above (local-disk uploads). Verify a restore on a throwaway
+> environment once, so you trust the backups before you depend on them.

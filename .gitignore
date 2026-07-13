@@ -7,3 +7,6 @@ dist/
 Thumbs.db
 .claude/
 uploads/
+
+# Backup artifacts (deploy/backup.sh)
+backups/

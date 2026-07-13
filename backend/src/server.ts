@@ -100,10 +100,15 @@ async function bootstrap() {
   })
   const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
     .split(',').map(s => s.trim()).filter(Boolean)
+  const isDev = process.env.NODE_ENV !== 'production'
+  const localhostOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/
   await server.register(cors, {
     origin: (origin, cb) => {
       if (!origin || allowedOrigins.includes(origin)) return cb(null, true)
-      cb(new Error(`Origin ${origin} not allowed`), false)
+      // In development, accept any localhost port (Vite may pick 5174/5180/… when 5173 is taken).
+      if (isDev && localhostOrigin.test(origin)) return cb(null, true)
+      // Reject cleanly (no CORS headers) instead of throwing a 500.
+      cb(null, false)
     },
     credentials: true,
   })

@@ -106,10 +106,12 @@ those SSL lines (the script only installs the template if the config doesn't exi
 
 ## 6. First login
 
-The seed step creates a demo tenant on first boot:
-`demo-company` / `admin@demo.com` / `Password123!`
+The seed step creates the default tenant on first boot:
+workspace `neutara-assessments` / `assessments@neutara.com`. The admin password
+is taken from the `SEED_ADMIN_PASSWORD` env var (never hardcode it) — set it in
+`.env` before first boot, or set it afterwards with `prisma/rebrand-tenant.ts`.
 
-**Change that password immediately** (or create your own tenant via `/register` and
+**Never commit real credentials.** (or create your own tenant via `/register` and
 delete the demo one) before real use.
 
 ---

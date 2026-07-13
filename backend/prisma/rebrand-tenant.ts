@@ -3,14 +3,16 @@
  * credential is committed. Run on any environment (e.g. inside the container).
  *
  *   docker exec \
- *     -e OLD_SLUG=demo-company \
- *     -e NEW_NAME="Neutara Technologies Pvt Ltd" \
- *     -e NEW_SLUG=neutara-assessments \
- *     -e OLD_EMAIL=admin@demo.com \
- *     -e NEW_EMAIL=assessments@neutara.com \
- *     -e NEW_PASSWORD='Neutara@2026' \
- *     -e NEW_LOGO_URL='https://…/neutara-logo.png' \
+ *     -e OLD_SLUG=<current-slug> \
+ *     -e NEW_NAME="<Your Company>" \
+ *     -e NEW_SLUG=<new-slug> \
+ *     -e OLD_EMAIL=<current-admin-email> \
+ *     -e NEW_EMAIL=<new-admin-email> \
+ *     -e NEW_PASSWORD='<new-strong-password>' \
+ *     -e NEW_LOGO_URL='https://…/logo.png' \
  *     -w /app neutaraassessment-backend-1 npx tsx prisma/rebrand-tenant.ts
+ *
+ * Do NOT paste real credentials into this file — pass them only via the shell.
  *
  * Only the vars you set are applied; the rest are left unchanged. Idempotent.
  */

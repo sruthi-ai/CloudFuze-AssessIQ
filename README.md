@@ -57,9 +57,9 @@ npm run dev
 
 | Field | Value |
 |-------|-------|
-| Workspace | `demo-company` |
-| Email | `admin@demo.com` |
-| Password | `Password123!` |
+| Workspace | `neutara-assessments` |
+| Email | `assessments@neutara.com` |
+| Password | _set on first run via `SEED_ADMIN_PASSWORD` (see `backend/prisma/seed.ts`)_ |
 
 ## API Overview
 

@@ -45,12 +45,16 @@ export function AdminLayout() {
       )}>
         {/* Logo */}
         <div className="flex items-center gap-2 px-4 h-16 border-b border-gray-100">
-          <div className="bg-primary rounded-lg p-1.5">
-            <Brain className="h-5 w-5 text-white" />
-          </div>
+          {tenant?.logoUrl ? (
+            <img src={tenant.logoUrl} alt={tenant.name ?? 'Company'} className="h-8 w-8 object-contain rounded" />
+          ) : (
+            <div className="bg-primary rounded-lg p-1.5">
+              <Brain className="h-5 w-5 text-white" />
+            </div>
+          )}
           <div className="min-w-0">
-            <p className="font-bold text-gray-900 leading-tight">NeutaraAssessments</p>
-            <p className="text-xs text-muted-foreground truncate">{tenant?.name}</p>
+            <p className="font-bold text-gray-900 leading-tight truncate">{tenant?.name ?? 'NeutaraAssessments'}</p>
+            <p className="text-xs text-muted-foreground truncate">Assessment Platform</p>
           </div>
           <button className="ml-auto lg:hidden" onClick={() => setSidebarOpen(false)}>
             <X className="h-5 w-5 text-gray-500" />

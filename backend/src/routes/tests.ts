@@ -213,6 +213,8 @@ export async function testRoutes(server: FastifyInstance) {
             order: s.order,
             timeLimit: s.timeLimit,
             pickCount: s.pickCount ?? undefined,
+            skill: s.skill ?? undefined,               // carry over skill tag (band report)
+            audioAssetId: s.audioAssetId ?? undefined, // carry over Listening audio
             testId: newTest.id,
             testQuestions: {
               create: s.testQuestions.map(tq => ({

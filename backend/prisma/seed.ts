@@ -14,7 +14,7 @@ async function main() {
     where: { slug: 'neutara-assessments' },
     update: {},
     create: {
-      name: 'Neutara Assessments',
+      name: 'Neutara Technologies Pvt Ltd',
       slug: 'neutara-assessments',
       plan: 'PRO',
       users: {

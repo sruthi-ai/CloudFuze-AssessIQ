@@ -235,16 +235,22 @@ export interface SkillBandResult {
 }
 
 export function computeSkillBands(session: {
-  test: { sections: Array<{ skill: string | null; testQuestions: Array<{ points: number | null; questionId: string; question: { points: number } }> }> }
+  questionOrder?: unknown
+  test: { sections: Array<{ id: string; skill: string | null; testQuestions: Array<{ points: number | null; questionId: string; question: { points: number } }> }> }
   answers: Array<{ questionId: string; pointsEarned: number | null; gradingStatus: string }>
 }): SkillBandResult {
   const answerByQ = new Map(session.answers.map(a => [a.questionId, a]))
   const acc = new Map<string, { earned: number; total: number; pending: number }>()
+  // For pooled sections (pickCount), only the questions actually served to this
+  // candidate count — otherwise bands are diluted by the unserved pool.
+  const storedOrder = session.questionOrder as Record<string, string[]> | null
 
   for (const section of session.test.sections) {
     if (!section.skill) continue
+    const allowedIds = storedOrder?.[section.id] ? new Set(storedOrder[section.id]) : null
     const bucket = acc.get(section.skill) ?? { earned: 0, total: 0, pending: 0 }
     for (const tq of section.testQuestions) {
+      if (allowedIds && !allowedIds.has(tq.questionId)) continue // not served to this candidate
       const max = tq.points ?? tq.question.points
       bucket.total += max
       const ans = answerByQ.get(tq.questionId)

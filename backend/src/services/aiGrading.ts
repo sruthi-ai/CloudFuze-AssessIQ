@@ -275,7 +275,7 @@ async function gradeSpeaking(
   const filePath = join(UPLOADS_DIR, audioUrl.replace(/^\/uploads\//, ''))
   const transcription = await client.audio.transcriptions.create({
     file: createReadStream(filePath) as any,
-    model: 'gpt-4o-transcribe',
+    model: process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe', // cheaper; override via env
   }, { timeout: REQUEST_TIMEOUT_MS })
   const transcript = (transcription as any).text ?? ''
 

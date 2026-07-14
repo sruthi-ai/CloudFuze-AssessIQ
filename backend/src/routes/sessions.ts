@@ -682,7 +682,7 @@ export async function sessionRoutes(server: FastifyInstance) {
 
     const session = await prisma.session.findFirst({
       where: { id: sessionId, invitation: { token } },
-      include: { invitation: true },
+      include: { invitation: true, test: { select: { aiGradingEnabled: true } } },
     })
     if (!session) return sendError(reply, 404, 'Session not found')
     if (session.status === 'SUBMITTED') return sendError(reply, 409, 'Already submitted')
@@ -698,7 +698,10 @@ export async function sessionRoutes(server: FastifyInstance) {
     // responses) with the AI rubric grader, which re-scores the session when done.
     // Fire-and-forget so the candidate's submit returns immediately; the final
     // score + band report are updated in the background within seconds.
-    aiGradeSession(sessionId).catch(err => request.log.error({ err, sessionId }, 'auto AI-grade failed'))
+    // Only when this test has AI grading enabled (otherwise left for human grading).
+    if (session.test.aiGradingEnabled) {
+      aiGradeSession(sessionId).catch(err => request.log.error({ err, sessionId }, 'auto AI-grade failed'))
+    }
 
     // Ranking recompute off the hot path (serialized per-test; safe under bursts)
     recalculatePercentiles(session.testId).catch(() => {})
@@ -820,12 +823,12 @@ async function fireCompletionWebhook(
 
 async function autoSubmit(sessionId: string) {
   await prisma.session.update({ where: { id: sessionId }, data: { status: 'TIMED_OUT', submittedAt: new Date() } })
-  const session = await prisma.session.findUnique({ where: { id: sessionId }, include: { invitation: true } })
+  const session = await prisma.session.findUnique({ where: { id: sessionId }, include: { invitation: true, test: { select: { aiGradingEnabled: true } } } })
   if (session?.invitation) {
     await prisma.invitation.update({ where: { id: session.invitation.id }, data: { status: 'COMPLETED' } })
   }
   await scoreSession(sessionId)
-  // Auto-grade subjective answers on timeout too (background; re-scores when done).
-  aiGradeSession(sessionId).catch(() => {})
+  // Auto-grade subjective answers on timeout too (background; re-scores when done) — if enabled.
+  if (session?.test?.aiGradingEnabled) aiGradeSession(sessionId).catch(() => {})
   if (session?.testId) recalculatePercentiles(session.testId).catch(() => {})
 }

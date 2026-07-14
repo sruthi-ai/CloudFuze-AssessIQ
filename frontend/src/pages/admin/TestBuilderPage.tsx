@@ -35,6 +35,7 @@ const testSchema = z.object({
   shuffleOptions: z.boolean().optional(),
   showResults: z.boolean().optional(),
   proctoring: z.boolean().optional(),
+  aiGradingEnabled: z.boolean().optional(),
   violationThreshold: z.coerce.number().int().min(5).max(50).optional(),
   roomScanEnabled: z.boolean().optional(),
   roomScanIntervalMins: z.coerce.number().int().min(1).max(120).optional(),
@@ -1157,6 +1158,7 @@ export function TestBuilderPage() {
     defaultValues: {
       duration: 60,
       proctoring: true,
+      aiGradingEnabled: true,
       violationThreshold: 10,
       roomScanEnabled: false,
       requireSecureBrowser: false,
@@ -1184,6 +1186,7 @@ export function TestBuilderPage() {
         shuffleOptions: testData.shuffleOptions,
         showResults: testData.showResults,
         proctoring: testData.proctoring,
+        aiGradingEnabled: testData.aiGradingEnabled ?? true,
         violationThreshold: testData.violationThreshold ?? 10,
         roomScanEnabled: testData.roomScanEnabled ?? false,
         roomScanIntervalMins: testData.roomScanIntervalMins ?? 20,
@@ -1576,6 +1579,7 @@ export function TestBuilderPage() {
                   { name: 'shuffleQuestions', label: 'Shuffle question order' },
                   { name: 'shuffleOptions', label: 'Shuffle MCQ options' },
                   { name: 'showResults', label: 'Show results to candidate after submission' },
+                  { name: 'aiGradingEnabled', label: 'Auto AI-grade spoken/written answers (uses OpenAI — turn off for MCQ-only tests to avoid any AI cost)' },
                   { name: 'proctoring', label: 'Enable proctoring (webcam, tab monitoring)' },
                 ] as const).map(opt => (
                   <label key={opt.name} className="flex items-center gap-3 cursor-pointer">

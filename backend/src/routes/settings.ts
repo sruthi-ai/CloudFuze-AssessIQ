@@ -8,7 +8,8 @@ import { sendViaGraph } from '../utils/email'
 const settingsSchema = z.object({
   // Company profile
   name: z.string().min(1).optional(),
-  logoUrl: z.string().url().optional().nullable(),
+  // Accept a full URL or an app-relative path (e.g. /neutara-logo.png bundled in public/)
+  logoUrl: z.string().refine(v => /^https?:\/\//.test(v) || v.startsWith('/'), 'Must be a URL or a /path').optional().nullable(),
   primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
 
   // Email settings stored in settings Json column

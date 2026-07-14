@@ -123,7 +123,10 @@ async function bootstrap() {
     console.warn('⚠  WARNING: REDIS_URL not set — rate limiting will use in-memory state (resets on restart, inconsistent across multiple instances)')
   }
   await server.register(rateLimit, {
-    max: 100,
+    // Authenticated staff (Bearer token) do legitimate bulk work — inviting/resending
+    // to 100+ candidates — so give them plenty of headroom. Anonymous traffic stays
+    // tight (and login/PIN endpoints have their own stricter per-route limits).
+    max: (req: { headers: Record<string, unknown> }) => (req.headers['authorization'] ? 1000 : 100),
     timeWindow: '1 minute',
     redis: rateLimitRedis,
     skipOnError: true,

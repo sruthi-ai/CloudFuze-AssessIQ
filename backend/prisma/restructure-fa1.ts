@@ -13,12 +13,13 @@ import { PrismaClient } from '@prisma/client'
 const prisma = new PrismaClient()
 
 async function main() {
+  const title = process.env.TEST_TITLE || 'Freshers Assessment 1'
   const test = await prisma.test.findFirst({
-    where: { title: 'Freshers Assessment 1' },
+    where: { title },
     include: { sections: true },
     orderBy: { createdAt: 'asc' },
   })
-  if (!test) throw new Error('Test "Freshers Assessment 1" not found.')
+  if (!test) throw new Error(`Test "${title}" not found.`)
 
   const byTitle = (t: string) => test.sections.find(s => s.title === t)
 

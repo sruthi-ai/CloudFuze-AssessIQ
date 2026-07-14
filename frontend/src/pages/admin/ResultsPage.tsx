@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { BarChart3, Search, Loader2, ChevronRight, Trash2, Download, ArrowUpDown } from 'lucide-react'
+import { BarChart3, Search, Loader2, ChevronRight, Trash2, Download, ArrowUpDown, Sparkles } from 'lucide-react'
 import { toast } from '@/hooks/use-toast'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -66,6 +66,16 @@ export function ResultsPage() {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['results'] }); setConfirmDelete(null) },
   })
 
+  const gradeAllMutation = useMutation({
+    mutationFn: () => api.post('/results/ai-grade-all').then(r => r.data),
+    onSuccess: (res: any) => {
+      const d = res?.data ?? res
+      queryClient.invalidateQueries({ queryKey: ['results'] })
+      toast({ title: 'AI grading complete', description: `Graded ${d?.answersGraded ?? 0} answer(s) across ${d?.sessionsProcessed ?? 0} session(s)${d?.answersFailed ? `, ${d.answersFailed} failed` : ''}.` })
+    },
+    onError: () => toast({ title: 'AI grading failed', description: 'Check that OpenAI credits/key are set on the server.', variant: 'destructive' }),
+  })
+
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortKey(key); setSortDir('desc') }
@@ -115,6 +125,14 @@ export function ResultsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Results</h1>
           <p className="text-muted-foreground">All candidate assessment sessions</p>
         </div>
+        <div className="flex items-center gap-2">
+        {sessions.length > 0 && (
+          <Button variant="outline" size="sm" disabled={gradeAllMutation.isPending} onClick={() => gradeAllMutation.mutate()}
+            title="Run AI grading on every submitted session with answers still pending (spoken/written). Uses OpenAI credits.">
+            {gradeAllMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
+            Grade all pending
+          </Button>
+        )}
         {sessions.length > 0 && (
           <Button variant="outline" size="sm" disabled={exporting} onClick={async () => {
             setExporting(true)
@@ -131,6 +149,7 @@ export function ResultsPage() {
             Export CSV
           </Button>
         )}
+        </div>
       </div>
 
       {/* Filters */}

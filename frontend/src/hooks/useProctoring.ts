@@ -198,14 +198,12 @@ export function useProctoring({ sessionId, token, enabled, candidateName, onViol
           // at least 1.5× louder than ambient noise floor (SNR check).
           const isSpeech = speech > 0.065 && speech > noise * 1.5
 
-          // Rolling window: fire if speech detected in 3 of the last 5 checks (~15s window).
-          // A brief pause between sentences no longer resets the counter.
-          speechWindow.push(isSpeech)
-          if (speechWindow.length > 5) speechWindow.shift()
-          if (speechWindow.filter(Boolean).length >= 3) {
-            pushEventRef.current('NOISE_DETECTED', `Voice detected during test (speech band: ${(speech * 100).toFixed(0)}%, noise floor: ${(noise * 100).toFixed(0)}%)`)
-            speechWindow.length = 0
-          }
+          // Background-noise / voice detection is DISABLED: it produced too many
+          // false positives from ambient room noise, cluttered proctoring reports,
+          // and its frequent event POSTs added avoidable request load. Noise never
+          // counted toward disqualification anyway. Left here (no-op) so it can be
+          // re-enabled later with better tuning if needed.
+          void isSpeech; void speechWindow
         }, 3000)
       } catch { /* mic permission denied or unsupported — noise detection just stays off */ }
     }

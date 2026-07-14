@@ -61,7 +61,7 @@ const EVENT_RISK: Record<string, { weight: number; maxPts: number }> = {
   WINDOW_BLUR:              { weight:  6, maxPts: 18  }, // window lost focus (can be accidental)
   SHORTCUT_BLOCKED:         { weight:  3, maxPts: 15  }, // used a blocked keyboard shortcut
   RIGHT_CLICK:              { weight:  2, maxPts:  6  }, // right-click (often accidental)
-  NOISE_DETECTED:           { weight:  2, maxPts:  8  }, // background noise (common)
+  NOISE_DETECTED:           { weight:  0, maxPts:  0  }, // background noise — not a violation (too many false positives)
   SCREENSHOT_TAKEN:         { weight:  0, maxPts:  0  }, // system monitoring — not a violation
   CUSTOM:                   { weight:  5, maxPts: 20  },
 }

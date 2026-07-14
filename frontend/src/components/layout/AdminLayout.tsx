@@ -107,11 +107,13 @@ export function AdminLayout() {
           <button onClick={() => setSidebarOpen(true)}>
             <Menu className="h-5 w-5 text-gray-600" />
           </button>
-          <div className="flex items-center gap-2">
-            <div className="bg-primary rounded-md p-1">
-              <Brain className="h-4 w-4 text-white" />
-            </div>
-            <span className="font-bold text-gray-900">NeutaraAssessments</span>
+          <div className="flex items-center gap-2 min-w-0">
+            {tenant?.logoUrl ? (
+              <img src={tenant.logoUrl} alt={tenant.name ?? 'Company'} className="h-8 w-8 object-contain rounded" />
+            ) : (
+              <div className="bg-primary rounded-md p-1"><Brain className="h-4 w-4 text-white" /></div>
+            )}
+            <span className="font-bold text-gray-900 truncate">{tenant?.name ?? 'NeutaraAssessments'}</span>
           </div>
         </header>
 

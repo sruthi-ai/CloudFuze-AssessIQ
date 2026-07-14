@@ -67,7 +67,7 @@ export function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 to-white p-4">
       <div className="w-full max-w-md space-y-6">
         <div className="flex items-center justify-center">
-          <img src="/neutara-logo.png" alt="Neutara Technologies" className="h-16 object-contain" />
+          <img src="/neutara-logo.png" alt="Neutara Technologies" className="h-24 w-auto object-contain" />
         </div>
 
         <Card>

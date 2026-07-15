@@ -35,6 +35,7 @@ const testSchema = z.object({
   shuffleOptions: z.boolean().optional(),
   showResults: z.boolean().optional(),
   proctoring: z.boolean().optional(),
+  enforceViolations: z.boolean().optional(),
   aiGradingEnabled: z.boolean().optional(),
   violationThreshold: z.coerce.number().int().min(5).max(50).optional(),
   roomScanEnabled: z.boolean().optional(),
@@ -1158,6 +1159,7 @@ export function TestBuilderPage() {
     defaultValues: {
       duration: 60,
       proctoring: true,
+      enforceViolations: true,
       aiGradingEnabled: true,
       violationThreshold: 10,
       roomScanEnabled: false,
@@ -1186,6 +1188,7 @@ export function TestBuilderPage() {
         shuffleOptions: testData.shuffleOptions,
         showResults: testData.showResults,
         proctoring: testData.proctoring,
+        enforceViolations: testData.enforceViolations ?? true,
         aiGradingEnabled: testData.aiGradingEnabled ?? true,
         violationThreshold: testData.violationThreshold ?? 10,
         roomScanEnabled: testData.roomScanEnabled ?? false,
@@ -1589,6 +1592,10 @@ export function TestBuilderPage() {
                 ))}
                 {proctoringOn && (
                   <div className="ml-6 pl-3 border-l-2 border-gray-200 space-y-3 pt-1">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input type="checkbox" className="rounded" {...register('enforceViolations')} />
+                      <span className="text-sm">Enforce violations (uncheck for <b>advisory mode</b>: camera still records, but no on-screen warnings, no auto-disqualify, not flagged as malpractice)</span>
+                    </label>
                     <label className="flex items-center gap-3 cursor-pointer">
                       <input type="checkbox" className="rounded" {...register('requireIdVerification')} />
                       <span className="text-sm">Require ID verification (candidate photographs themselves with photo ID before starting)</span>

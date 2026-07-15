@@ -82,7 +82,9 @@ export function TestPage() {
   const showMidScanRef = useRef(false)
 
   const proctoring = !isPractice && inviteData?.test?.proctoring !== false
-  const roomScanEnabled = proctoring && inviteData?.test?.roomScanEnabled === true
+  // Advisory mode: camera/monitoring still records, but nothing is flagged or penalised.
+  const enforceViolations = inviteData?.test?.enforceViolations !== false
+  const roomScanEnabled = proctoring && enforceViolations && inviteData?.test?.roomScanEnabled === true
   const roomScanIntervalMins: number = inviteData?.test?.roomScanIntervalMins ?? 20
   const brandColor = inviteData?.test?.tenant?.primaryColor ?? '#6366f1'
 
@@ -128,11 +130,13 @@ export function TestPage() {
   const API_BASE = import.meta.env.VITE_API_URL ?? ''
 
   const handleTabReturn = useCallback(() => {
+    if (!enforceViolations) return  // advisory mode: don't warn/flag
     setTabWarningCount(c => c + 1)
     setShowTabWarning(true)
-  }, [])
+  }, [enforceViolations])
 
   const handleViolation = useCallback((type: string, _count: number) => {
+    if (!enforceViolations) return  // advisory mode: recorded server-side, but never flagged/penalised to the candidate
     const score = VIOLATION_SCORE[type] ?? 0
     if (score === 0) return
     violationScoreRef.current += score
@@ -173,7 +177,7 @@ export function TestPage() {
         body: JSON.stringify({ token, reason: `Auto-disqualified: violation score ${violationScoreRef.current} exceeded threshold ${disqualifyThresholdRef.current}` }),
       }).catch(() => {})
     }
-  }, [disqualified, sessionId, token, API_BASE, roomScanEnabled])
+  }, [disqualified, sessionId, token, API_BASE, roomScanEnabled, enforceViolations])
 
   const {
     pushEvent, pushImmediate, stopProctoring, requestFullscreen, flush,
@@ -745,6 +749,7 @@ export function TestPage() {
           {/* Right: IDE */}
           <div className="flex-1 min-w-0 overflow-hidden bg-gray-950 flex flex-col">
             <QuestionInput
+              key={currentQ.questionId}
               question={currentQ.question}
               answer={currentAnswer}
               onChange={updateAnswer}
@@ -837,6 +842,7 @@ export function TestPage() {
                 )}
 
                 <QuestionInput
+                  key={currentQ.questionId}
                   question={currentQ.question}
                   answer={currentAnswer}
                   onChange={updateAnswer}

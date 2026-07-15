@@ -265,7 +265,7 @@ export async function candidateRoutes(server: FastifyInstance) {
 
   // POST /api/candidates/invitations/:invitationId/retake — save history, reset, re-send
   server.post('/invitations/:invitationId/retake', { preHandler: canEdit }, async (request, reply) => {
-    const MAX_ATTEMPTS = 3
+    const MAX_ATTEMPTS = Number(process.env.MAX_RETAKE_ATTEMPTS) || 5
     const { invitationId } = request.params as { invitationId: string }
     const body = request.body as { expiresInDays?: number }
     const invitation = await prisma.invitation.findFirst({

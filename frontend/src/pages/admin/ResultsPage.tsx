@@ -223,7 +223,11 @@ export function ResultsPage() {
                       ) : '—'}
                     </td>
                     <td className="px-4 py-3">
-                      <Badge variant={risk.variant} className="text-xs">{risk.label}</Badge>
+                      {s.test?.enforceViolations === false ? (
+                        <Badge variant="secondary" className="text-xs" title="Advisory proctoring: monitored/recorded but violations not enforced">Monitoring only</Badge>
+                      ) : (
+                        <Badge variant={risk.variant} className="text-xs">{risk.label}</Badge>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground text-xs">
                       {s.submittedAt ? formatDateTime(s.submittedAt) : '—'}

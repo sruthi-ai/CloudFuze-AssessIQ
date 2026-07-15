@@ -193,6 +193,7 @@ export async function sessionRoutes(server: FastifyInstance) {
         instructions: invitation.test.instructions,
         duration: invitation.test.duration,
         proctoring: invitation.test.proctoring,
+        enforceViolations: invitation.test.enforceViolations,
         violationThreshold: invitation.test.violationThreshold,
         roomScanEnabled: invitation.test.roomScanEnabled,
         roomScanIntervalMins: invitation.test.roomScanIntervalMins,

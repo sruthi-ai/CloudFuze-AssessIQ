@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useLocation, useNavigate } from 'react-router-dom'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Clock, ChevronLeft, ChevronRight, Send, Loader2,
   Camera, CameraOff, Maximize, Video, FileText, CalculatorIcon, X as XIcon, XCircle, AlertTriangle,
@@ -49,8 +49,6 @@ export function TestPage() {
 
   const [testStep, setTestStep] = useState<'instructions' | 'setup' | 'room-scan' | 'test'>(isPractice ? 'test' : 'instructions')
   const [honorAccepted, setHonorAccepted] = useState(false)
-  const [showMidScan, setShowMidScan] = useState(false)
-  useEffect(() => { showMidScanRef.current = showMidScan }, [showMidScan])
   const [currentSectionIdx, setCurrentSectionIdx] = useState(0)
   const [currentQIdx, setCurrentQIdx] = useState(0)
   const [answers, setAnswers] = useState<Record<string, AnswerState>>({})
@@ -58,8 +56,6 @@ export function TestPage() {
   const [questionStartTime, setQuestionStartTime] = useState(Date.now())
   const [submitting, setSubmitting] = useState(false)
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
-  const [tabWarningCount, setTabWarningCount] = useState(0)
-  const [showTabWarning, setShowTabWarning] = useState(false)
   const [sectionTimeRemaining, setSectionTimeRemaining] = useState<number | null>(null)
   const [showTools, setShowTools] = useState(false)
   const [toolsTab, setToolsTab] = useState<'notes' | 'calc'>('notes')
@@ -69,7 +65,6 @@ export function TestPage() {
   const [calcOp, setCalcOp] = useState<string | null>(null)
   const [calcJustEval, setCalcJustEval] = useState(false)
   const [flaggedQuestions, setFlaggedQuestions] = useState<Set<string>>(new Set())
-  const [violationBanner, setViolationBanner] = useState<{ msg: string; critical: boolean } | null>(null)
   const [showReviewModal, setShowReviewModal] = useState(false)
   const [showConcernPanel, setShowConcernPanel] = useState(false)
   const [concernMsg, setConcernMsg] = useState('')
@@ -78,13 +73,10 @@ export function TestPage() {
   const timerWarned5Ref = useRef(false)
   const timerWarned1Ref = useRef(false)
   const sectionExpireRef = useRef<(() => void) | null>(null)
-  const lastRoomScanTimeRef = useRef(0)
-  const showMidScanRef = useRef(false)
 
   const proctoring = !isPractice && inviteData?.test?.proctoring !== false
-  // Advisory mode: camera/monitoring still records, but nothing is flagged or penalised.
-  const enforceViolations = inviteData?.test?.enforceViolations !== false
-  const roomScanEnabled = proctoring && enforceViolations && inviteData?.test?.roomScanEnabled === true
+  // Pre-test room scan only (mid-test scans went with violation enforcement).
+  const roomScanEnabled = proctoring && inviteData?.test?.roomScanEnabled === true
   const roomScanIntervalMins: number = inviteData?.test?.roomScanIntervalMins ?? 20
   const brandColor = inviteData?.test?.tenant?.primaryColor ?? '#6366f1'
 
@@ -104,73 +96,13 @@ export function TestPage() {
       ? `${inviteData.candidate.firstName ?? ''} ${inviteData.candidate.lastName ?? ''}`.trim()
       : undefined)
 
-  const [disqualified, setDisqualified] = useState(false)
-
-  // Proctoring is snapshot + cheap DOM signals only (no face/pose/phone ML) —
-  // scores accordingly. PHONE_DETECTED here just means "opened on a mobile/touch
-  // device" (a user-agent check), not an in-frame camera detection.
-  const VIOLATION_SCORE: Partial<Record<string, number>> = {
-    PHONE_DETECTED: 3,
-    TAB_SWITCH: 2,
-    FULLSCREEN_EXIT: 1,
-    COPY_PASTE: 1,
-    DEVTOOLS_OPEN: 1,
-  }
-  const disqualifyThresholdRef = useRef(10)
-  useEffect(() => {
-    if (inviteData?.test?.violationThreshold) {
-      disqualifyThresholdRef.current = inviteData.test.violationThreshold
-    }
-  }, [inviteData?.test?.violationThreshold])
-  const violationScoreRef = useRef(0)
-  const API_BASE = import.meta.env.VITE_API_URL ?? ''
-
-  const handleTabReturn = useCallback(() => {
-    if (!enforceViolations) return  // advisory mode: don't warn/flag
-    setTabWarningCount(c => c + 1)
-    setShowTabWarning(true)
-  }, [enforceViolations])
-
-  const handleViolation = useCallback((type: string, _count: number) => {
-    if (!enforceViolations) return  // advisory mode: recorded server-side, but never flagged/penalised to the candidate
-    const score = VIOLATION_SCORE[type] ?? 0
-    if (score === 0) return
-    violationScoreRef.current += score
-
-    // Show inline violation banner
-    const VIOLATION_BANNER_MSG: Partial<Record<string, { msg: string; critical: boolean }>> = {
-      TAB_SWITCH: { msg: 'Tab switching detected — this has been recorded', critical: false },
-      FULLSCREEN_EXIT: { msg: 'Fullscreen exit detected — please return to fullscreen', critical: false },
-      COPY_PASTE: { msg: 'Copy/paste detected — this has been recorded', critical: false },
-      DEVTOOLS_OPEN: { msg: 'Developer tools detected — this has been recorded', critical: true },
-    }
-    const bannerInfo = VIOLATION_BANNER_MSG[type]
-    if (bannerInfo) {
-      setViolationBanner(bannerInfo)
-      setTimeout(() => setViolationBanner(null), 6000)
-    }
-
-    // Trigger mid-test room scan at half the disqualification threshold (10-minute cooldown)
-    if (
-      roomScanEnabled &&
-      !showMidScanRef.current &&
-      violationScoreRef.current >= Math.floor(disqualifyThresholdRef.current / 2) &&
-      Date.now() - lastRoomScanTimeRef.current >= 10 * 60 * 1000
-    ) {
-      lastRoomScanTimeRef.current = Date.now()
-      setShowMidScan(true)
-    }
-
-    if (violationScoreRef.current >= disqualifyThresholdRef.current && !disqualified) {
-      setDisqualified(true)
-      // Fire-and-forget: mark session as disqualified on backend
-      fetch(`${API_BASE}/api/proctoring/${sessionId}/disqualify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, reason: `Auto-disqualified: violation score ${violationScoreRef.current} exceeded threshold ${disqualifyThresholdRef.current}` }),
-      }).catch(() => {})
-    }
-  }, [disqualified, sessionId, token, API_BASE, roomScanEnabled, enforceViolations])
+  // Violation ENFORCEMENT is fully removed from the candidate experience (by
+  // explicit product decision after live batches): no banners, no tab-switch
+  // warning modal, no violation scoring, no auto-disqualify, no mid-test room
+  // scan triggers. Proctoring = webcam with periodic snapshots + silent
+  // background event logs for the record. Candidates are never interrupted.
+  const handleTabReturn = useCallback(() => { /* no candidate-facing reaction */ }, [])
+  const handleViolation = useCallback((_type: string, _count: number) => { /* silent — events still logged server-side */ }, [])
 
   const {
     pushEvent, pushImmediate, stopProctoring, requestFullscreen, flush,
@@ -294,14 +226,6 @@ export function TestPage() {
     }
   }, [proctoring, roomScanEnabled, requestFullscreen])
 
-  // Mid-test room scan interval
-  useEffect(() => {
-    if (testStep !== 'test' || !roomScanEnabled) return
-    const ms = roomScanIntervalMins * 60 * 1000
-    const t = setInterval(() => setShowMidScan(true), ms)
-    return () => clearInterval(t)
-  }, [testStep, roomScanEnabled, roomScanIntervalMins])
-
   const saveMutation = useMutation({
     mutationFn: ({ questionId, answer }: { questionId: string; answer: AnswerState }) =>
       api.post(`/sessions/${sessionId}/answers`, {
@@ -347,6 +271,19 @@ export function TestPage() {
   const currentQ = questions[currentQIdx]
   const currentAnswer = currentQ ? (answers[currentQ.questionId] ?? emptyAnswer()) : emptyAnswer()
 
+  // Clamp out-of-range indices. A pending auto-advance firing with a stale closure
+  // (e.g. a recording's 800ms advance landing after the user already navigated)
+  // could push the index past the section's last question — rendering an empty
+  // "Question 2 of 1" card with no way to answer anything.
+  useEffect(() => {
+    if (sections.length > 0 && currentSectionIdx > sections.length - 1) {
+      setCurrentSectionIdx(sections.length - 1)
+      setCurrentQIdx(0)
+    } else if (questions.length > 0 && currentQIdx > questions.length - 1) {
+      setCurrentQIdx(questions.length - 1)
+    }
+  }, [currentQIdx, currentSectionIdx, questions.length, sections.length])
+
   const saveCurrentAndGo = useCallback(async (action: () => void) => {
     if (currentQ) {
       const elapsed = Math.round((Date.now() - questionStartTime) / 1000)
@@ -386,15 +323,26 @@ export function TestPage() {
     submitMutation.mutate()
   }
 
+  // Explicit-questionId write — used by async flows (audio upload resolution) so a
+  // late-resolving upload can never be attributed to whatever question happens to
+  // be current by then.
+  const updateAnswerFor = (questionId: string, patch: Partial<AnswerState>) => {
+    setAnswers(prev => ({ ...prev, [questionId]: { ...(prev[questionId] ?? emptyAnswer()), ...patch } }))
+  }
   const updateAnswer = (patch: Partial<AnswerState>) => {
     if (!currentQ) return
-    setAnswers(prev => ({ ...prev, [currentQ.questionId]: { ...(prev[currentQ.questionId] ?? emptyAnswer()), ...patch } }))
+    updateAnswerFor(currentQ.questionId, patch)
   }
 
   const totalQuestions = sections.reduce((a: number, s: any) => a + s.questions.length, 0)
-  const answeredCount = Object.values(answers).filter(a =>
-    a.selectedOptions.length > 0 || a.responseText || a.numericValue || a.codeSubmission || a.fileUrl || a.audioUrl
-  ).length
+  // "Answered" = saved on the server (q.answered — survives revisits, reloads and a
+  // second tab) OR answered locally this page load (covers the gap until the next
+  // 30s questions refetch). Local-only state previously made recorded answers look
+  // lost when navigating back, left the sidebar unmarked, and kept the counter at 0.
+  const isAnsweredLocal = (a?: AnswerState) =>
+    !!a && (a.selectedOptions.length > 0 || !!a.responseText || !!a.numericValue || !!a.codeSubmission || !!a.fileUrl || !!a.audioUrl)
+  const answeredCount = sections.reduce(
+    (n: number, s: any) => n + s.questions.filter((q: any) => q.answered || isAnsweredLocal(answers[q.questionId])).length, 0)
   const isLastQuestion = currentSectionIdx === sections.length - 1 && currentQIdx === questions.length - 1
   const isCodingQ = currentQ?.question.type === 'CODE'
 
@@ -467,8 +415,9 @@ export function TestPage() {
                   <div key={s.id} className="flex items-center justify-between py-2.5 text-sm">
                     <span className="font-medium text-gray-700">{i + 1}. {s.title}</span>
                     <div className="flex gap-4 text-muted-foreground text-xs">
-                      <span>{s.questions?.length ?? 0} questions</span>
-                      {s.timeLimit && <span>{s.timeLimit} min</span>}
+                      <span>{s.questions?.length ?? 0} question{(s.questions?.length ?? 0) === 1 ? '' : 's'}</span>
+                      {/* timeLimit is stored in SECONDS — was rendered raw as "600 min" */}
+                      {s.timeLimit && <span>{Math.round(s.timeLimit / 60)} min</span>}
                     </div>
                   </div>
                 ))}
@@ -554,66 +503,6 @@ export function TestPage() {
   // ── Test UI ────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      {disqualified && (
-        <div className="fixed inset-0 z-[100] bg-gray-950 flex items-center justify-center p-6">
-          <div className="text-center text-white max-w-md space-y-5">
-            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-red-900/50 border-2 border-red-500 mx-auto">
-              <XCircle className="h-10 w-10 text-red-400" />
-            </div>
-            <h1 className="text-3xl font-bold tracking-tight">Session Terminated</h1>
-            <p className="text-gray-300 text-base leading-relaxed">
-              This assessment session has been automatically terminated due to repeated proctoring violations.
-            </p>
-            <div className="rounded-lg bg-red-950/60 border border-red-800 p-4 text-sm text-red-200 space-y-2 text-left">
-              <p className="font-semibold text-red-100">Violations exceeded the allowed threshold.</p>
-              <p>All activity during this session has been recorded and flagged for review by the assessment organizer.</p>
-              <p>If you believe this is an error, contact your assessment administrator immediately.</p>
-            </div>
-            <p className="text-xs text-gray-500">Session ID: {sessionId}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Mid-test room scan overlay */}
-      {showMidScan && (
-        <div className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center p-4">
-          <RoomScanModal
-            sessionId={sessionId}
-            token={token ?? ''}
-            trigger="MID_TEST"
-            onComplete={() => setShowMidScan(false)}
-          />
-        </div>
-      )}
-
-      {/* Tab-return warning overlay */}
-      {showTabWarning && (
-        <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 text-center space-y-4">
-            <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mx-auto">
-              <span className="text-3xl">⚠️</span>
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-gray-900">Tab switch detected</h2>
-              <p className="text-sm text-muted-foreground mt-1">
-                You left this tab. This violation has been recorded and a screenshot was taken.
-              </p>
-              {tabWarningCount >= 2 && (
-                <p className="text-sm text-red-600 font-medium mt-2">
-                  {tabWarningCount} violations logged. Repeated switching may result in disqualification.
-                </p>
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Violation #{tabWarningCount} — your proctor will be notified.
-            </p>
-            <Button className="w-full" onClick={() => { setShowTabWarning(false); requestFullscreen() }}>
-              I understand — continue test
-            </Button>
-          </div>
-        </div>
-      )}
-
       {/* Header */}
       <header className="bg-white border-b sticky top-0 z-10" style={{ borderTopColor: brandColor, borderTopWidth: 3, borderTopStyle: 'solid' }}>
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center gap-3">
@@ -657,22 +546,6 @@ export function TestPage() {
           </button>
         </div>
       </header>
-
-      {/* Violation banner */}
-      {violationBanner && (
-        <div className={cn(
-          'flex items-center gap-3 px-4 py-2.5 text-sm font-medium animate-in slide-in-from-top-1',
-          violationBanner.critical
-            ? 'bg-red-600 text-white'
-            : 'bg-amber-50 text-amber-900 border-b border-amber-200'
-        )}>
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          <span className="flex-1">{violationBanner.msg}</span>
-          <button onClick={() => setViolationBanner(null)} className="opacity-70 hover:opacity-100">
-            <XIcon className="h-4 w-4" />
-          </button>
-        </div>
-      )}
 
       {/* Webcam PIP */}
       {proctoring && (
@@ -751,8 +624,10 @@ export function TestPage() {
               question={currentQ.question}
               answer={currentAnswer}
               onChange={updateAnswer}
+              onAnswerSaved={updateAnswerFor}
               sessionId={sessionId}
               token={token ?? ''}
+              serverAnswered={currentQ.answered}
             />
           </div>
         </div>
@@ -844,9 +719,11 @@ export function TestPage() {
                   question={currentQ.question}
                   answer={currentAnswer}
                   onChange={updateAnswer}
+                  onAnswerSaved={updateAnswerFor}
                   sessionId={sessionId}
                   token={token ?? ''}
                   onAutoAdvance={goToNext}
+                  serverAnswered={currentQ.answered}
                 />
               </CardContent>
             </Card>
@@ -975,7 +852,7 @@ export function TestPage() {
         )}
 
         {/* Raise concern floating button */}
-        {testStep === 'test' && !disqualified && (
+        {testStep === 'test' && (
           <button
             onClick={() => setShowConcernPanel(s => !s)}
             className="fixed bottom-4 left-4 flex items-center gap-1.5 bg-white border shadow-md rounded-full px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 z-40 transition-colors"
@@ -1002,8 +879,8 @@ export function TestPage() {
                 )}
                 <div className="grid grid-cols-5 gap-1">
                   {section.questions.map((q: any, qIdx: number) => {
-                    const ans = answers[q.questionId]
-                    const answered = ans && (ans.selectedOptions.length > 0 || ans.responseText || ans.numericValue || ans.codeSubmission || ans.fileUrl || ans.audioUrl)
+                    // Server flag OR local state — see isAnsweredLocal above.
+                    const answered = q.answered || isAnsweredLocal(answers[q.questionId])
                     const isCurrent = sIdx === currentSectionIdx && qIdx === currentQIdx
                     const isFlagged = flaggedQuestions.has(q.questionId)
                     return (
@@ -1177,9 +1054,11 @@ function AudioPrompt({ audioAsset, sessionId, token }: {
   )
 }
 
-function QuestionInput({ question, answer, onChange, sessionId, token, onAutoAdvance }: {
+function QuestionInput({ question, answer, onChange, onAnswerSaved, sessionId, token, onAutoAdvance, serverAnswered }: {
   question: any; answer: AnswerState; onChange: (p: Partial<AnswerState>) => void
+  onAnswerSaved?: (questionId: string, p: Partial<AnswerState>) => void  // explicit-id write for async saves
   sessionId: string; token: string; onAutoAdvance?: () => void
+  serverAnswered?: boolean  // the server's persisted "answered" flag — survives revisits/reloads
 }) {
   switch (question.type) {
     case 'MCQ_SINGLE':
@@ -1271,10 +1150,11 @@ function QuestionInput({ question, answer, onChange, sessionId, token, onAutoAdv
     case 'AUDIO_RECORDING':
       return (
         <AudioRecordingQuestion
-          answer={answer} onChange={onChange}
+          answer={answer} onChange={onChange} onAnswerSaved={onAnswerSaved}
           questionId={question.id} sessionId={sessionId} token={token}
           prepSeconds={question.prepSeconds ?? 0} speakSeconds={question.speakSeconds ?? null}
           onAutoAdvance={onAutoAdvance}
+          serverAnswered={serverAnswered}
         />
       )
 
@@ -1291,19 +1171,44 @@ function QuestionInput({ question, answer, onChange, sessionId, token, onAutoAdv
   }
 }
 
-function AudioRecordingQuestion({ answer, onChange, questionId, sessionId, token, prepSeconds, speakSeconds, onAutoAdvance }: {
+function AudioRecordingQuestion({ answer, onChange, onAnswerSaved, questionId, sessionId, token, prepSeconds, speakSeconds, onAutoAdvance, serverAnswered }: {
   answer: AnswerState; onChange: (p: Partial<AnswerState>) => void
+  onAnswerSaved?: (questionId: string, p: Partial<AnswerState>) => void
   questionId: string; sessionId: string; token: string
   prepSeconds: number; speakSeconds: number | null; onAutoAdvance?: () => void
+  serverAnswered?: boolean
 }) {
   const { permission, recording, uploading, previewUrl, start, stopAndUpload } = useAudioRecorder()
+  const queryClient = useQueryClient()
   const timed = typeof speakSeconds === 'number' && speakSeconds > 0
+  // Local audioUrl (this page load) OR the server's persisted flag. Without the
+  // server flag, revisiting an already-recorded question showed the prep screen
+  // again — candidates believed their recording was lost (it wasn't) and timed
+  // questions would even re-enter the auto-record cascade, overwriting the
+  // earlier answer with silence.
+  const alreadyAnswered = !!answer.audioUrl || !!serverAnswered
 
   const handleStop = async () => {
     const audioUrl = await stopAndUpload(sessionId, token, questionId)
-    if (audioUrl) onChange({ audioUrl })
+    if (audioUrl) {
+      // Explicit-id write: an upload that resolves after navigation must still be
+      // credited to THIS question, never whichever is current by then.
+      if (onAnswerSaved) onAnswerSaved(questionId, { audioUrl })
+      else onChange({ audioUrl })
+      // Pull the server's answered flags right away (instead of the 30s poll) so
+      // every "is this answered?" surface agrees immediately after an upload.
+      queryClient.invalidateQueries({ queryKey: ['test-questions', sessionId] })
+    }
     return audioUrl
   }
+
+  // Salvage on unmount: if the candidate navigates away mid-recording (Next/Previous/
+  // section auto-advance), stop the recorder and upload what was captured. Previously
+  // the recorder was silently abandoned — the take was never uploaded (answer lost)
+  // and the mic was left running.
+  const salvageRef = useRef<() => void>(() => {})
+  salvageRef.current = () => { if (recording) void handleStop() }
+  useEffect(() => () => salvageRef.current(), [])
 
   // ── Timed Speaking mode: prep countdown → auto-record → speak countdown → auto-stop → advance ──
   if (timed) {
@@ -1314,7 +1219,7 @@ function AudioRecordingQuestion({ answer, onChange, questionId, sessionId, token
         uploading={uploading}
         permission={permission}
         previewUrl={previewUrl}
-        alreadyAnswered={!!answer.audioUrl}
+        alreadyAnswered={alreadyAnswered}
         start={start}
         stopAndUpload={handleStop}
         onAutoAdvance={onAutoAdvance}
@@ -1329,7 +1234,7 @@ function AudioRecordingQuestion({ answer, onChange, questionId, sessionId, token
         {!recording ? (
           <Button type="button" variant="outline" onClick={start} disabled={uploading}>
             <Mic className="h-4 w-4 mr-2" />
-            {answer.audioUrl ? 'Re-record answer' : 'Start recording'}
+            {alreadyAnswered ? 'Re-record answer' : 'Start recording'}
           </Button>
         ) : (
           <Button type="button" variant="destructive" onClick={handleStop}>
@@ -1346,7 +1251,7 @@ function AudioRecordingQuestion({ answer, onChange, questionId, sessionId, token
       {previewUrl && !recording && (
         <audio controls src={previewUrl} className="w-full" />
       )}
-      {answer.audioUrl && !previewUrl && (
+      {alreadyAnswered && !previewUrl && !recording && (
         <p className="text-xs text-green-700">Your recorded answer has been saved.</p>
       )}
     </div>
@@ -1367,6 +1272,14 @@ function TimedSpeaking({ prepSeconds, speakSeconds, uploading, permission, previ
   const startedRef = useRef(false)
   const finishedRef = useRef(false)
 
+  // React to a LATE-arriving answered flag (the refetch can land moments after
+  // mount). Without this, phase was decided once at mount — a revisited question
+  // whose flag arrived a beat later stayed in 'prep', auto-started recording, and
+  // cascaded through the whole section re-recording saved answers with silence.
+  useEffect(() => {
+    if (alreadyAnswered && phase === 'prep' && !startedRef.current) setPhase('done')
+  }, [alreadyAnswered, phase])
+
   const beginRecording = useCallback(async () => {
     if (startedRef.current) return
     startedRef.current = true
@@ -1375,26 +1288,40 @@ function TimedSpeaking({ prepSeconds, speakSeconds, uploading, permission, previ
     await start()
   }, [start, speakSeconds])
 
+  // Track the pending advance so it can be cancelled if this question unmounts
+  // first (candidate already navigated) — a stale advance firing later walked the
+  // index past the end of the section.
+  const advanceTimerRef = useRef<number | null>(null)
+  useEffect(() => () => { if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current) }, [])
+
   const finish = useCallback(async () => {
     if (finishedRef.current) return
     finishedRef.current = true
     await stopAndUpload()
     setPhase('done')
     // brief pause so the candidate sees "recorded", then advance
-    setTimeout(() => onAutoAdvance?.(), 800)
+    advanceTimerRef.current = window.setTimeout(() => onAutoAdvance?.(), 800)
   }, [stopAndUpload, onAutoAdvance])
 
-  // Single countdown driving both phases
+  // Single countdown driving both phases.
+  // beginRecording/finish are kept in refs and OUT of the effect deps: their
+  // identities change on every parent re-render (the exam clock re-renders the
+  // page every second), and with them in the deps this effect tore down and
+  // rescheduled its own 1s tick each time — a timer-vs-timer race that could
+  // freeze the prep countdown at 0:10 until the candidate clicked manually.
+  const beginRecordingRef = useRef(beginRecording)
+  const finishRef = useRef(finish)
+  useEffect(() => { beginRecordingRef.current = beginRecording; finishRef.current = finish })
   useEffect(() => {
     if (phase === 'done') return
     if (remaining <= 0) {
-      if (phase === 'prep') { beginRecording() }
-      else if (phase === 'recording') { finish() }
+      if (phase === 'prep') { beginRecordingRef.current() }
+      else if (phase === 'recording') { finishRef.current() }
       return
     }
     const t = setTimeout(() => setRemaining(r => r - 1), 1000)
     return () => clearTimeout(t)
-  }, [remaining, phase, beginRecording, finish])
+  }, [remaining, phase])
 
   if (phase === 'done') {
     return (

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useParams } from 'react-router-dom'
-import { CheckCircle, Brain, FlaskConical } from 'lucide-react'
+import { CheckCircle, FlaskConical } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { api } from '@/lib/api'
 
@@ -42,9 +42,8 @@ export function SubmittedPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-white flex items-center justify-center p-4">
       <div className="w-full max-w-md space-y-6 text-center">
-        <div className="flex items-center justify-center gap-2 mb-4">
-          <div className="bg-primary rounded-lg p-1.5"><Brain className="h-5 w-5 text-white" /></div>
-          <span className="font-semibold text-gray-700">NeutaraAssessments</span>
+        <div className="flex items-center justify-center mb-4">
+          <img src="/neutara-logo.png" alt="Neutara Technologies" className="h-16 w-auto object-contain" />
         </div>
 
         {isPractice && (

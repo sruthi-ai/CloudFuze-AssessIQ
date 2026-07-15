@@ -19,6 +19,9 @@ jobs:
           port: ${{ secrets.DEPLOY_PORT }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
+          # Full build + healthcheck + potential rollback takes ~8-12 min; the 10m
+          # default killed the script MID-ROLLBACK ("Run Command Timeout").
+          command_timeout: 30m
           script: |
             cd /opt/neutaraassessment
             git pull origin main || { echo "git pull failed — aborting deploy, NOT rebuilding on stale code"; exit 1; }

@@ -12,10 +12,13 @@ async function main() {
 
   const tenant = await prisma.tenant.upsert({
     where: { slug: 'neutara-assessments' },
-    update: {},
+    // Keep the logo pinned on re-seeds too — candidate pages fall back to a
+    // letter avatar when logoUrl is unset. The file ships in frontend/public.
+    update: { logoUrl: '/neutara-logo.png' },
     create: {
       name: 'Neutara Technologies Pvt Ltd',
       slug: 'neutara-assessments',
+      logoUrl: '/neutara-logo.png',
       plan: 'PRO',
       users: {
         create: {

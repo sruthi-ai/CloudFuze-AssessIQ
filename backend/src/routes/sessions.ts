@@ -206,11 +206,15 @@ export async function sessionRoutes(server: FastifyInstance) {
         allowedIPs: invitation.test.allowedIPs as string[] | null,
         openAt: invitation.test.openAt,
         closeAt: invitation.test.closeAt,
-        questionCount: invitation.test.sections.reduce((a, s) => a + s.testQuestions.length, 0),
+        // Candidates are told how many questions they'll actually be SERVED — for a
+        // pooled section (pickCount) that's the pool draw, not the bank size. Showing
+        // "20q" for a 1-of-20 JAM pool told candidates the wrong exam shape.
+        questionCount: invitation.test.sections.reduce(
+          (a, s) => a + (s.pickCount && s.pickCount < s.testQuestions.length ? s.pickCount : s.testQuestions.length), 0),
         sections: invitation.test.sections.map(s => ({
           id: s.id,
           title: s.title,
-          questionCount: s.testQuestions.length,
+          questionCount: s.pickCount && s.pickCount < s.testQuestions.length ? s.pickCount : s.testQuestions.length,
         })),
         tenant: invitation.test.tenant,
       },

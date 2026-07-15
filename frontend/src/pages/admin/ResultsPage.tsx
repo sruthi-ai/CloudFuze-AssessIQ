@@ -22,13 +22,20 @@ function riskLevel(eventCount: number): { label: string; variant: any } {
   return { label: 'High', variant: 'destructive' }
 }
 
+// Round to a clean number: whole if integer, else one decimal (AI-graded audio
+// can yield fractional marks like 3.5).
+function fmtMarks(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1)
+}
+
 function exportCSV(sessions: any[]) {
-  const headers = ['Candidate', 'Email', 'Test', 'Status', 'Score %', 'Pass', 'Submitted', 'Malpractice']
+  const headers = ['Candidate', 'Email', 'Test', 'Status', 'Score', 'Score %', 'Pass', 'Submitted', 'Malpractice']
   const rows = sessions.map(s => [
     `${s.candidate.firstName} ${s.candidate.lastName}`,
     s.candidate.email,
     s.test.title,
     s.status,
+    s.score ? `${fmtMarks(s.score.earnedPoints)}/${fmtMarks(s.score.totalPoints)}` : '',
     s.score ? Math.round(s.score.percentage) : '',
     s.score?.passed === true ? 'Pass' : s.score?.passed === false ? 'Fail' : '',
     s.submittedAt ? new Date(s.submittedAt).toLocaleString() : '',
@@ -213,7 +220,8 @@ export function ResultsPage() {
                     <td className="px-4 py-3">
                       {s.score ? (
                         <div className="flex items-center gap-2">
-                          <span className="font-semibold">{Math.round(s.score.percentage)}%</span>
+                          <span className="font-semibold">{fmtMarks(s.score.earnedPoints)}/{fmtMarks(s.score.totalPoints)}</span>
+                          <span className="text-xs text-muted-foreground">({Math.round(s.score.percentage)}%)</span>
                           {s.score.passed !== null && (
                             <Badge variant={s.score.passed ? 'success' : 'destructive'} className="text-xs">
                               {s.score.passed ? 'Pass' : 'Fail'}

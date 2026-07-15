@@ -50,6 +50,24 @@ info "Pre-flight passed."
 cd "$APP_DIR"
 COMPOSE=(docker compose -f docker-compose.prod.yml --env-file "$ENV_FILE")
 
+# ── DB password pre-check (fail SAFE before touching the live site) ────────────
+# The Postgres volume's password is fixed at first init and never changes when
+# DB_PASSWORD in .env.docker is edited. If they drift, the new backend can't
+# authenticate (P1000) and a normal deploy would tear down the running site
+# before discovering that. Verify the .env.docker password actually works against
+# the ALREADY-RUNNING database first; if not, abort and leave the live site
+# completely untouched. (Skipped on a first-ever deploy when db isn't up yet.)
+if docker ps --format '{{.Names}}' | grep -q '^neutaraassessment-db-1$'; then
+    DB_PW=$(grep -E '^[[:space:]]*DB_PASSWORD=' "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'" | tr -d '\r')
+    if docker exec -e PGPASSWORD="$DB_PW" neutaraassessment-db-1 psql -h 127.0.0.1 -U assessiq -d assessiq -c 'SELECT 1' >/dev/null 2>&1; then
+        info "DB password matches the running database."
+    else
+        die "DB_PASSWORD in .env.docker does NOT match the running database — ABORTING before touching the live site (it stays up).\n\nTo make the database accept the .env.docker password, run:\n  docker exec neutaraassessment-db-1 psql -U assessiq -d assessiq -c \"ALTER USER assessiq WITH PASSWORD '<value-of-DB_PASSWORD-in-.env.docker>';\"\nthen redeploy."
+    fi
+else
+    warn "db container not running yet (first deploy?) — skipping DB password pre-check."
+fi
+
 # ── Build new images (does not touch running containers) ──────────────────────
 section "Build"
 

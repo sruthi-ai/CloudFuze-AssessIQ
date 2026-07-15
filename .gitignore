@@ -2,6 +2,11 @@ node_modules/
 dist/
 .env
 .env.local
+# Real secret-bearing env files — NEVER commit. Only *.example variants are tracked.
+.env.docker
+.env.docker.bak
+.env.prod
+.env.*.local
 *.log
 .DS_Store
 Thumbs.db

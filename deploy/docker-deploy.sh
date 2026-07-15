@@ -77,7 +77,12 @@ section "Build"
 # fails its healthcheck. Best-effort — fails harmlessly on a first-ever deploy.
 docker tag "${BACKEND_IMAGE}:latest" "${BACKEND_IMAGE}:rollback" 2>/dev/null || true
 
-"${COMPOSE[@]}" build --no-cache
+# Layer-cached build (was --no-cache, which reinstalled every npm dependency for
+# both images on EVERY deploy — ~4-5 min of pure waste). Docker's cache reuses the
+# npm-install layers unless package.json changes, and always rebuilds the app
+# layers because `git pull` changes the source (COPY . .) — so latest code still
+# ships, just ~4x faster.
+"${COMPOSE[@]}" build
 info "Images built."
 
 # ── Bring up db/redis if not already running (first deploy, or they were down) ─

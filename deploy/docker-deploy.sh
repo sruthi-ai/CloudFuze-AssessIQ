@@ -6,6 +6,12 @@
 #
 # Usage (re-deploy after git pull):
 #   git pull && bash deploy/docker-deploy.sh
+#
+# Safety: builds the new backend/frontend images and swaps ONLY those two
+# containers in (db/redis are left untouched if unchanged — no reason to ever
+# restart them on a code deploy). If the new backend fails its healthcheck,
+# this automatically rolls back to the previous working image and exits
+# non-zero, instead of leaving a broken deploy live with no working container.
 # ─────────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail
@@ -14,6 +20,8 @@ APP_DIR="/opt/neutaraassessment"
 NGINX_CONF="/etc/nginx/sites-available/neutaraassessment"
 NGINX_LINK="/etc/nginx/sites-enabled/neutaraassessment"
 ENV_FILE="$APP_DIR/.env.docker"
+BACKEND_IMAGE="neutaraassessment-backend"
+BACKEND_CONTAINER="neutaraassessment-backend-1"
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
 info()    { echo -e "${GREEN}[INFO]${NC}  $*"; }
@@ -39,29 +47,82 @@ done
 
 info "Pre-flight passed."
 
-# ── Build and start containers ────────────────────────────────────────────────
-section "Docker build & up"
 cd "$APP_DIR"
+COMPOSE=(docker compose -f docker-compose.prod.yml --env-file "$ENV_FILE")
 
-# Pull latest base images
-docker compose -f docker-compose.prod.yml --env-file .env.docker pull db 2>/dev/null || true
+# ── Build new images (does not touch running containers) ──────────────────────
+section "Build"
 
-# Build app images — always rebuild to pick up latest git changes
-docker compose -f docker-compose.prod.yml --env-file "$ENV_FILE" build --no-cache
+"${COMPOSE[@]}" pull db 2>/dev/null || true
 
-# Start / recreate containers (force-recreate ensures new image is used)
-docker compose -f docker-compose.prod.yml --env-file "$ENV_FILE" up -d --remove-orphans --force-recreate
+# Snapshot the current backend image so we can roll back to it if the new one
+# fails its healthcheck. Best-effort — fails harmlessly on a first-ever deploy.
+docker tag "${BACKEND_IMAGE}:latest" "${BACKEND_IMAGE}:rollback" 2>/dev/null || true
 
-info "Containers started."
+"${COMPOSE[@]}" build --no-cache
+info "Images built."
 
-# ── Wait for frontend container to be healthy ─────────────────────────────────
+# ── Bring up db/redis if not already running (first deploy, or they were down) ─
+"${COMPOSE[@]}" up -d --no-recreate db redis
+
+# ── Swap backend + frontend only — db/redis are never touched by a code deploy ─
+section "Deploy"
+"${COMPOSE[@]}" up -d --no-deps --remove-orphans backend frontend || true
+
+# ── Health check the NEW backend, with automatic rollback on failure ─────────
 section "Health check"
+
+# Covers the container's own start_period (60s) + retries*interval (5*15s=75s)
+# plus buffer, so we don't roll back a backend that's still legitimately booting.
+HEALTHY=false
+for i in $(seq 1 60); do
+    STATUS=$(docker inspect --format='{{.State.Health.Status}}' "$BACKEND_CONTAINER" 2>/dev/null || echo "missing")
+    if [[ "$STATUS" == "healthy" ]]; then
+        HEALTHY=true
+        break
+    fi
+    if [[ "$STATUS" == "missing" ]]; then
+        warn "Backend container not found (crashed on start?) — checking logs early."
+        break
+    fi
+    sleep 3
+done
+
+if [[ "$HEALTHY" != "true" ]]; then
+    warn "New backend failed to become healthy. Recent logs:"
+    docker logs --tail 60 "$BACKEND_CONTAINER" 2>&1 || true
+
+    if docker image inspect "${BACKEND_IMAGE}:rollback" &>/dev/null; then
+        warn "Rolling back to the previous working backend image..."
+        docker tag "${BACKEND_IMAGE}:rollback" "${BACKEND_IMAGE}:latest"
+        "${COMPOSE[@]}" up -d --no-deps --force-recreate backend frontend || true
+
+        ROLLED_BACK_HEALTHY=false
+        for i in $(seq 1 60); do
+            STATUS=$(docker inspect --format='{{.State.Health.Status}}' "$BACKEND_CONTAINER" 2>/dev/null || echo "missing")
+            [[ "$STATUS" == "healthy" ]] && { ROLLED_BACK_HEALTHY=true; break; }
+            sleep 3
+        done
+
+        if [[ "$ROLLED_BACK_HEALTHY" == "true" ]]; then
+            die "Deploy ABORTED and ROLLED BACK — site is back on the previous working version. Fix the new code and redeploy."
+        else
+            die "Deploy ABORTED. Rollback ALSO failed to become healthy — manual intervention required NOW. Check: docker logs $BACKEND_CONTAINER"
+        fi
+    else
+        die "Deploy FAILED and no previous image was available to roll back to (first deploy?). Site may be down — manual intervention required. Check: docker logs $BACKEND_CONTAINER"
+    fi
+fi
+
+info "New backend is healthy."
+
+# ── Wait for the app to respond end-to-end through nginx (in the frontend container) ─
 for i in $(seq 1 30); do
     if curl -sf http://localhost:8088 &>/dev/null; then
         info "App is up at http://localhost:8088"
         break
     fi
-    [[ $i -eq 30 ]] && die "App did not respond after 30s. Check logs: docker compose -f docker-compose.prod.yml logs"
+    [[ $i -eq 30 ]] && die "Backend is healthy but the app did not respond via nginx after 30s. Check: docker compose -f docker-compose.prod.yml logs frontend"
     sleep 1
 done
 
@@ -106,3 +167,4 @@ echo "  docker compose -f $APP_DIR/docker-compose.prod.yml logs -f"
 echo ""
 echo -e "${YELLOW}Re-deploy after git pull:${NC}"
 echo "  cd $APP_DIR && git pull && bash deploy/docker-deploy.sh"
+echo ""

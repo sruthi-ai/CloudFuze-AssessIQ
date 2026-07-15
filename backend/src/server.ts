@@ -69,15 +69,23 @@ const server = Fastify({
 })
 
 // No error-tracking service is wired in yet — these are the two places to add
-// Sentry.captureException(err) (or similar) once a DSN is configured. Until then,
-// this at minimum guarantees a crash is logged with a clear FATAL marker instead
-// of silently vanishing (e.g. from an unhandled promise in a background cron job).
+// Sentry.captureException(err) (or similar) once a DSN is configured.
+//
+// unhandledRejection does NOT exit: every fire-and-forget call in this codebase
+// (AI grading, percentile recalc, webhooks, notifications) already has its own
+// .catch(), so a rejection reaching here is an isolated, non-critical bug in
+// background work — not a corrupted process. Exiting on it took the ENTIRE
+// backend down for every one of 150-200 concurrent candidates over one stray
+// promise, which is a strictly worse outcome than logging and continuing to
+// serve everyone else. This was a real incident, not a hypothetical.
+process.on('unhandledRejection', (reason) => {
+  server.log.error({ err: reason }, 'unhandledRejection (non-fatal — logged and ignored)')
+})
+// uncaughtException (a true synchronous throw that escaped everywhere, not just
+// a rejected promise) can leave the process in an undefined state, so this one
+// still exits per Node's own guidance — restart: unless-stopped brings it back.
 process.on('uncaughtException', (err) => {
   server.log.fatal({ err }, 'FATAL: uncaughtException')
-  process.exit(1)
-})
-process.on('unhandledRejection', (reason) => {
-  server.log.fatal({ err: reason }, 'FATAL: unhandledRejection')
   process.exit(1)
 })
 

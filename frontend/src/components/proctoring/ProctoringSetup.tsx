@@ -9,14 +9,13 @@ interface ProctoringSetupProps {
   attachVideoRef: (el: HTMLVideoElement | null) => void
   webcamActive: boolean
   micActive: boolean
-  faceCount: number
   onReady: () => void
   onRequestScreenShare?: () => Promise<boolean>
   screenSharePermission?: 'idle' | 'granted' | 'denied'
 }
 
 export function ProctoringSetup({
-  attachVideoRef, webcamActive, micActive, faceCount, onReady,
+  attachVideoRef, webcamActive, micActive, onReady,
   onRequestScreenShare, screenSharePermission = 'idle',
 }: ProctoringSetupProps) {
   const [canStart, setCanStart] = useState(false)
@@ -62,11 +61,6 @@ export function ProctoringSetup({
   }, [webcamActive])
 
   const lightingOk = !webcamActive || brightness >= MIN_BRIGHTNESS
-
-  const faceStatus: 'loading' | 'ok' | 'none' | 'multiple' =
-    !webcamActive || faceCount === -1 ? 'loading' :
-    faceCount === 0 ? 'none' :
-    faceCount === 1 ? 'ok' : 'multiple'
 
   const handleScreenShare = async () => {
     if (!onRequestScreenShare) return
@@ -127,25 +121,11 @@ export function ProctoringSetup({
                 <p className="text-sm">Requesting camera access…</p>
               </div>
             )}
-            {webcamActive && (
-              <div className={cn(
-                'absolute top-2 left-2 px-2 py-1 rounded text-xs font-semibold',
-                faceStatus === 'ok' ? 'bg-green-500/80 text-white' :
-                faceStatus === 'none' ? 'bg-red-500/80 text-white' :
-                faceStatus === 'multiple' ? 'bg-orange-500/80 text-white' :
-                'bg-black/40 text-white',
-              )}>
-                {faceStatus === 'ok' ? '✓ Face detected' :
-                 faceStatus === 'none' ? '⚠ No face — look at camera' :
-                 faceStatus === 'multiple' ? `⚠ ${faceCount} faces — ensure you're alone` :
-                 '⋯ Detecting face…'}
-              </div>
-            )}
           </div>
         </Card>
 
         {/* Check list */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <CheckItem
             ok={webcamActive}
             loading={!webcamActive}
@@ -159,18 +139,6 @@ export function ProctoringSetup({
             icon={<Mic className="h-4 w-4" />}
             label="Microphone access"
             note={webcamActive && !micActive ? 'Mic unavailable (allowed)' : undefined}
-          />
-          <CheckItem
-            ok={faceStatus === 'ok'}
-            loading={faceStatus === 'loading'}
-            warn={faceStatus === 'none' || faceStatus === 'multiple'}
-            icon={<span className="text-base leading-none">👤</span>}
-            label={faceStatus === 'multiple' ? 'Multiple faces' : 'Face visible'}
-            note={
-              faceStatus === 'none' ? 'Look directly at the camera' :
-              faceStatus === 'multiple' ? 'Ensure you\'re alone in frame' :
-              undefined
-            }
           />
           <CheckItem
             ok={lightingOk}
@@ -242,7 +210,7 @@ export function ProctoringSetup({
         )}
 
         <p className="text-xs text-center text-muted-foreground">
-          Sit in a well-lit, quiet space. Your face must remain visible throughout the assessment.
+          Sit in a well-lit, quiet space. Your webcam stays on and is periodically snapshotted for the record.
         </p>
 
         <Button

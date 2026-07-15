@@ -31,6 +31,7 @@ async function sendExpiryReminders() {
       test: {
         select: {
           title: true,
+          sebRequired: true,
           tenant: { select: { name: true, settings: true } },
         },
       },
@@ -53,6 +54,7 @@ async function sendExpiryReminders() {
         expiresAt: inv.expiresAt,
         message: `Reminder: your assessment link expires in less than 24 hours. Please complete it before the deadline.`,
         tenantSettings: tenantSettings as any,
+        sebRequired: inv.test.sebRequired,
       })
 
       await prisma.invitation.update({

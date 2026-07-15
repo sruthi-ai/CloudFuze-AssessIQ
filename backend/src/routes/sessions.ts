@@ -66,8 +66,12 @@ const submitAnswerSchema = z.object({
 
 export async function sessionRoutes(server: FastifyInstance) {
   // GET /api/sessions/by-pin/:pin — resolve a PIN to an invite token (public, used by secure browser entry screen).
-  // PINs are login credentials, so rate-limit to blunt enumeration/brute-force.
-  server.get('/by-pin/:pin', { config: { rateLimit: { max: 10, timeWindow: '5 minutes' } } }, async (request, reply) => {
+  // PINs are login credentials, so still rate-limited to blunt brute-force — but generously:
+  // many genuine candidates commonly share one public IP (mobile carrier CGNAT, campus/office
+  // wifi), and a tight per-IP cap here blocked real candidates during a live batch, not attackers.
+  // The keyspace (8 chars from a 32-char alphabet, ~10^12 combinations) makes brute force
+  // infeasible even at this much higher limit.
+  server.get('/by-pin/:pin', { config: { rateLimit: { max: 100, timeWindow: '5 minutes' } } }, async (request, reply) => {
     const { pin } = request.params as { pin: string }
     const normalised = pin.toUpperCase().replace(/[^A-Z0-9]/g, '')
     const invitation = await prisma.invitation.findUnique({

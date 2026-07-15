@@ -253,6 +253,7 @@ export async function candidateRoutes(server: FastifyInstance) {
         expiresAt,
         message: invitation.message ?? undefined,
         tenantSettings: (invitation.test.tenant.settings ?? undefined) as any,
+        sebRequired: invitation.test.sebRequired,
       })
     } catch (err) {
       console.error('[RESEND] Email send failed:', err)
@@ -335,6 +336,7 @@ export async function candidateRoutes(server: FastifyInstance) {
       expiresAt,
       message: invitation.message ?? undefined,
       tenantSettings: (invitation.test.tenant.settings ?? undefined) as any,
+      sebRequired: invitation.test.sebRequired,
     })
 
     logAudit({ tenantId: request.user.tenantId, userId: request.user.sub, action: 'RETAKE_GRANTED', entityType: 'invitation', entityId: invitationId, metadata: { candidateEmail: invitation.candidate.email, testTitle: invitation.test.title, attemptNumber: nextAttempt } })

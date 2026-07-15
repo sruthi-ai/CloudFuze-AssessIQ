@@ -598,19 +598,19 @@ export function CandidatesPage() {
                               >
                                 {copiedToken === inv.token ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                               </button>
-                              {/* Resend */}
-                              {inv.status !== 'CANCELLED' && inv.status !== 'COMPLETED' && (
-                                <button
-                                  onClick={() => resendMutation.mutate(inv.id)}
-                                  disabled={resendMutation.isPending}
-                                  className="text-muted-foreground hover:text-primary transition-colors p-1"
-                                  title="Resend email"
-                                >
-                                  {resendMutation.isPending
-                                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                    : <RefreshCw className="h-3.5 w-3.5" />}
-                                </button>
-                              )}
+                              {/* Resend — always available, including after cancel. A resend
+                                  reuses the same token/PIN and, if the candidate already has a
+                                  submitted session, the assessment itself still blocks re-entry. */}
+                              <button
+                                onClick={() => resendMutation.mutate(inv.id)}
+                                disabled={resendMutation.isPending}
+                                className="text-muted-foreground hover:text-primary transition-colors p-1"
+                                title="Resend email"
+                              >
+                                {resendMutation.isPending
+                                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  : <RefreshCw className="h-3.5 w-3.5" />}
+                              </button>
                               {/* Cancel */}
                               {!['CANCELLED', 'COMPLETED', 'EXPIRED'].includes(inv.status) && (
                                 <button

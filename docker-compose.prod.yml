@@ -35,7 +35,7 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://assessiq:${DB_PASSWORD:?DB_PASSWORD must be set in .env file}@db:5432/assessiq?connection_limit=25&pool_timeout=20
+      DATABASE_URL: postgresql://assessiq:${DB_PASSWORD:?DB_PASSWORD must be set in .env file}@db:5432/assessiq?connection_limit=40&pool_timeout=20
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env file}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET must be set in .env file}

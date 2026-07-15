@@ -106,16 +106,12 @@ export function TestPage() {
 
   const [disqualified, setDisqualified] = useState(false)
 
+  // Proctoring is snapshot + cheap DOM signals only (no face/pose/phone ML) —
+  // scores accordingly. PHONE_DETECTED here just means "opened on a mobile/touch
+  // device" (a user-agent check), not an in-frame camera detection.
   const VIOLATION_SCORE: Partial<Record<string, number>> = {
-    PHONE_DETECTED: 4,
-    MULTIPLE_FACES: 4,
-    IDENTITY_MISMATCH: 4,
-    SUSPECTED_ASSISTANCE: 3,
-    FACE_OBSTRUCTED: 3,
+    PHONE_DETECTED: 3,
     TAB_SWITCH: 2,
-    NO_FACE_DETECTED: 2,
-    POOR_LIGHTING: 1,
-    HEAD_TURNED: 1,
     FULLSCREEN_EXIT: 1,
     COPY_PASTE: 1,
     DEVTOOLS_OPEN: 1,
@@ -146,9 +142,6 @@ export function TestPage() {
       TAB_SWITCH: { msg: 'Tab switching detected — this has been recorded', critical: false },
       FULLSCREEN_EXIT: { msg: 'Fullscreen exit detected — please return to fullscreen', critical: false },
       COPY_PASTE: { msg: 'Copy/paste detected — this has been recorded', critical: false },
-      NO_FACE_DETECTED: { msg: 'Face not visible in camera — please ensure your face is visible', critical: false },
-      PHONE_DETECTED: { msg: 'Phone detected in frame — this is a serious violation', critical: true },
-      MULTIPLE_FACES: { msg: 'Multiple faces detected — only you should be in frame', critical: true },
       DEVTOOLS_OPEN: { msg: 'Developer tools detected — this has been recorded', critical: true },
     }
     const bannerInfo = VIOLATION_BANNER_MSG[type]
@@ -182,7 +175,7 @@ export function TestPage() {
   const {
     pushEvent, pushImmediate, stopProctoring, requestFullscreen, flush,
     attachVideoRef,
-    webcamActive, micActive, faceCount,
+    webcamActive, micActive,
     violationCounts,
   } = useProctoring({
     sessionId,
@@ -533,7 +526,6 @@ export function TestPage() {
         attachVideoRef={attachVideoRef}
         webcamActive={webcamActive}
         micActive={micActive}
-        faceCount={faceCount}
         onReady={handleSetupReady}
         onRequestScreenShare={requestScreenShare}
         screenSharePermission={screenSharePermission}

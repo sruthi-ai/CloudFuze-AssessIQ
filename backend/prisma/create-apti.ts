@@ -33,6 +33,11 @@ async function main() {
   })
   if (!questions.length) throw new Error('No aptitude questions (title "Aptitude Q…") found in the bank.')
 
+  // Instructions must match the actual served pool exactly — candidates were shown
+  // a stale "100 questions" description on a rebuilt test because only test-creation
+  // set this field; a rebuild never corrected it. Always (re)set it below.
+  const instructions = `Aptitude test — ${questions.length} questions in the bank; you will be given a random selection of 20 to answer, 20 minutes, 1 mark each. Choose the best option.`
+
   // Find or create the "Apti" test.
   let test = await prisma.test.findFirst({ where: { title, tenantId: bank.tenantId }, orderBy: { createdAt: 'asc' } })
   if (!test) {
@@ -40,7 +45,7 @@ async function main() {
       data: {
         title, domain: 'Aptitude', duration: 20, proctoring: true, sebRequired: true,
         status: 'DRAFT', tenantId: bank.tenantId, createdById: admin.id,
-        instructions: 'Aptitude test — 20 questions in 20 minutes. Each carries 1 mark. Choose the best option.',
+        instructions,
       },
     })
     console.log(`created test "${title}"`)
@@ -49,7 +54,7 @@ async function main() {
     const secs = await prisma.testSection.findMany({ where: { testId: test.id } })
     for (const s of secs) await prisma.testQuestion.deleteMany({ where: { sectionId: s.id } })
     await prisma.testSection.deleteMany({ where: { testId: test.id } })
-    await prisma.test.update({ where: { id: test.id }, data: { duration: 20 } })
+    await prisma.test.update({ where: { id: test.id }, data: { duration: 20, instructions } })
     console.log(`rebuilt existing test "${title}"`)
   }
 

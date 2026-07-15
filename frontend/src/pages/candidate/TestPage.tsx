@@ -262,9 +262,15 @@ export function TestPage() {
     }
   })
 
-  // Reset section timer whenever the section changes
+  // Reset section timer whenever the section changes — guarded by a ref so the
+  // 30s background refetch of testData (a new object reference each time) can't
+  // re-trigger this and snap the countdown back to the full limit mid-section.
+  const timerInitSectionRef = useRef<number | null>(null)
   useEffect(() => {
     const secs = testData?.sections ?? []
+    if (secs.length === 0) return
+    if (timerInitSectionRef.current === currentSectionIdx) return
+    timerInitSectionRef.current = currentSectionIdx
     const limit = secs[currentSectionIdx]?.timeLimit ?? null
     setSectionTimeRemaining(limit)
   }, [currentSectionIdx, testData])
@@ -1135,10 +1141,18 @@ function AudioPrompt({ audioAsset, sessionId, token }: {
         setPlaying(true)
       }
     } catch (err) {
-      setError(getErrorMessage(err))
+      setError(getErrorMessage(err) || 'Could not start playback — please try again.')
     } finally {
       setLoading(false)
     }
+  }
+
+  // The <audio> element can fail asynchronously (network hiccup, slow load) even
+  // after el.play() has already resolved — without this the button was left stuck
+  // on "Playing…" forever with no sound and no way to retry.
+  const handleMediaError = () => {
+    setPlaying(false)
+    setError('Playback failed — check your connection and try again.')
   }
 
   return (
@@ -1146,7 +1160,7 @@ function AudioPrompt({ audioAsset, sessionId, token }: {
       <div className="flex items-center gap-3">
         <Button type="button" variant="outline" onClick={handlePlay} disabled={!canPlay}>
           {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Volume2 className="h-4 w-4 mr-2" />}
-          {playing ? 'Playing…' : 'Play audio'}
+          {playing ? 'Playing…' : error ? 'Retry audio' : 'Play audio'}
         </Button>
         <span className="text-xs text-indigo-800">
           {unlimited
@@ -1158,7 +1172,7 @@ function AudioPrompt({ audioAsset, sessionId, token }: {
       </div>
       {error && <p className="text-xs text-red-600">{error}</p>}
       {/* No native controls — playback is gated through the server-side play-limit check */}
-      <audio ref={audioRef} src={fullUrl} onEnded={() => setPlaying(false)} className="hidden" />
+      <audio ref={audioRef} src={fullUrl} onEnded={() => setPlaying(false)} onError={handleMediaError} className="hidden" />
     </div>
   )
 }

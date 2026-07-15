@@ -132,9 +132,17 @@ async function bootstrap() {
   }
   await server.register(rateLimit, {
     // Authenticated staff (Bearer token) do legitimate bulk work — inviting/resending
-    // to 100+ candidates — so give them plenty of headroom. Anonymous traffic stays
-    // tight (and login/PIN endpoints have their own stricter per-route limits).
-    max: (req: { headers: Record<string, unknown> }) => (req.headers['authorization'] ? 1000 : 100),
+    // to 100+ candidates — so give them plenty of headroom.
+    //
+    // Anonymous traffic is almost entirely CANDIDATES during a live exam: session
+    // start/questions/heartbeat/answer-save/media-upload/audio streaming are all
+    // unauthenticated (candidates use an invitation token + PIN, not a JWT). A tight
+    // per-IP default here is wrong for this product — many candidates genuinely
+    // share one public IP (mobile carrier CGNAT, campus/office wifi), so a low cap
+    // blocks real concurrent candidates, not attackers. Sized generously for
+    // 300+ candidates on one shared IP; login/PIN endpoints keep their own
+    // deliberately-tighter per-route limit.
+    max: (req: { headers: Record<string, unknown> }) => (req.headers['authorization'] ? 1000 : 5000),
     timeWindow: '1 minute',
     redis: rateLimitRedis,
     skipOnError: true,

@@ -18,8 +18,8 @@ import type { FastifyRequest } from 'fastify'
 
 export interface SebSettings {
   sebRequired: boolean
-  sebConfigKeys: string[]
-  sebBrowserExamKeys: string[]
+  sebConfigKeys: string[] | null
+  sebBrowserExamKeys: string[] | null
 }
 
 // Reconstruct the absolute URL exactly as SEB saw it when it computed the hash.
@@ -39,7 +39,7 @@ function sha256Hex(input: string): string {
 
 // True if any of the keys, hashed with the URL, matches the header value.
 function anyKeyMatches(url: string, headerHash: string | undefined, keys: string[]): boolean {
-  if (!headerHash || keys.length === 0) return false
+  if (!headerHash || !keys || keys.length === 0) return false
   const h = headerHash.trim().toLowerCase()
   return keys.some(k => sha256Hex(url + k.trim()) === h)
 }
@@ -64,15 +64,19 @@ export function verifySeb(request: FastifyRequest, seb: SebSettings): SebVerifyR
   const configHash = request.headers['x-safeexambrowser-configkeyhash'] as string | undefined
   const requestHash = request.headers['x-safeexambrowser-requesthash'] as string | undefined
 
-  const hasConfigKeys = seb.sebConfigKeys.length > 0
-  const hasBekKeys = seb.sebBrowserExamKeys.length > 0
+  // Guard against null/undefined arrays: rows imported/restored before these
+  // columns existed can carry NULL, which would otherwise crash on .length.
+  const configKeys = seb.sebConfigKeys ?? []
+  const bekKeys = seb.sebBrowserExamKeys ?? []
+  const hasConfigKeys = configKeys.length > 0
+  const hasBekKeys = bekKeys.length > 0
 
   if (hasConfigKeys || hasBekKeys) {
     // Each configured key-type that is set must be satisfied.
-    if (hasConfigKeys && !anyKeyMatches(url, configHash, seb.sebConfigKeys)) {
+    if (hasConfigKeys && !anyKeyMatches(url, configHash, configKeys)) {
       return { ok: false, reason: 'SEB Config Key mismatch — open this exam using the provided Safe Exam Browser config.' }
     }
-    if (hasBekKeys && !anyKeyMatches(url, requestHash, seb.sebBrowserExamKeys)) {
+    if (hasBekKeys && !anyKeyMatches(url, requestHash, bekKeys)) {
       return { ok: false, reason: 'SEB Browser Exam Key mismatch — use the official Safe Exam Browser to take this exam.' }
     }
     return { ok: true }

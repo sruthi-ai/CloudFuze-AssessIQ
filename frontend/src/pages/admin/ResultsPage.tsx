@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { BarChart3, Search, Loader2, ChevronRight, Trash2, Download, ArrowUpDown, Sparkles } from 'lucide-react'
+import { BarChart3, Search, Loader2, ChevronRight, Trash2, Download, ArrowUpDown, Sparkles, X as XIcon } from 'lucide-react'
 import { toast } from '@/hooks/use-toast'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -57,6 +57,10 @@ type SortDir = 'asc' | 'desc'
 export function ResultsPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [dateFrom, setDateFrom] = useState('')   // yyyy-mm-dd (inclusive)
+  const [dateTo, setDateTo] = useState('')       // yyyy-mm-dd (inclusive)
+  const [minScore, setMinScore] = useState('')   // percentage 0-100
+  const [maxScore, setMaxScore] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('submittedAt')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
@@ -97,6 +101,12 @@ export function ResultsPage() {
   }
 
   const sessions = useMemo(() => {
+    // Date range → epoch ms. "to" is end-of-day so it's inclusive of that date.
+    const fromMs = dateFrom ? new Date(dateFrom + 'T00:00:00').getTime() : null
+    const toMs = dateTo ? new Date(dateTo + 'T23:59:59.999').getTime() : null
+    const minPct = minScore !== '' ? Number(minScore) : null
+    const maxPct = maxScore !== '' ? Number(maxScore) : null
+
     let list = (data?.sessions ?? []).filter((s: any) => {
       const q = search.toLowerCase()
       const matchSearch = !search ||
@@ -104,7 +114,22 @@ export function ResultsPage() {
         `${s.candidate.firstName} ${s.candidate.lastName}`.toLowerCase().includes(q) ||
         s.test.title.toLowerCase().includes(q)
       const matchStatus = !statusFilter || s.status === statusFilter
-      return matchSearch && matchStatus
+
+      // Date filter — on submission date (rows with no submittedAt are excluded once a range is set)
+      let matchDate = true
+      if (fromMs !== null || toMs !== null) {
+        const t = s.submittedAt ? new Date(s.submittedAt).getTime() : null
+        matchDate = t !== null && (fromMs === null || t >= fromMs) && (toMs === null || t <= toMs)
+      }
+
+      // Score filter — on percentage; unscored rows excluded once a bound is set
+      let matchScore = true
+      if (minPct !== null || maxPct !== null) {
+        const pct = s.score?.percentage
+        matchScore = pct != null && (minPct === null || pct >= minPct) && (maxPct === null || pct <= maxPct)
+      }
+
+      return matchSearch && matchStatus && matchDate && matchScore
     })
 
     list = [...list].sort((a: any, b: any) => {
@@ -117,7 +142,7 @@ export function ResultsPage() {
       return 0
     })
     return list
-  }, [data, search, statusFilter, sortKey, sortDir])
+  }, [data, search, statusFilter, dateFrom, dateTo, minScore, maxScore, sortKey, sortDir])
 
   function SortTh({ label, col }: { label: string; col: SortKey }) {
     return (
@@ -185,7 +210,7 @@ export function ResultsPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-3 flex-wrap">
+      <div className="flex gap-3 flex-wrap items-center">
         <div className="relative flex-1 min-w-48">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input className="pl-9" placeholder="Search by candidate or test..." value={search} onChange={e => setSearch(e.target.value)} />
@@ -202,6 +227,36 @@ export function ResultsPage() {
           <option value="NOT_STARTED">Not Started</option>
           <option value="DISQUALIFIED">Disqualified</option>
         </select>
+
+        {/* Date range (on submission date) */}
+        <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+          <span className="whitespace-nowrap">Submitted</span>
+          <input type="date" className="h-10 rounded-md border border-input bg-background px-2 text-sm" value={dateFrom}
+            max={dateTo || undefined} onChange={e => setDateFrom(e.target.value)} title="From date (inclusive)" />
+          <span>–</span>
+          <input type="date" className="h-10 rounded-md border border-input bg-background px-2 text-sm" value={dateTo}
+            min={dateFrom || undefined} onChange={e => setDateTo(e.target.value)} title="To date (inclusive)" />
+        </div>
+
+        {/* Score range (percentage) */}
+        <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+          <span className="whitespace-nowrap">Score %</span>
+          <input type="number" min={0} max={100} placeholder="min" value={minScore}
+            className="h-10 w-16 rounded-md border border-input bg-background px-2 text-sm"
+            onChange={e => setMinScore(e.target.value)} title="Minimum score %" />
+          <span>–</span>
+          <input type="number" min={0} max={100} placeholder="max" value={maxScore}
+            className="h-10 w-16 rounded-md border border-input bg-background px-2 text-sm"
+            onChange={e => setMaxScore(e.target.value)} title="Maximum score %" />
+        </div>
+
+        {(search || statusFilter || dateFrom || dateTo || minScore || maxScore) && (
+          <Button variant="ghost" size="sm" onClick={() => {
+            setSearch(''); setStatusFilter(''); setDateFrom(''); setDateTo(''); setMinScore(''); setMaxScore('')
+          }}>
+            <XIcon className="h-4 w-4 mr-1" /> Clear
+          </Button>
+        )}
       </div>
 
       {isLoading ? (
@@ -211,7 +266,7 @@ export function ResultsPage() {
           <CardContent className="py-12 text-center">
             <BarChart3 className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
             <p className="text-muted-foreground">
-              {search || statusFilter ? 'No results match your filters.' : 'No results yet. Invite candidates to take a test.'}
+              {(search || statusFilter || dateFrom || dateTo || minScore || maxScore) ? 'No results match your filters.' : 'No results yet. Invite candidates to take a test.'}
             </p>
           </CardContent>
         </Card>

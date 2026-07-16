@@ -259,9 +259,11 @@ async function gradeShortAnswer(
   }
 }
 
-// Spoken answers: transcribe the recording, then score the transcript against the three
-// Speaking dimensions a transcript genuinely supports. Pronunciation is deliberately NOT
-// auto-scored (transcription normalizes it away) — it's routed to human review instead.
+// Spoken answers: transcribe the recording, then score the transcript on COMMUNICATION
+// ABILITY ONLY — fluency/coherence of delivery, vocabulary, grammar. Topic relevance and
+// answer-correctness are deliberately NOT graded (product decision): this is a
+// communication test, so a candidate who speaks well scores well even if off-topic.
+// Pronunciation is also not auto-scored (transcription normalizes it away) — human review.
 async function gradeSpeaking(
   title: string,
   body: string,
@@ -296,25 +298,28 @@ async function gradeSpeaking(
       {
         role: 'system',
         content:
-          'You are a fair, encouraging communication assessor evaluating ENTRY-LEVEL (fresher) candidates, ' +
+          'You are a fair, encouraging COMMUNICATION assessor evaluating ENTRY-LEVEL (fresher) candidates, ' +
           'most of whom are Indian-English speakers. You are given a TRANSCRIPT of a candidate\'s spoken answer. ' +
-          'Score it 0-9 on three dimensions: Fluency & Coherence (does the answer address the question and ' +
-          'develop it with reasons/examples in connected sentences — reward relevance and clear explanation), ' +
-          'Lexical Resource (range and appropriateness of vocabulary for the topic), and Grammatical Range & ' +
-          'Accuracy. ' +
+          'Assess ONLY how well the candidate COMMUNICATES — NOT whether their answer is correct, complete, or ' +
+          'on-topic. IGNORE topic relevance entirely: a candidate who speaks clearly and fluently must score ' +
+          'well even if they drift from, misunderstand, or never directly answer the prompt. ' +
+          'Score 0-9 on three dimensions: ' +
+          'Fluency & Coherence (does their speech flow in connected, logically-ordered sentences without ' +
+          'excessive hesitation or self-contradiction — judged on the DELIVERY ITSELF, not on relevance to the prompt), ' +
+          'Lexical Resource (range and appropriateness of the vocabulary they use), and Grammatical Range & Accuracy. ' +
           'GRADE LENIENTLY, to a workplace-communication standard, NOT a native-speaker standard: ' +
           '• Do NOT penalise Indian-English vocabulary, phrasing, or idiom. ' +
           '• Do NOT penalise minor grammatical slips, articles, tense wobbles, or filler words if the meaning is clear. ' +
-          '• Reward candidates who understood the question and explained their point in full sentences with some detail. ' +
-          '• A candidate who communicates their meaning clearly and stays on-topic should score well (roughly 6-8), ' +
-          'even if not fluent like a native speaker. Reserve low scores for answers that are off-topic, one-word, ' +
-          'incoherent, or barely attempted. ' +
+          '• Do NOT penalise going off-topic, misunderstanding the question, or giving a "wrong" answer — that is not what this measures. ' +
+          '• A candidate who expresses themselves clearly in full, connected sentences should score well (roughly 6-8), ' +
+          'even if not fluent like a native speaker. ' +
+          'Reserve low scores ONLY for speech that is genuinely incoherent, one-word, barely attempted, or unintelligible. ' +
           'Do NOT score pronunciation — it cannot be judged from a transcript. ' +
           ANTI_INJECTION_SYSTEM_NOTE,
       },
       {
         role: 'user',
-        content: `Speaking prompt: ${title}\n${body}\n\n${wrapCandidateResponse(transcript)}`,
+        content: `Prompt the candidate was responding to (CONTEXT ONLY — do NOT grade topic relevance): ${title}\n${body}\n\n${wrapCandidateResponse(transcript)}`,
       },
     ],
     response_format: {

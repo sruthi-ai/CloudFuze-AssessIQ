@@ -61,6 +61,7 @@ export function ResultsPage() {
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const queryClient = useQueryClient()
 
   const { data, isLoading } = useQuery({
@@ -73,14 +74,21 @@ export function ResultsPage() {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['results'] }); setConfirmDelete(null) },
   })
 
-  const gradeAllMutation = useMutation({
-    mutationFn: () => api.post('/results/ai-grade-all').then(r => r.data),
+  // Grade all pending, or only a selected subset when sessionIds is passed.
+  const gradeMutation = useMutation({
+    mutationFn: (sessionIds?: string[]) =>
+      api.post('/results/ai-grade-all', sessionIds ? { sessionIds } : {}).then(r => r.data),
     onSuccess: (res: any) => {
       const d = res?.data ?? res
       queryClient.invalidateQueries({ queryKey: ['results'] })
-      toast({ title: 'AI grading complete', description: `Graded ${d?.answersGraded ?? 0} answer(s) across ${d?.sessionsProcessed ?? 0} session(s)${d?.answersFailed ? `, ${d.answersFailed} failed` : ''}.` })
+      setSelectedIds(new Set())
+      if (d?.warning) {
+        toast({ title: 'Nothing was graded', description: d.warning, variant: 'destructive' })
+      } else {
+        toast({ title: 'AI grading complete', description: `Graded ${d?.answersGraded ?? 0} answer(s) across ${d?.sessionsProcessed ?? 0} session(s)${d?.answersFailed ? `, ${d.answersFailed} failed` : ''}. Scores now include spoken/written marks.` })
+      }
     },
-    onError: () => toast({ title: 'AI grading failed', description: 'Check that OpenAI credits/key are set on the server.', variant: 'destructive' }),
+    onError: () => toast({ title: 'AI grading failed', description: 'Check that a valid OpenAI key with credits is set on the server.', variant: 'destructive' }),
   })
 
   const toggleSort = (key: SortKey) => {
@@ -125,6 +133,16 @@ export function ResultsPage() {
     )
   }
 
+  // Only submitted/timed-out sessions can be graded — those are selectable.
+  const gradable = sessions.filter((s: any) => s.status === 'SUBMITTED' || s.status === 'TIMED_OUT')
+  const allGradableSelected = gradable.length > 0 && gradable.every((s: any) => selectedIds.has(s.id))
+  const toggleOne = (id: string) => setSelectedIds(prev => {
+    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n
+  })
+  const toggleAll = () => setSelectedIds(prev =>
+    gradable.length > 0 && gradable.every((s: any) => prev.has(s.id)) ? new Set() : new Set(gradable.map((s: any) => s.id))
+  )
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -133,10 +151,17 @@ export function ResultsPage() {
           <p className="text-muted-foreground">All candidate assessment sessions</p>
         </div>
         <div className="flex items-center gap-2">
+        {selectedIds.size > 0 && (
+          <Button variant="default" size="sm" disabled={gradeMutation.isPending} onClick={() => gradeMutation.mutate(Array.from(selectedIds))}
+            title="AI-grade only the selected candidates' spoken/written answers. Final score = existing marks + AI marks.">
+            {gradeMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
+            AI grade selected ({selectedIds.size})
+          </Button>
+        )}
         {sessions.length > 0 && (
-          <Button variant="outline" size="sm" disabled={gradeAllMutation.isPending} onClick={() => gradeAllMutation.mutate()}
+          <Button variant="outline" size="sm" disabled={gradeMutation.isPending} onClick={() => gradeMutation.mutate(undefined)}
             title="Run AI grading on every submitted session with answers still pending (spoken/written). Uses OpenAI credits.">
-            {gradeAllMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
+            {gradeMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
             Grade all pending
           </Button>
         )}
@@ -195,6 +220,11 @@ export function ResultsPage() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
+                <th className="px-4 py-3 w-10">
+                  <input type="checkbox" className="rounded cursor-pointer" checked={allGradableSelected}
+                    onChange={toggleAll} disabled={gradable.length === 0}
+                    title="Select all gradable candidates" />
+                </th>
                 <SortTh label="Candidate" col="candidate" />
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Test</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
@@ -207,8 +237,15 @@ export function ResultsPage() {
             <tbody className="divide-y bg-white">
               {sessions.map((s: any) => {
                 const risk = riskLevel(s._count?.proctoringEvents ?? 0)
+                const canGrade = s.status === 'SUBMITTED' || s.status === 'TIMED_OUT'
                 return (
                   <tr key={s.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3">
+                      <input type="checkbox" className="rounded cursor-pointer disabled:opacity-30"
+                        checked={selectedIds.has(s.id)} disabled={!canGrade}
+                        onChange={() => toggleOne(s.id)}
+                        title={canGrade ? 'Select for AI grading' : 'Only submitted sessions can be graded'} />
+                    </td>
                     <td className="px-4 py-3">
                       <p className="font-medium">{s.candidate.firstName} {s.candidate.lastName}</p>
                       <p className="text-xs text-muted-foreground">{s.candidate.email}</p>

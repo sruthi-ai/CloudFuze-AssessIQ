@@ -207,34 +207,49 @@ export async function resultRoutes(server: FastifyInstance) {
     return sendSuccess(reply, { message: `AI graded ${result.graded} answers, skipped ${result.skipped}${failedNote}`, ...result })
   })
 
-  // POST /api/results/ai-grade-all — grade all pending sessions in tenant
+  // POST /api/results/ai-grade-all — grade pending sessions in the tenant.
+  // Body { sessionIds?: string[] }: if provided, grade ONLY those (still
+  // tenant-scoped for safety); otherwise grade every pending session.
   server.post('/ai-grade-all', {
     preHandler: requireRole('SUPER_ADMIN', 'COMPANY_ADMIN'),
   }, async (request, reply) => {
+    const body = (request.body ?? {}) as { sessionIds?: string[] }
+    const requested = Array.isArray(body.sessionIds) ? body.sessionIds.filter(x => typeof x === 'string') : null
+
     const sessions = await prisma.session.findMany({
       where: {
-        test: { tenantId: request.user.tenantId },
+        test: { tenantId: request.user.tenantId },   // tenant isolation — ignores IDs from other tenants
         status: { in: ['SUBMITTED', 'TIMED_OUT'] },
         answers: { some: { gradingStatus: 'PENDING' } },
+        ...(requested ? { id: { in: requested } } : {}),
       },
       select: { id: true },
     })
 
     let totalGraded = 0
     let totalFailed = 0
+    let totalSkipped = 0
     for (const s of sessions) {
       const r = await aiGradeSession(s.id)
       totalGraded += r.graded
       totalFailed += r.failed
+      totalSkipped += r.skipped
     }
 
     logAudit({
-      tenantId: request.user.tenantId, userId: request.user.sub, action: 'AI_GRADE_ALL_TRIGGERED',
+      tenantId: request.user.tenantId, userId: request.user.sub,
+      action: requested ? 'AI_GRADE_SELECTED_TRIGGERED' : 'AI_GRADE_ALL_TRIGGERED',
       entityType: 'tenant', entityId: request.user.tenantId,
-      metadata: { sessionsProcessed: sessions.length, answersGraded: totalGraded, answersFailed: totalFailed },
+      metadata: { requested: requested?.length ?? 'all', sessionsProcessed: sessions.length, answersGraded: totalGraded, answersFailed: totalFailed, answersSkipped: totalSkipped },
     })
 
-    return sendSuccess(reply, { sessionsProcessed: sessions.length, answersGraded: totalGraded, answersFailed: totalFailed })
+    // If nothing graded AND audio answers were skipped, the OpenAI key is almost
+    // certainly missing/invalid — surface that instead of a silent "0 graded".
+    const openAiMissing = totalGraded === 0 && totalSkipped > 0 && !process.env.OPENAI_API_KEY
+    return sendSuccess(reply, {
+      sessionsProcessed: sessions.length, answersGraded: totalGraded, answersFailed: totalFailed, answersSkipped: totalSkipped,
+      warning: openAiMissing ? 'OPENAI_API_KEY is not set on the server — spoken/written answers cannot be graded.' : undefined,
+    })
   })
 
   // GET /api/results/dashboard — summary stats for tenant

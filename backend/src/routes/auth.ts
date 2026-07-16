@@ -95,7 +95,10 @@ export async function authRoutes(server: FastifyInstance) {
   })
 
   // POST /api/auth/login
-  server.post('/login', { config: { rateLimit: { max: 10, timeWindow: '15 minutes' } } }, async (request, reply) => {
+  // 50/15min per IP: 10 was far too tight for a staff team on one shared office IP
+  // (their combined + fumbled attempts locked everyone out). 50 still blunts
+  // brute-force (bcrypt + email+slug+password required) while letting a team in.
+  server.post('/login', { config: { rateLimit: { max: 50, timeWindow: '15 minutes' } } }, async (request, reply) => {
     const result = loginSchema.safeParse(request.body)
     if (!result.success) return sendError(reply, 400, 'Validation error', result.error.flatten())
 

@@ -28,13 +28,18 @@ export async function aiGradeSession(sessionId: string): Promise<{ graded: numbe
           },
         },
       },
-      test: { select: { id: true } },
+      test: { select: { id: true, tenant: { select: { settings: true } } } },
     },
   })
 
   if (!session) return { graded: 0, skipped: 0, failed: 0 }
 
-  const apiKey = process.env.OPENAI_API_KEY
+  // Prefer the tenant's UI-configured OpenAI key (admin Settings), fall back to the
+  // server env var. The UI key lets admins rotate it without SSH/redeploy; it's
+  // stored in tenant.settings and never returned to the browser.
+  const tenantSettings = (session.test.tenant?.settings as Record<string, unknown> | null) ?? {}
+  const tenantKey = typeof tenantSettings.openaiApiKey === 'string' ? tenantSettings.openaiApiKey.trim() : ''
+  const apiKey = tenantKey || process.env.OPENAI_API_KEY
   let graded = 0
   let skipped = 0
   let failed = 0

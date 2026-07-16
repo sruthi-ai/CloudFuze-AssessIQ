@@ -57,6 +57,7 @@ type SortDir = 'asc' | 'desc'
 export function ResultsPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [testFilter, setTestFilter] = useState('')   // test id
   const [dateFrom, setDateFrom] = useState('')   // yyyy-mm-dd (inclusive)
   const [dateTo, setDateTo] = useState('')       // yyyy-mm-dd (inclusive)
   const [minScore, setMinScore] = useState('')   // percentage 0-100
@@ -114,6 +115,7 @@ export function ResultsPage() {
         `${s.candidate.firstName} ${s.candidate.lastName}`.toLowerCase().includes(q) ||
         s.test.title.toLowerCase().includes(q)
       const matchStatus = !statusFilter || s.status === statusFilter
+      const matchTest = !testFilter || s.test?.id === testFilter
 
       // Date filter — on submission date (rows with no submittedAt are excluded once a range is set)
       let matchDate = true
@@ -129,7 +131,7 @@ export function ResultsPage() {
         matchScore = pct != null && (minPct === null || pct >= minPct) && (maxPct === null || pct <= maxPct)
       }
 
-      return matchSearch && matchStatus && matchDate && matchScore
+      return matchSearch && matchStatus && matchTest && matchDate && matchScore
     })
 
     list = [...list].sort((a: any, b: any) => {
@@ -142,7 +144,14 @@ export function ResultsPage() {
       return 0
     })
     return list
-  }, [data, search, statusFilter, dateFrom, dateTo, minScore, maxScore, sortKey, sortDir])
+  }, [data, search, statusFilter, testFilter, dateFrom, dateTo, minScore, maxScore, sortKey, sortDir])
+
+  // Distinct tests present in the loaded results, for the test filter dropdown.
+  const testOptions = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const s of (data?.sessions ?? [])) if (s.test?.id) m.set(s.test.id, s.test.title)
+    return Array.from(m.entries()).sort((a, b) => a[1].localeCompare(b[1]))
+  }, [data])
 
   function SortTh({ label, col }: { label: string; col: SortKey }) {
     return (
@@ -228,6 +237,19 @@ export function ResultsPage() {
           <option value="DISQUALIFIED">Disqualified</option>
         </select>
 
+        {/* Test filter */}
+        <select
+          className="h-10 rounded-md border border-input bg-background px-3 text-sm max-w-52"
+          value={testFilter}
+          onChange={e => setTestFilter(e.target.value)}
+          title="Filter by test"
+        >
+          <option value="">All tests</option>
+          {testOptions.map(([id, title]) => (
+            <option key={id} value={id}>{title}</option>
+          ))}
+        </select>
+
         {/* Date range (on submission date) */}
         <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
           <span className="whitespace-nowrap">Submitted</span>
@@ -250,9 +272,9 @@ export function ResultsPage() {
             onChange={e => setMaxScore(e.target.value)} title="Maximum score %" />
         </div>
 
-        {(search || statusFilter || dateFrom || dateTo || minScore || maxScore) && (
+        {(search || statusFilter || testFilter || dateFrom || dateTo || minScore || maxScore) && (
           <Button variant="ghost" size="sm" onClick={() => {
-            setSearch(''); setStatusFilter(''); setDateFrom(''); setDateTo(''); setMinScore(''); setMaxScore('')
+            setSearch(''); setStatusFilter(''); setTestFilter(''); setDateFrom(''); setDateTo(''); setMinScore(''); setMaxScore('')
           }}>
             <XIcon className="h-4 w-4 mr-1" /> Clear
           </Button>
@@ -266,7 +288,7 @@ export function ResultsPage() {
           <CardContent className="py-12 text-center">
             <BarChart3 className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
             <p className="text-muted-foreground">
-              {(search || statusFilter || dateFrom || dateTo || minScore || maxScore) ? 'No results match your filters.' : 'No results yet. Invite candidates to take a test.'}
+              {(search || statusFilter || testFilter || dateFrom || dateTo || minScore || maxScore) ? 'No results match your filters.' : 'No results yet. Invite candidates to take a test.'}
             </p>
           </CardContent>
         </Card>

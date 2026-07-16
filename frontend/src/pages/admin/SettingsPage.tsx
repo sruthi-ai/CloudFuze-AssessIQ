@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import {
   Settings, Building2, Mail, Palette, Shield, Loader2,
-  Eye, EyeOff, CheckCircle2, AlertCircle, Send, Webhook, FileText, KeyRound,
+  Eye, EyeOff, CheckCircle2, AlertCircle, Send, Webhook, FileText, KeyRound, Sparkles,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,7 +12,7 @@ import { api, getErrorMessage } from '@/lib/api'
 import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 
-type Tab = 'company' | 'email' | 'appearance' | 'integrations' | 'templates' | 'sso'
+type Tab = 'company' | 'email' | 'appearance' | 'integrations' | 'templates' | 'sso' | 'ai'
 
 interface TenantSettings {
   name: string
@@ -29,6 +29,8 @@ interface TenantSettings {
   smtpFrom: string | null
   smtpSecure: boolean
   smtpPassSet: boolean
+  openaiApiKeySet: boolean
+  openaiApiKeyEnvFallback: boolean
   defaultExpiryDays: number
   completionWebhookUrl: string | null
   emailSubject: string | null
@@ -54,6 +56,8 @@ export function SettingsPage() {
   const [showResendKey, setShowResendKey] = useState(false)
   const [showSmtpPass, setShowSmtpPass] = useState(false)
   const [testEmailAddress, setTestEmailAddress] = useState('')
+  const [openaiKey, setOpenaiKey] = useState('')          // write-only input
+  const [showOpenaiKey, setShowOpenaiKey] = useState(false)
 
   const { data: settings, isLoading, refetch } = useQuery<TenantSettings>({
     queryKey: ['settings'],
@@ -138,6 +142,13 @@ export function SettingsPage() {
     if (emailForm.smtpPass) payload.smtpPass = emailForm.smtpPass
     saveMutation.mutate(payload)
   }
+
+  // Only send the OpenAI key when a new value is typed (blank = keep existing).
+  const saveOpenai = () => {
+    if (!openaiKey.trim()) { toast({ title: 'Enter a key first', variant: 'destructive' }); return }
+    saveMutation.mutate({ openaiApiKey: openaiKey.trim() }, { onSuccess: () => setOpenaiKey('') })
+  }
+  const clearOpenai = () => saveMutation.mutate({ openaiApiKey: null }, { onSuccess: () => setOpenaiKey('') })
 
   const [webhookUrl, setWebhookUrl] = useState(settings?.completionWebhookUrl ?? '')
   const [webhookDirty, setWebhookDirty] = useState(false)
@@ -231,6 +242,7 @@ export function SettingsPage() {
     { id: 'templates' as Tab, label: 'Email Template', icon: FileText },
     { id: 'appearance' as Tab, label: 'Appearance', icon: Palette },
     { id: 'integrations' as Tab, label: 'Integrations', icon: Webhook },
+    { id: 'ai' as Tab, label: 'AI Grading', icon: Sparkles },
     { id: 'sso' as Tab, label: 'SSO / SAML', icon: KeyRound },
   ]
 
@@ -659,6 +671,65 @@ export function SettingsPage() {
               {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               Save Webhook
             </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* AI Grading */}
+      {tab === 'ai' && (
+        <Card>
+          <CardHeader>
+            <CardTitle>AI Grading (OpenAI)</CardTitle>
+            <CardDescription>
+              Used to transcribe and score spoken (Listen &amp; Answer, JAM) and written answers.
+              The key is stored securely, never shown again, and never sent to candidates.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Current status */}
+            <div className={cn('rounded-md border p-3 text-sm flex items-start gap-2',
+              settings?.openaiApiKeySet ? 'bg-green-50 border-green-200 text-green-800'
+                : settings?.openaiApiKeyEnvFallback ? 'bg-blue-50 border-blue-200 text-blue-800'
+                : 'bg-amber-50 border-amber-200 text-amber-800')}>
+              {settings?.openaiApiKeySet
+                ? <><CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" /><span>A key is configured here and will be used for grading.</span></>
+                : settings?.openaiApiKeyEnvFallback
+                ? <><CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" /><span>No key set here — grading uses the server key. Set one below to override it.</span></>
+                : <><AlertCircle className="h-4 w-4 mt-0.5 shrink-0" /><span>No OpenAI key configured. Spoken/written answers can’t be graded until you add one.</span></>}
+            </div>
+
+            <div className="space-y-2">
+              <Label>OpenAI API key</Label>
+              <div className="relative">
+                <Input
+                  type={showOpenaiKey ? 'text' : 'password'}
+                  value={openaiKey}
+                  onChange={e => setOpenaiKey(e.target.value)}
+                  placeholder={settings?.openaiApiKeySet ? '••••••••••••••••••••• (set — leave blank to keep)' : 'sk-...'}
+                  autoComplete="off"
+                />
+                <button type="button" onClick={() => setShowOpenaiKey(s => !s)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-gray-700">
+                  {showOpenaiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Paste a new key to set or replace it. It must have OpenAI credits. Changing it here takes effect
+                immediately — no server restart or redeploy.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button onClick={saveOpenai} disabled={saveMutation.isPending || !openaiKey.trim()}>
+                {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
+                Save key
+              </Button>
+              {settings?.openaiApiKeySet && (
+                <Button variant="outline" onClick={clearOpenai} disabled={saveMutation.isPending}>
+                  Remove key
+                </Button>
+              )}
+            </div>
           </CardContent>
         </Card>
       )}

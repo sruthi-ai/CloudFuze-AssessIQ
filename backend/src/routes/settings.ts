@@ -22,6 +22,9 @@ const settingsSchema = z.object({
   smtpFrom: z.string().optional().nullable(),
   smtpSecure: z.boolean().optional(),
 
+  // AI grading (OpenAI) — stored in settings Json, used by aiGrading with env fallback
+  openaiApiKey: z.string().optional().nullable(),
+
   // Invite defaults
   defaultExpiryDays: z.number().int().min(1).max(90).optional(),
 
@@ -81,6 +84,8 @@ export async function settingsRoutes(server: FastifyInstance) {
       // Never send sensitive keys back — just indicate if set
       resendApiKeySet: !!(settings.resendApiKey),
       smtpPassSet: !!(settings.smtpPass),
+      openaiApiKeySet: !!(settings.openaiApiKey),
+      openaiApiKeyEnvFallback: !!process.env.OPENAI_API_KEY,   // whether a server-level key exists as backup
       completionWebhookUrl: (settings.completionWebhookUrl as string) ?? null,
       // Email template
       emailSubject: (settings.emailSubject as string) ?? null,
@@ -154,6 +159,8 @@ export async function settingsRoutes(server: FastifyInstance) {
       defaultExpiryDays: (settings.defaultExpiryDays as number) ?? 7,
       resendApiKeySet: !!(settings.resendApiKey),
       smtpPassSet: !!(settings.smtpPass),
+      openaiApiKeySet: !!(settings.openaiApiKey),
+      openaiApiKeyEnvFallback: !!process.env.OPENAI_API_KEY,
       completionWebhookUrl: (settings.completionWebhookUrl as string) ?? null,
       emailSubject: (settings.emailSubject as string) ?? null,
       emailHeaderText: (settings.emailHeaderText as string) ?? null,

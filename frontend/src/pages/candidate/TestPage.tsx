@@ -57,6 +57,9 @@ export function TestPage() {
   const [submitting, setSubmitting] = useState(false)
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
   const [sectionTimeRemaining, setSectionTimeRemaining] = useState<number | null>(null)
+  // Listening passages the candidate has finished playing at least once this page
+  // load — gates the Listen & Answer prep countdown (see gatingAudioAsset below).
+  const [playedAudioIds, setPlayedAudioIds] = useState<Set<string>>(new Set())
   const [showTools, setShowTools] = useState(false)
   const [toolsTab, setToolsTab] = useState<'notes' | 'calc'>('notes')
   const [scratchpad, setScratchpad] = useState('')
@@ -270,6 +273,23 @@ export function TestPage() {
   const questions = currentSection?.questions ?? []
   const currentQ = questions[currentQIdx]
   const currentAnswer = currentQ ? (answers[currentQ.questionId] ?? emptyAnswer()) : emptyAnswer()
+
+  // The Listening passage gating THIS question's prep timer: a per-question audio
+  // asset if set, else the section-level one shared across all its questions.
+  const gatingAudioAsset = currentQ?.question?.audioAsset ?? currentSection?.audioAsset ?? null
+  // "Heard" only if there's nothing to gate on, or the clip's onEnded has actually
+  // fired this page load. Deliberately does NOT trust server playsUsed>0 as a
+  // "heard" proxy — that counter increments the instant Play is clicked, not when
+  // playback finishes, so a background testData refetch landing mid-playback
+  // could release the gate while the candidate was still listening (a real bug:
+  // it let recording start before the passage had actually finished). The
+  // one-time cost: a reload mid-section forces one more real play to re-unlock,
+  // which is a safe trade against ever unlocking early.
+  const audioAlreadyHeard = !gatingAudioAsset || playedAudioIds.has(gatingAudioAsset.id)
+  const waitingForAudio = !!gatingAudioAsset && !audioAlreadyHeard
+  const markAudioPlayed = useCallback((assetId: string) => {
+    setPlayedAudioIds(prev => (prev.has(assetId) ? prev : new Set(prev).add(assetId)))
+  }, [])
 
   // Clamp out-of-range indices. A pending auto-advance firing with a stale closure
   // (e.g. a recording's 800ms advance landing after the user already navigated)
@@ -671,6 +691,7 @@ export function TestPage() {
                   audioAsset={currentSection.audioAsset}
                   sessionId={sessionId}
                   token={token ?? ''}
+                  onPlaybackEnd={() => markAudioPlayed(currentSection.audioAsset.id)}
                 />
               </CardContent>
             </Card>
@@ -711,6 +732,7 @@ export function TestPage() {
                     audioAsset={currentQ.question.audioAsset}
                     sessionId={sessionId}
                     token={token ?? ''}
+                    onPlaybackEnd={() => markAudioPlayed(currentQ.question.audioAsset.id)}
                   />
                 )}
 
@@ -724,22 +746,28 @@ export function TestPage() {
                   token={token ?? ''}
                   onAutoAdvance={goToNext}
                   serverAnswered={currentQ.answered}
+                  waitingForAudio={waitingForAudio}
                 />
               </CardContent>
             </Card>
           )}
 
           <div className="flex items-center justify-between gap-3">
-            <Button variant="outline" onClick={goToPrev} disabled={currentSectionIdx === 0 && currentQIdx === 0}>
-              <ChevronLeft className="h-4 w-4 mr-1" />Previous
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={goToPrev} disabled={waitingForAudio || (currentSectionIdx === 0 && currentQIdx === 0)}>
+                <ChevronLeft className="h-4 w-4 mr-1" />Previous
+              </Button>
+              {waitingForAudio && (
+                <span className="text-xs text-indigo-700">Listen to the audio above to continue</span>
+              )}
+            </div>
 
             {isLastQuestion ? (
-              <Button onClick={() => setShowReviewModal(true)} className="gap-2">
+              <Button onClick={() => setShowReviewModal(true)} className="gap-2" disabled={waitingForAudio}>
                 <Send className="h-4 w-4" />Finish Test
               </Button>
             ) : (
-              <Button onClick={goToNext}>
+              <Button onClick={goToNext} disabled={waitingForAudio}>
                 Next<ChevronRight className="h-4 w-4 ml-1" />
               </Button>
             )}
@@ -883,16 +911,21 @@ export function TestPage() {
                     const answered = q.answered || isAnsweredLocal(answers[q.questionId])
                     const isCurrent = sIdx === currentSectionIdx && qIdx === currentQIdx
                     const isFlagged = flaggedQuestions.has(q.questionId)
+                    // Jumping away from the current question is locked until its
+                    // listening passage has been heard (matches the Next/Previous lock).
                     return (
                       <button
                         key={q.questionId}
+                        disabled={waitingForAudio && !isCurrent}
+                        title={waitingForAudio && !isCurrent ? 'Listen to the audio above to continue' : undefined}
                         onClick={() => saveCurrentAndGo(() => { setCurrentSectionIdx(sIdx); setCurrentQIdx(qIdx) })}
                         className={cn(
                           'h-8 w-8 rounded text-xs font-medium transition-colors',
                           isCurrent ? 'bg-primary text-white' :
                           isFlagged ? 'bg-amber-100 text-amber-700 border border-amber-300' :
                           answered ? 'bg-green-100 text-green-700 border border-green-200' :
-                          'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          'bg-gray-100 text-gray-600 hover:bg-gray-200',
+                          waitingForAudio && !isCurrent && 'opacity-50 cursor-not-allowed'
                         )}
                       >
                         {qIdx + 1}
@@ -988,9 +1021,10 @@ function Calculator({
   )
 }
 
-function AudioPrompt({ audioAsset, sessionId, token }: {
+function AudioPrompt({ audioAsset, sessionId, token, onPlaybackEnd }: {
   audioAsset: { id: string; url: string; playLimit: number; playsUsed: number }
   sessionId: string; token: string
+  onPlaybackEnd?: () => void   // fired when the clip finishes — used to release the prep-time gate
 }) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const [playsUsed, setPlaysUsed] = useState(audioAsset.playsUsed)
@@ -1049,16 +1083,17 @@ function AudioPrompt({ audioAsset, sessionId, token }: {
       </div>
       {error && <p className="text-xs text-red-600">{error}</p>}
       {/* No native controls — playback is gated through the server-side play-limit check */}
-      <audio ref={audioRef} src={fullUrl} onEnded={() => setPlaying(false)} onError={handleMediaError} className="hidden" />
+      <audio ref={audioRef} src={fullUrl} onEnded={() => { setPlaying(false); onPlaybackEnd?.() }} onError={handleMediaError} className="hidden" />
     </div>
   )
 }
 
-function QuestionInput({ question, answer, onChange, onAnswerSaved, sessionId, token, onAutoAdvance, serverAnswered }: {
+function QuestionInput({ question, answer, onChange, onAnswerSaved, sessionId, token, onAutoAdvance, serverAnswered, waitingForAudio }: {
   question: any; answer: AnswerState; onChange: (p: Partial<AnswerState>) => void
   onAnswerSaved?: (questionId: string, p: Partial<AnswerState>) => void  // explicit-id write for async saves
   sessionId: string; token: string; onAutoAdvance?: () => void
   serverAnswered?: boolean  // the server's persisted "answered" flag — survives revisits/reloads
+  waitingForAudio?: boolean  // Listen & Answer: hold the prep countdown until the passage has been heard
 }) {
   switch (question.type) {
     case 'MCQ_SINGLE':
@@ -1155,6 +1190,7 @@ function QuestionInput({ question, answer, onChange, onAnswerSaved, sessionId, t
           prepSeconds={question.prepSeconds ?? 0} speakSeconds={question.speakSeconds ?? null}
           onAutoAdvance={onAutoAdvance}
           serverAnswered={serverAnswered}
+          waitingForAudio={waitingForAudio}
         />
       )
 
@@ -1171,12 +1207,13 @@ function QuestionInput({ question, answer, onChange, onAnswerSaved, sessionId, t
   }
 }
 
-function AudioRecordingQuestion({ answer, onChange, onAnswerSaved, questionId, sessionId, token, prepSeconds, speakSeconds, onAutoAdvance, serverAnswered }: {
+function AudioRecordingQuestion({ answer, onChange, onAnswerSaved, questionId, sessionId, token, prepSeconds, speakSeconds, onAutoAdvance, serverAnswered, waitingForAudio }: {
   answer: AnswerState; onChange: (p: Partial<AnswerState>) => void
   onAnswerSaved?: (questionId: string, p: Partial<AnswerState>) => void
   questionId: string; sessionId: string; token: string
   prepSeconds: number; speakSeconds: number | null; onAutoAdvance?: () => void
   serverAnswered?: boolean
+  waitingForAudio?: boolean
 }) {
   const { permission, recording, uploading, previewUrl, start, stopAndUpload } = useAudioRecorder()
   const queryClient = useQueryClient()
@@ -1223,6 +1260,7 @@ function AudioRecordingQuestion({ answer, onChange, onAnswerSaved, questionId, s
         start={start}
         stopAndUpload={handleStop}
         onAutoAdvance={onAutoAdvance}
+        waitingForAudio={waitingForAudio}
       />
     )
   }
@@ -1258,13 +1296,14 @@ function AudioRecordingQuestion({ answer, onChange, onAnswerSaved, questionId, s
   )
 }
 
-function TimedSpeaking({ prepSeconds, speakSeconds, uploading, permission, previewUrl, alreadyAnswered, start, stopAndUpload, onAutoAdvance }: {
+function TimedSpeaking({ prepSeconds, speakSeconds, uploading, permission, previewUrl, alreadyAnswered, start, stopAndUpload, onAutoAdvance, waitingForAudio }: {
   prepSeconds: number; speakSeconds: number
   uploading: boolean; permission: string; previewUrl: string | null
   alreadyAnswered: boolean
   start: () => Promise<boolean>
   stopAndUpload: () => Promise<string | null>
   onAutoAdvance?: () => void
+  waitingForAudio?: boolean  // hold prep/recording until the listening passage has been heard
 }) {
   // phase: 'prep' → 'recording' → 'done'.  If already answered (revisiting), go straight to done.
   const [phase, setPhase] = useState<'prep' | 'recording' | 'done'>(alreadyAnswered ? 'done' : (prepSeconds > 0 ? 'prep' : 'recording'))
@@ -1314,6 +1353,7 @@ function TimedSpeaking({ prepSeconds, speakSeconds, uploading, permission, previ
   useEffect(() => { beginRecordingRef.current = beginRecording; finishRef.current = finish })
   useEffect(() => {
     if (phase === 'done') return
+    if (waitingForAudio) return   // paused until the listening passage has finished playing
     if (remaining <= 0) {
       if (phase === 'prep') { beginRecordingRef.current() }
       else if (phase === 'recording') { finishRef.current() }
@@ -1321,7 +1361,7 @@ function TimedSpeaking({ prepSeconds, speakSeconds, uploading, permission, previ
     }
     const t = setTimeout(() => setRemaining(r => r - 1), 1000)
     return () => clearTimeout(t)
-  }, [remaining, phase])
+  }, [remaining, phase, waitingForAudio])
 
   if (phase === 'done') {
     return (
@@ -1329,6 +1369,24 @@ function TimedSpeaking({ prepSeconds, speakSeconds, uploading, permission, previ
         <p className="text-sm text-green-700 font-medium">✓ Answer recorded.</p>
         {uploading && <p className="text-xs text-muted-foreground">Uploading…</p>}
         {previewUrl && <audio controls src={previewUrl} className="w-full" />}
+      </div>
+    )
+  }
+
+  // Held until the passage has been played through once — otherwise prep time
+  // (and, worse, the auto-record cascade) could run out while the candidate was
+  // still listening, capturing dead air or cutting them off before they'd even
+  // heard the question in full.
+  if (waitingForAudio) {
+    return (
+      <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4 space-y-2">
+        <div className="flex items-center gap-2 text-indigo-800">
+          <Volume2 className="h-5 w-5" />
+          <span className="font-semibold">Listen to the audio above first</span>
+        </div>
+        <p className="text-xs text-indigo-700">
+          Your preparation time will start automatically once you finish playing the audio.
+        </p>
       </div>
     )
   }

@@ -2322,7 +2322,7 @@
       "difficulty": "MEDIUM",
       "points": 3,
       "timeLimit": null,
-      "prepSeconds": 30,
+      "prepSeconds": 10,
       "speakSeconds": 90,
       "tags": [
         "jam"
@@ -2343,7 +2343,7 @@
       "difficulty": "MEDIUM",
       "points": 3,
       "timeLimit": null,
-      "prepSeconds": 30,
+      "prepSeconds": 10,
       "speakSeconds": 90,
       "tags": [
         "jam"
@@ -2364,7 +2364,7 @@
       "difficulty": "MEDIUM",
       "points": 3,
       "timeLimit": null,
-      "prepSeconds": 30,
+      "prepSeconds": 10,
       "speakSeconds": 90,
       "tags": [
         "jam"
@@ -2385,7 +2385,7 @@
       "difficulty": "MEDIUM",
       "points": 3,
       "timeLimit": null,
-      "prepSeconds": 30,
+      "prepSeconds": 10,
       "speakSeconds": 90,
       "tags": [
         "jam"
@@ -2406,7 +2406,7 @@
       "difficulty": "MEDIUM",
       "points": 3,
       "timeLimit": null,
-      "prepSeconds": 30,
+      "prepSeconds": 10,
       "speakSeconds": 90,
       "tags": [
         "jam"
@@ -2427,7 +2427,7 @@
       "difficulty": "MEDIUM",
       "points": 3,
       "timeLimit": null,
-      "prepSeconds": 30,
+      "prepSeconds": 10,
       "speakSeconds": 90,
       "tags": [
         "jam"
@@ -2448,7 +2448,7 @@
       "difficulty": "MEDIUM",
       "points": 3,
       "timeLimit": null,
-      "prepSeconds": 30,
+      "prepSeconds": 10,
       "speakSeconds": 90,
       "tags": [
         "jam"
@@ -2469,7 +2469,7 @@
       "difficulty": "MEDIUM",
       "points": 3,
       "timeLimit": null,
-      "prepSeconds": 30,
+      "prepSeconds": 10,
       "speakSeconds": 90,
       "tags": [
         "jam"
@@ -2490,7 +2490,7 @@
       "difficulty": "MEDIUM",
       "points": 3,
       "timeLimit": null,
-      "prepSeconds": 30,
+      "prepSeconds": 10,
       "speakSeconds": 90,
       "tags": [
         "jam"
@@ -2511,7 +2511,7 @@
       "difficulty": "MEDIUM",
       "points": 3,
       "timeLimit": null,
-      "prepSeconds": 30,
+      "prepSeconds": 10,
       "speakSeconds": 90,
       "tags": [
         "jam"
@@ -2532,7 +2532,7 @@
       "difficulty": "MEDIUM",
       "points": 3,
       "timeLimit": null,
-      "prepSeconds": 30,
+      "prepSeconds": 10,
       "speakSeconds": 90,
       "tags": [
         "jam"
@@ -2553,7 +2553,7 @@
       "difficulty": "MEDIUM",
       "points": 3,
       "timeLimit": null,
-      "prepSeconds": 30,
+      "prepSeconds": 10,
       "speakSeconds": 90,
       "tags": [
         "jam"
@@ -2574,7 +2574,7 @@
       "difficulty": "MEDIUM",
       "points": 3,
       "timeLimit": null,
-      "prepSeconds": 30,
+      "prepSeconds": 10,
       "speakSeconds": 90,
       "tags": [
         "jam"
@@ -2595,7 +2595,7 @@
       "difficulty": "MEDIUM",
       "points": 3,
       "timeLimit": null,
-      "prepSeconds": 30,
+      "prepSeconds": 10,
       "speakSeconds": 90,
       "tags": [
         "jam"
@@ -2616,7 +2616,7 @@
       "difficulty": "MEDIUM",
       "points": 3,
       "timeLimit": null,
-      "prepSeconds": 30,
+      "prepSeconds": 10,
       "speakSeconds": 90,
       "tags": [
         "jam"
@@ -2637,7 +2637,7 @@
       "difficulty": "MEDIUM",
       "points": 3,
       "timeLimit": null,
-      "prepSeconds": 30,
+      "prepSeconds": 10,
       "speakSeconds": 90,
       "tags": [
         "jam"
@@ -2658,7 +2658,7 @@
       "difficulty": "MEDIUM",
       "points": 3,
       "timeLimit": null,
-      "prepSeconds": 30,
+      "prepSeconds": 10,
       "speakSeconds": 90,
       "tags": [
         "jam"
@@ -2679,7 +2679,7 @@
       "difficulty": "MEDIUM",
       "points": 3,
       "timeLimit": null,
-      "prepSeconds": 30,
+      "prepSeconds": 10,
       "speakSeconds": 90,
       "tags": [
         "jam"
@@ -2700,7 +2700,7 @@
       "difficulty": "MEDIUM",
       "points": 3,
       "timeLimit": null,
-      "prepSeconds": 30,
+      "prepSeconds": 10,
       "speakSeconds": 90,
       "tags": [
         "jam"
@@ -3183,7 +3183,7 @@
       "difficulty": "MEDIUM",
       "points": 3,
       "timeLimit": null,
-      "prepSeconds": 30,
+      "prepSeconds": 10,
       "speakSeconds": 90,
       "tags": [
         "jam"

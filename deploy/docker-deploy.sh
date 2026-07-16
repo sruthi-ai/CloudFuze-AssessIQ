@@ -162,10 +162,13 @@ else
     info "nginx config already exists — skipping copy (preserves certbot SSL lines)."
 fi
 
-if [[ ! -L "$NGINX_LINK" ]]; then
-    ln -s "$NGINX_CONF" "$NGINX_LINK"
-    info "nginx site enabled."
-fi
+# Idempotent enable: -f replaces whatever is already there, -n avoids following an
+# existing symlink. The old `ln -s` guarded only on -L, so when sites-enabled/
+# already had a plain file it errored "File exists" and (under set -e) failed the
+# WHOLE deploy at the very end — even though the app was already built, healthy
+# and serving. This never fails now.
+ln -sfn "$NGINX_CONF" "$NGINX_LINK"
+info "nginx site enabled."
 
 nginx -t && systemctl reload nginx
 info "nginx reloaded."

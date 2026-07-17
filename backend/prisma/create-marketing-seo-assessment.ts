@@ -19,10 +19,10 @@
 import { PrismaClient, TestStatus } from '@prisma/client'
 const prisma = new PrismaClient()
 
-const SEO_BANK_NAME = 'Marketing SEO Questions Bank'
+export const SEO_BANK_NAME = 'Marketing SEO Questions Bank'
 
 // Transcribed 1:1 from the supplied Q1-62 (Sections A-G) + answer key grid.
-const SEO_QUESTIONS: { body: string; options: string[]; correct: number }[] = [
+export const SEO_QUESTIONS: { body: string; options: string[]; correct: number }[] = [
   { body: "What does SEO stand for?", options: ["Search Engine Optimization", "Site Enhancement Operation", "Search Engine Operation", "Search Experience Optimization"], correct: 0 },
   { body: "What does GEO stand for in the context of modern search marketing?", options: ["Geographic Engine Optimization", "Generative Engine Optimization", "Global Export Optimization", "General Enterprise Operations"], correct: 1 },
   { body: "SEO primarily helps a website to:", options: ["Increase paid ad spend", "Rank higher in organic (unpaid) search results", "Send emails to customers", "Design website layouts"], correct: 1 },
@@ -184,4 +184,6 @@ async function main() {
   console.log(`\n✅ "${testTitle}": Aptitude ${aptiPoolSize}/${aptiQuestions.length} (${sectionMin}min) + SEO & Marketing ${seoPoolSize}/${seoQuestions.length} (${sectionMin}min) = ${totalMin} min, ${aptiPoolSize + seoPoolSize} marks. Status DRAFT — publish it in the admin UI to use.`)
 }
 
-main().catch(e => { console.error('❌ create-marketing-seo-assessment failed:', e); process.exit(1) }).finally(() => prisma.$disconnect())
+if (require.main === module) {
+  main().catch(e => { console.error('❌ create-marketing-seo-assessment failed:', e); process.exit(1) }).finally(() => prisma.$disconnect())
+}

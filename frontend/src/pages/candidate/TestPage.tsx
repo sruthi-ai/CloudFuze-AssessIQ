@@ -60,6 +60,9 @@ export function TestPage() {
   // Listening passages the candidate has finished playing at least once this page
   // load — gates the Listen & Answer prep countdown (see gatingAudioAsset below).
   const [playedAudioIds, setPlayedAudioIds] = useState<Set<string>>(new Set())
+  // Whether the gating audio asset is actively playing right now (first play OR a
+  // replay) — pauses the prep/recording countdown for the duration of playback.
+  const [audioIsPlaying, setAudioIsPlaying] = useState(false)
   const [showTools, setShowTools] = useState(false)
   const [toolsTab, setToolsTab] = useState<'notes' | 'calc'>('notes')
   const [scratchpad, setScratchpad] = useState('')
@@ -286,7 +289,10 @@ export function TestPage() {
   // one-time cost: a reload mid-section forces one more real play to re-unlock,
   // which is a safe trade against ever unlocking early.
   const audioAlreadyHeard = !gatingAudioAsset || playedAudioIds.has(gatingAudioAsset.id)
-  const waitingForAudio = !!gatingAudioAsset && !audioAlreadyHeard
+  // Also pause during any replay (2nd/3rd play), not just before the first listen —
+  // otherwise the prep/recording countdown kept running while the candidate was
+  // still relistening to a passage they'd already heard once.
+  const waitingForAudio = !!gatingAudioAsset && (!audioAlreadyHeard || audioIsPlaying)
   const markAudioPlayed = useCallback((assetId: string) => {
     setPlayedAudioIds(prev => (prev.has(assetId) ? prev : new Set(prev).add(assetId)))
   }, [])
@@ -692,6 +698,7 @@ export function TestPage() {
                   sessionId={sessionId}
                   token={token ?? ''}
                   onPlaybackEnd={() => markAudioPlayed(currentSection.audioAsset.id)}
+                  onPlayingChange={setAudioIsPlaying}
                 />
               </CardContent>
             </Card>
@@ -729,10 +736,12 @@ export function TestPage() {
 
                 {currentQ.question.audioAsset && (
                   <AudioPrompt
+                    key={currentQ.question.audioAsset.id}
                     audioAsset={currentQ.question.audioAsset}
                     sessionId={sessionId}
                     token={token ?? ''}
                     onPlaybackEnd={() => markAudioPlayed(currentQ.question.audioAsset.id)}
+                    onPlayingChange={setAudioIsPlaying}
                   />
                 )}
 
@@ -1021,10 +1030,11 @@ function Calculator({
   )
 }
 
-function AudioPrompt({ audioAsset, sessionId, token, onPlaybackEnd }: {
+function AudioPrompt({ audioAsset, sessionId, token, onPlaybackEnd, onPlayingChange }: {
   audioAsset: { id: string; url: string; playLimit: number; playsUsed: number }
   sessionId: string; token: string
   onPlaybackEnd?: () => void   // fired when the clip finishes — used to release the prep-time gate
+  onPlayingChange?: (playing: boolean) => void   // fired on every play/stop, including replays and errors — pauses the prep/recording timer for as long as audio is actually playing
 }) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const [playsUsed, setPlaysUsed] = useState(audioAsset.playsUsed)
@@ -1050,6 +1060,7 @@ function AudioPrompt({ audioAsset, sessionId, token, onPlaybackEnd }: {
         el.currentTime = 0
         await el.play()
         setPlaying(true)
+        onPlayingChange?.(true)
       }
     } catch (err) {
       setError(getErrorMessage(err) || 'Could not start playback — please try again.')
@@ -1060,10 +1071,13 @@ function AudioPrompt({ audioAsset, sessionId, token, onPlaybackEnd }: {
 
   // The <audio> element can fail asynchronously (network hiccup, slow load) even
   // after el.play() has already resolved — without this the button was left stuck
-  // on "Playing…" forever with no sound and no way to retry.
+  // on "Playing…" forever with no sound and no way to retry. It must also release
+  // onPlayingChange (not just onPlaybackEnd) or a mid-playback error would leave
+  // the prep/recording timer paused forever with no way to proceed.
   const handleMediaError = () => {
     setPlaying(false)
     setError('Playback failed — check your connection and try again.')
+    onPlayingChange?.(false)
   }
 
   return (
@@ -1083,7 +1097,7 @@ function AudioPrompt({ audioAsset, sessionId, token, onPlaybackEnd }: {
       </div>
       {error && <p className="text-xs text-red-600">{error}</p>}
       {/* No native controls — playback is gated through the server-side play-limit check */}
-      <audio ref={audioRef} src={fullUrl} onEnded={() => { setPlaying(false); onPlaybackEnd?.() }} onError={handleMediaError} className="hidden" />
+      <audio ref={audioRef} src={fullUrl} onEnded={() => { setPlaying(false); onPlayingChange?.(false); onPlaybackEnd?.() }} onError={handleMediaError} className="hidden" />
     </div>
   )
 }
@@ -1376,8 +1390,12 @@ function TimedSpeaking({ prepSeconds, speakSeconds, uploading, permission, previ
   // Held until the passage has been played through once — otherwise prep time
   // (and, worse, the auto-record cascade) could run out while the candidate was
   // still listening, capturing dead air or cutting them off before they'd even
-  // heard the question in full.
-  if (waitingForAudio) {
+  // heard the question in full. Only swapped in during 'prep': once recording
+  // has actually started, the countdown effect above still pauses correctly on
+  // a replay, but this screen must not replace the "Recording — speak now" UI
+  // below, or the candidate would see "waiting for audio" while their mic is
+  // still hot with no indication of it.
+  if (waitingForAudio && phase === 'prep') {
     return (
       <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4 space-y-2">
         <div className="flex items-center gap-2 text-indigo-800">

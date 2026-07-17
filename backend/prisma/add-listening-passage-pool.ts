@@ -95,7 +95,7 @@ async function generateAudio(client: OpenAI, name: string, script: string): Prom
   return `/uploads/audio-assets/${filename}`
 }
 
-async function main() {
+export async function main() {
   const testTitle = process.env.TEST_TITLE || 'Freshers Assessment 1'
   const sectionTitle = process.env.SECTION_TITLE || 'Listen & Answer'
 
@@ -191,4 +191,6 @@ async function main() {
   console.log(`\n✅ "${sectionTitle}": ${total} questions across ${total / 5} passages. pickCount=5, pickGroupSize=5 — one passage's worth served at random per session.`)
 }
 
-main().catch(e => { console.error('❌ add-listening-passage-pool failed:', e); process.exit(1) }).finally(() => prisma.$disconnect())
+if (require.main === module) {
+  main().catch(e => { console.error('❌ add-listening-passage-pool failed:', e); process.exit(1) }).finally(() => prisma.$disconnect())
+}

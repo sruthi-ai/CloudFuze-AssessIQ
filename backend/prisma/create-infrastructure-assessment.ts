@@ -19,11 +19,11 @@
 import { PrismaClient, TestStatus } from '@prisma/client'
 const prisma = new PrismaClient()
 
-const INFRA_BANK_NAME = 'Infra Questions Bank'
+export const INFRA_BANK_NAME = 'Infra Questions Bank'
 
 // [title suffix, body, options A-D, correct index 0-3] — transcribed 1:1 from the
 // supplied Q1-Q56 + answer key.
-const INFRA_QUESTIONS: { body: string; options: string[]; correct: number }[] = [
+export const INFRA_QUESTIONS: { body: string; options: string[]; correct: number }[] = [
   { body: "Which command changes both the owner and group of a file in a single step?", options: ["chmod", "chown", "chgrp", "umask"], correct: 1 },
   { body: "Which protocol operates at Layer 4 of the OSI model and guarantees reliable, ordered delivery of data?", options: ["IP", "TCP", "ICMP", "ARP"], correct: 1 },
   { body: "Which command lists only the currently running containers?", options: ["docker ps -a", "docker ps", "docker images", "docker container ls -a"], correct: 1 },
@@ -179,4 +179,6 @@ async function main() {
   console.log(`\n✅ "${testTitle}": Aptitude ${aptiPoolSize}/${aptiQuestions.length} (${sectionMin}min) + Infrastructure ${infraPoolSize}/${infraQuestions.length} (${sectionMin}min) = ${totalMin} min, ${aptiPoolSize + infraPoolSize} marks. Status DRAFT — publish it in the admin UI to use.`)
 }
 
-main().catch(e => { console.error('❌ create-infrastructure-assessment failed:', e); process.exit(1) }).finally(() => prisma.$disconnect())
+if (require.main === module) {
+  main().catch(e => { console.error('❌ create-infrastructure-assessment failed:', e); process.exit(1) }).finally(() => prisma.$disconnect())
+}

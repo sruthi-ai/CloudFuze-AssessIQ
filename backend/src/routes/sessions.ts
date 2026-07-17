@@ -295,8 +295,19 @@ export async function sessionRoutes(server: FastifyInstance) {
       for (const section of invitation.test.sections) {
         let ids = section.testQuestions.map(tq => tq.questionId)
         if (section.pickCount && section.pickCount < ids.length) {
-          // Pool: pick a random subset of pickCount questions
-          ids = fisherYates(ids).slice(0, section.pickCount)
+          if (section.pickGroupSize && section.pickGroupSize > 0 && ids.length % section.pickGroupSize === 0) {
+            // Grouped pool: e.g. 5 Listening passages of 5 questions each — pick whole
+            // group(s) at random so a session gets one coherent passage, not a mix.
+            // Order within each group is preserved; only which group(s) are chosen is random.
+            const groupSize = section.pickGroupSize
+            const groups: string[][] = []
+            for (let i = 0; i < ids.length; i += groupSize) groups.push(ids.slice(i, i + groupSize))
+            const numGroups = Math.max(1, Math.round(section.pickCount / groupSize))
+            ids = fisherYates(groups).slice(0, numGroups).flat()
+          } else {
+            // Pool: pick a random subset of pickCount questions
+            ids = fisherYates(ids).slice(0, section.pickCount)
+          }
         } else if (invitation.test.shuffleQuestions) {
           ids = fisherYates(ids)
         }

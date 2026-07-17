@@ -322,6 +322,7 @@ model TestSection {
   order        Int      @default(0)
   timeLimit    Int?     // per-section time limit in seconds
   pickCount    Int?     // if set, randomly pick this many questions per session
+  pickGroupSize Int?    // if set, the pool is treated as fixed-size contiguous groups (ordered by TestQuestion.order); picking selects whole groups instead of individual questions — e.g. 5 Listening passages of 5 questions each, pick 1 passage's worth
   skill        SkillArea?  // which IELTS/TOEFL skill this section assesses (for band report)
   audioAssetId String?     // section-level audio (e.g. Listening passage played once for all its questions)
   audioAsset   AudioAsset? @relation(fields: [audioAssetId], references: [id])

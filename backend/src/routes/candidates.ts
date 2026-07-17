@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import { randomUUID } from 'crypto'
 import { prisma } from '../db'
 import { sendError, sendSuccess } from '../utils/errors'
 import { requireRole } from '../middleware/authenticate'
@@ -193,9 +194,19 @@ export async function candidateRoutes(server: FastifyInstance) {
         }
 
         const pin = await uniquePin()
-        const invitation = await prisma.invitation.create({
-          data: { testId, candidateId: candidate.id, sentById: request.user.sub, expiresAt, message, sentAt: new Date(), status: 'SENT', pin },
-        })
+        // A cancelled/expired invitation is allowed to be re-sent above, but the
+        // (testId, candidateId) unique constraint means a plain create() here
+        // would throw against that still-present row — reactivate it in place
+        // instead, with a fresh token/pin so an old cancelled link can't be
+        // silently revived.
+        const invitation = existing
+          ? await prisma.invitation.update({
+              where: { id: existing.id },
+              data: { sentById: request.user.sub, expiresAt, message, sentAt: new Date(), status: 'SENT', pin, token: randomUUID(), openedAt: null },
+            })
+          : await prisma.invitation.create({
+              data: { testId, candidateId: candidate.id, sentById: request.user.sub, expiresAt, message, sentAt: new Date(), status: 'SENT', pin },
+            })
 
         await sendInvitationEmail({
           to: c.email,

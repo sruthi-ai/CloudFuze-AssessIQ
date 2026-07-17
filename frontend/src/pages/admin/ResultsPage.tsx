@@ -54,6 +54,45 @@ function exportCSV(sessions: any[]) {
 type SortKey = 'submittedAt' | 'score' | 'candidate'
 type SortDir = 'asc' | 'desc'
 
+type ResultFilters = {
+  search: string; statusFilter: string; testFilter: string
+  dateFrom: string; dateTo: string; minScore: string; maxScore: string
+}
+
+// Shared by the on-screen table and CSV export, so "export all" (no selection)
+// always matches what's actually visible under the current filters instead of
+// silently exporting the tenant's entire unfiltered result set.
+function filterSessions(list: any[], f: ResultFilters): any[] {
+  const fromMs = f.dateFrom ? new Date(f.dateFrom + 'T00:00:00').getTime() : null
+  const toMs = f.dateTo ? new Date(f.dateTo + 'T23:59:59.999').getTime() : null
+  const minPct = f.minScore !== '' ? Number(f.minScore) : null
+  const maxPct = f.maxScore !== '' ? Number(f.maxScore) : null
+
+  return list.filter((s: any) => {
+    const q = f.search.toLowerCase()
+    const matchSearch = !q ||
+      s.candidate.email.toLowerCase().includes(q) ||
+      `${s.candidate.firstName} ${s.candidate.lastName}`.toLowerCase().includes(q) ||
+      s.test.title.toLowerCase().includes(q)
+    const matchStatus = !f.statusFilter || s.status === f.statusFilter
+    const matchTest = !f.testFilter || s.test?.id === f.testFilter
+
+    let matchDate = true
+    if (fromMs !== null || toMs !== null) {
+      const t = s.submittedAt ? new Date(s.submittedAt).getTime() : null
+      matchDate = t !== null && (fromMs === null || t >= fromMs) && (toMs === null || t <= toMs)
+    }
+
+    let matchScore = true
+    if (minPct !== null || maxPct !== null) {
+      const pct = s.score?.percentage
+      matchScore = pct != null && (minPct === null || pct >= minPct) && (maxPct === null || pct <= maxPct)
+    }
+
+    return matchSearch && matchStatus && matchTest && matchDate && matchScore
+  })
+}
+
 export function ResultsPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -110,37 +149,7 @@ export function ResultsPage() {
   }
 
   const sessions = useMemo(() => {
-    // Date range → epoch ms. "to" is end-of-day so it's inclusive of that date.
-    const fromMs = dateFrom ? new Date(dateFrom + 'T00:00:00').getTime() : null
-    const toMs = dateTo ? new Date(dateTo + 'T23:59:59.999').getTime() : null
-    const minPct = minScore !== '' ? Number(minScore) : null
-    const maxPct = maxScore !== '' ? Number(maxScore) : null
-
-    let list = (data?.sessions ?? []).filter((s: any) => {
-      const q = search.toLowerCase()
-      const matchSearch = !search ||
-        s.candidate.email.toLowerCase().includes(q) ||
-        `${s.candidate.firstName} ${s.candidate.lastName}`.toLowerCase().includes(q) ||
-        s.test.title.toLowerCase().includes(q)
-      const matchStatus = !statusFilter || s.status === statusFilter
-      const matchTest = !testFilter || s.test?.id === testFilter
-
-      // Date filter — on submission date (rows with no submittedAt are excluded once a range is set)
-      let matchDate = true
-      if (fromMs !== null || toMs !== null) {
-        const t = s.submittedAt ? new Date(s.submittedAt).getTime() : null
-        matchDate = t !== null && (fromMs === null || t >= fromMs) && (toMs === null || t <= toMs)
-      }
-
-      // Score filter — on percentage; unscored rows excluded once a bound is set
-      let matchScore = true
-      if (minPct !== null || maxPct !== null) {
-        const pct = s.score?.percentage
-        matchScore = pct != null && (minPct === null || pct >= minPct) && (maxPct === null || pct <= maxPct)
-      }
-
-      return matchSearch && matchStatus && matchTest && matchDate && matchScore
-    })
+    let list = filterSessions(data?.sessions ?? [], { search, statusFilter, testFilter, dateFrom, dateTo, minScore, maxScore })
 
     list = [...list].sort((a: any, b: any) => {
       let av: any, bv: any
@@ -209,10 +218,23 @@ export function ResultsPage() {
         )}
         {sessions.length > 0 && (
           <Button variant="outline" size="sm" disabled={exporting} onClick={async () => {
+            // Selection wins if the admin has checked specific rows — export
+            // exactly those, from what's already loaded, no re-fetch needed.
+            if (selectedIds.size > 0) {
+              exportCSV(sessions.filter((s: any) => selectedIds.has(s.id)))
+              return
+            }
+            // No selection: export every result matching the current filters
+            // (not just the ones already loaded on screen) — testId/status can
+            // be pushed to the server, the rest (search/date/score) only exist
+            // client-side so they're re-applied to the larger fetch.
             setExporting(true)
             try {
-              const res = await api.get('/results?limit=5000')
-              exportCSV(res.data.data.sessions)
+              const params = new URLSearchParams({ limit: '5000' })
+              if (testFilter) params.set('testId', testFilter)
+              if (statusFilter) params.set('status', statusFilter)
+              const res = await api.get(`/results?${params.toString()}`)
+              exportCSV(filterSessions(res.data.data.sessions, { search, statusFilter, testFilter, dateFrom, dateTo, minScore, maxScore }))
             } catch {
               toast({ title: 'Export failed', variant: 'destructive' })
             } finally {
@@ -220,7 +242,7 @@ export function ResultsPage() {
             }
           }}>
             {exporting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Download className="h-4 w-4 mr-2" />}
-            Export CSV
+            {selectedIds.size > 0 ? `Export selected (${selectedIds.size})` : 'Export CSV'}
           </Button>
         )}
         </div>

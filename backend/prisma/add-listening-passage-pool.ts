@@ -26,9 +26,13 @@ import { writeFile } from 'fs/promises'
 import { mkdirSync } from 'fs'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
-import { UPLOADS_DIR } from '../src/uploads'
 
 const prisma = new PrismaClient()
+// Mirrors src/uploads.ts's UPLOADS_DIR — cannot import it directly: the
+// production image ships only dist/ and prisma/, not src/, so a relative
+// import across that boundary throws MODULE_NOT_FOUND at container start
+// (silently, since entrypoint.sh's bootstrap step failure is non-fatal).
+const UPLOADS_DIR = process.env.UPLOADS_DIR ?? join(process.cwd(), 'uploads')
 mkdirSync(join(UPLOADS_DIR, 'audio-assets'), { recursive: true })
 
 type PassageQ = { body: string }

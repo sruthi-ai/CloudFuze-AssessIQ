@@ -14,7 +14,22 @@ interface GradeResult {
 
 const REQUEST_TIMEOUT_MS = 15_000
 
-export async function aiGradeSession(sessionId: string): Promise<{ graded: number; skipped: number; failed: number }> {
+// Trim an OpenAI/SDK error down to a short, admin-readable reason — no stack
+// trace, no PII. Surfaced all the way to the Results page so a grading failure
+// (bad key, no credits, rate-limited) is diagnosable without server log access.
+function describeGradingError(err: unknown): string {
+  const anyErr = err as { status?: number; code?: string; message?: string } | null
+  const status = anyErr?.status
+  const code = anyErr?.code
+  const msg = (anyErr?.message ?? String(err)).slice(0, 200)
+  if (status === 401) return `Invalid OpenAI API key (401): ${msg}`
+  if (status === 429 || code === 'insufficient_quota') return `OpenAI rate limit or out of credits (429): ${msg}`
+  if (status === 404) return `OpenAI model not found (404): ${msg}`
+  if (code === 'ENOENT') return `Audio/answer file missing on the server: ${msg}`
+  return status ? `OpenAI error ${status}: ${msg}` : msg
+}
+
+export async function aiGradeSession(sessionId: string): Promise<{ graded: number; skipped: number; failed: number; errors: string[] }> {
   const session = await prisma.session.findUnique({
     where: { id: sessionId },
     include: {
@@ -32,7 +47,7 @@ export async function aiGradeSession(sessionId: string): Promise<{ graded: numbe
     },
   })
 
-  if (!session) return { graded: 0, skipped: 0, failed: 0 }
+  if (!session) return { graded: 0, skipped: 0, failed: 0, errors: [] }
 
   // Prefer the tenant's UI-configured OpenAI key (admin Settings), fall back to the
   // server env var. The UI key lets admins rotate it without SSH/redeploy; it's
@@ -43,6 +58,7 @@ export async function aiGradeSession(sessionId: string): Promise<{ graded: numbe
   let graded = 0
   let skipped = 0
   let failed = 0
+  const errors: string[] = []
 
   for (const answer of session.answers) {
     const q = answer.question
@@ -81,6 +97,7 @@ export async function aiGradeSession(sessionId: string): Promise<{ graded: numbe
         graded++
       } catch (err) {
         console.error(`AI speaking grading failed for answer ${answer.id} (session ${sessionId}):`, err)
+        errors.push(describeGradingError(err))
         failed++
       }
       continue
@@ -117,6 +134,7 @@ export async function aiGradeSession(sessionId: string): Promise<{ graded: numbe
       graded++
     } catch (err) {
       console.error(`AI grading failed for answer ${answer.id} (session ${sessionId}):`, err)
+      errors.push(describeGradingError(err))
       failed++
       // Leave gradingStatus as PENDING so it can be retried later
     }
@@ -128,7 +146,7 @@ export async function aiGradeSession(sessionId: string): Promise<{ graded: numbe
     await scoreSession(sessionId)
   }
 
-  return { graded, skipped, failed }
+  return { graded, skipped, failed, errors }
 }
 
 // Wraps untrusted candidate text so it can't be interpreted as instructions by the model.

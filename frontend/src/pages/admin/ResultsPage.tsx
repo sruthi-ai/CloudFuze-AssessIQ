@@ -87,8 +87,16 @@ export function ResultsPage() {
       const d = res?.data ?? res
       queryClient.invalidateQueries({ queryKey: ['results'] })
       setSelectedIds(new Set())
+      const topErrors: string[] = d?.topErrors ?? []
       if (d?.warning) {
         toast({ title: 'Nothing was graded', description: d.warning, variant: 'destructive' })
+      } else if (d?.answersFailed > 0 && topErrors.length > 0) {
+        // Show the actual reason grading failed — no server log access needed.
+        toast({
+          title: `${d.answersFailed} answer(s) failed to grade`,
+          description: `${d?.answersGraded ?? 0} graded OK. Reason: ${topErrors[0]}${topErrors.length > 1 ? ` (+${topErrors.length - 1} other error type(s))` : ''}`,
+          variant: 'destructive',
+        })
       } else {
         toast({ title: 'AI grading complete', description: `Graded ${d?.answersGraded ?? 0} answer(s) across ${d?.sessionsProcessed ?? 0} session(s)${d?.answersFailed ? `, ${d.answersFailed} failed` : ''}. Scores now include spoken/written marks.` })
       }

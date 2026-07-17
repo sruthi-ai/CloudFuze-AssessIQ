@@ -200,7 +200,7 @@ export async function resultRoutes(server: FastifyInstance) {
     logAudit({
       tenantId: request.user.tenantId, userId: request.user.sub, action: 'AI_GRADE_TRIGGERED',
       entityType: 'session', entityId: sessionId,
-      metadata: { graded: result.graded, skipped: result.skipped, failed: result.failed },
+      metadata: { graded: result.graded, skipped: result.skipped, failed: result.failed, errors: result.errors },
     })
 
     const failedNote = result.failed > 0 ? `, ${result.failed} failed (left pending for retry)` : ''
@@ -229,26 +229,37 @@ export async function resultRoutes(server: FastifyInstance) {
     let totalGraded = 0
     let totalFailed = 0
     let totalSkipped = 0
+    const errorCounts = new Map<string, number>()
     for (const s of sessions) {
       const r = await aiGradeSession(s.id)
       totalGraded += r.graded
       totalFailed += r.failed
       totalSkipped += r.skipped
+      for (const e of r.errors) errorCounts.set(e, (errorCounts.get(e) ?? 0) + 1)
     }
+    // Distinct failure reasons, most common first — this is what actually answers
+    // "why did grading fail", surfaced to the UI instead of requiring server logs.
+    const topErrors = [...errorCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([msg, count]) => (count > 1 ? `${msg} (×${count})` : msg))
 
     logAudit({
       tenantId: request.user.tenantId, userId: request.user.sub,
       action: requested ? 'AI_GRADE_SELECTED_TRIGGERED' : 'AI_GRADE_ALL_TRIGGERED',
       entityType: 'tenant', entityId: request.user.tenantId,
-      metadata: { requested: requested?.length ?? 'all', sessionsProcessed: sessions.length, answersGraded: totalGraded, answersFailed: totalFailed, answersSkipped: totalSkipped },
+      metadata: { requested: requested?.length ?? 'all', sessionsProcessed: sessions.length, answersGraded: totalGraded, answersFailed: totalFailed, answersSkipped: totalSkipped, topErrors },
     })
 
-    // If nothing graded AND audio answers were skipped, the OpenAI key is almost
-    // certainly missing/invalid — surface that instead of a silent "0 graded".
-    const openAiMissing = totalGraded === 0 && totalSkipped > 0 && !process.env.OPENAI_API_KEY
+    // If nothing graded AND audio/text answers were skipped, no key (tenant UI
+    // key or server env) is configured at all.
+    const tenant = await prisma.tenant.findUnique({ where: { id: request.user.tenantId }, select: { settings: true } })
+    const hasAnyKey = !!((tenant?.settings as Record<string, unknown> | null)?.openaiApiKey) || !!process.env.OPENAI_API_KEY
+    const openAiMissing = totalGraded === 0 && totalSkipped > 0 && !hasAnyKey
     return sendSuccess(reply, {
       sessionsProcessed: sessions.length, answersGraded: totalGraded, answersFailed: totalFailed, answersSkipped: totalSkipped,
-      warning: openAiMissing ? 'OPENAI_API_KEY is not set on the server — spoken/written answers cannot be graded.' : undefined,
+      topErrors,
+      warning: openAiMissing ? 'No OpenAI key configured (Settings → AI Grading, or server env) — spoken/written answers cannot be graded.' : undefined,
     })
   })
 

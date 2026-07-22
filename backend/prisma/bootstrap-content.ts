@@ -14,6 +14,8 @@
 import { PrismaClient, TestStatus } from '@prisma/client'
 import { INFRA_BANK_NAME, INFRA_QUESTIONS } from './create-infrastructure-assessment'
 import { SEO_BANK_NAME, SEO_QUESTIONS } from './create-marketing-seo-assessment'
+import { CONTENT_MIGRATION_BANK_NAME, CONTENT_MIGRATION_QUESTIONS } from './create-content-migration-assessment'
+import { MESSAGE_MIGRATION_BANK_NAME, MESSAGE_MIGRATION_QUESTIONS } from './create-message-migration-assessment'
 import { main as ensureListeningPassagePool } from './add-listening-passage-pool'
 const prisma = new PrismaClient()
 
@@ -179,6 +181,63 @@ async function ensurePooledTest(opts: {
   console.log(`  ✅ created "${opts.title}" (PUBLISHED): Aptitude ${opts.aptiPoolSize}/${aptiQuestions.length} + ${opts.domainSectionTitle} ${opts.domainPoolSize}/${domainQuestions.length}, ${totalMin} min`)
 }
 
+// Single-pool test (one section, its own question bank only — no Aptitude
+// combination), e.g. Content/Message/Email Migration Assessment. Same
+// create-only-if-missing contract as the others above.
+async function ensureSinglePoolTest(opts: {
+  title: string; domain: string; poolSize: number; durationMin: number
+  sectionTitle: string; bankName: string; titlePrefix: string
+  questions: { body: string; options: string[]; correct: number }[]
+}) {
+  const existing = await prisma.test.findFirst({ where: { title: opts.title } })
+  if (existing) {
+    console.log(`  ✓ "${opts.title}" already exists (status=${existing.status}) — leaving untouched`)
+    return
+  }
+
+  // Only used to resolve the tenant/admin — this test's questions are entirely its own pool.
+  const aptiBank = await prisma.questionBank.findFirst({ where: { name: BANK_NAME } })
+  if (!aptiBank) {
+    console.log(`  ⚠ bank "${BANK_NAME}" not found — cannot create "${opts.title}" yet; skipping`)
+    return
+  }
+  const admin = await prisma.user.findFirst({
+    where: { tenantId: aptiBank.tenantId, role: { in: ['SUPER_ADMIN', 'COMPANY_ADMIN'] } },
+    orderBy: { createdAt: 'asc' },
+  })
+  if (!admin) {
+    console.log(`  ⚠ no admin user for the bank tenant — skipping "${opts.title}"`)
+    return
+  }
+
+  const bank = await ensureDomainQuestions(opts.bankName, aptiBank.tenantId, opts.titlePrefix, opts.domain, opts.questions)
+  const questions = await prisma.question.findMany({
+    where: { bankId: bank.id, title: { startsWith: `${opts.titlePrefix} Q` } },
+    orderBy: { createdAt: 'asc' }, select: { id: true },
+  })
+  if (questions.length < opts.poolSize) {
+    console.log(`  ⚠ only ${questions.length} ${opts.domain} questions (< pool ${opts.poolSize}) — skipping "${opts.title}"`)
+    return
+  }
+
+  const instructions = `${opts.title} — ${opts.durationMin} minutes, a random ${opts.poolSize} of ${questions.length} questions, 1 mark each. Choose the best option.`
+  const test = await prisma.test.create({
+    data: {
+      title: opts.title, domain: opts.domain, duration: opts.durationMin,
+      status: TestStatus.PUBLISHED, proctoring: true, enforceViolations: false, sebRequired: false,
+      tenantId: aptiBank.tenantId, createdById: admin.id, instructions,
+    },
+  })
+  const section = await prisma.testSection.create({
+    data: { testId: test.id, title: opts.sectionTitle, skill: 'GENERAL', order: 0, timeLimit: opts.durationMin * 60, pickCount: opts.poolSize,
+      description: `${opts.poolSize} questions (randomly drawn from a bank of ${questions.length}) covering ${opts.domain}. 1 mark each.` },
+  })
+  await prisma.testQuestion.createMany({
+    data: questions.map((q, i) => ({ testId: test.id, sectionId: section.id, questionId: q.id, order: i, points: 1 })),
+  })
+  console.log(`  ✅ created "${opts.title}" (PUBLISHED): ${opts.poolSize}/${questions.length}, ${opts.durationMin} min`)
+}
+
 async function main() {
   console.log('→ Content bootstrap (create-if-missing)...')
   for (const t of APTITUDE_TESTS) {
@@ -199,6 +258,20 @@ async function main() {
       domainSectionTitle: 'SEO & Marketing', domainBankName: SEO_BANK_NAME, domainTitlePrefix: 'SEO', domainQuestions: SEO_QUESTIONS,
     })
   } catch (e) { console.error('  ⚠ bootstrap step for "Marketing SEO Assessment" failed (non-fatal):', e) }
+
+  try {
+    await ensureSinglePoolTest({
+      title: 'Content Migration Assessment', domain: 'Content Migration Engineering', poolSize: 20, durationMin: 15,
+      sectionTitle: 'Content Migration Engineering', bankName: CONTENT_MIGRATION_BANK_NAME, titlePrefix: 'Content Migration', questions: CONTENT_MIGRATION_QUESTIONS,
+    })
+  } catch (e) { console.error('  ⚠ bootstrap step for "Content Migration Assessment" failed (non-fatal):', e) }
+
+  try {
+    await ensureSinglePoolTest({
+      title: 'Message Migration Assessment', domain: 'Message Migration Engineering', poolSize: 20, durationMin: 15,
+      sectionTitle: 'Message Migration Engineering', bankName: MESSAGE_MIGRATION_BANK_NAME, titlePrefix: 'Message Migration', questions: MESSAGE_MIGRATION_QUESTIONS,
+    })
+  } catch (e) { console.error('  ⚠ bootstrap step for "Message Migration Assessment" failed (non-fatal):', e) }
 
   try {
     console.log('  → Listening passage pool (Listen & Answer)...')

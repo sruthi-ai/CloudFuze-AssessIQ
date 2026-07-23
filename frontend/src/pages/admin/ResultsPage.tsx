@@ -108,9 +108,27 @@ export function ResultsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const queryClient = useQueryClient()
 
+  // testId/status are pushed to the server so switching to a specific test always
+  // returns that test's own complete result set — previously this fetched a flat,
+  // tenant-wide "most recent 200" snapshot with every filter applied client-side
+  // afterward, so a test whose results had aged out of that top-200 window (busy
+  // tenants cross that fast — multiple tests each with dozens+ sessions) looked
+  // like its older results had vanished, when they were just never fetched.
   const { data, isLoading } = useQuery({
-    queryKey: ['results'],
-    queryFn: () => api.get('/results?limit=200').then(r => r.data.data),
+    queryKey: ['results', testFilter, statusFilter],
+    queryFn: () => {
+      const params = new URLSearchParams({ limit: '2000' })
+      if (testFilter) params.set('testId', testFilter)
+      if (statusFilter) params.set('status', statusFilter)
+      return api.get(`/results?${params.toString()}`).then(r => r.data.data)
+    },
+  })
+
+  // Independent of the (now filtered) results query above, so the dropdown
+  // always lists every test regardless of which one is currently selected.
+  const { data: testsForFilter } = useQuery({
+    queryKey: ['tests-for-results-filter'],
+    queryFn: () => api.get('/tests?limit=500').then(r => r.data.data.tests as { id: string; title: string }[]),
   })
 
   const deleteMutation = useMutation({
@@ -163,12 +181,12 @@ export function ResultsPage() {
     return list
   }, [data, search, statusFilter, testFilter, dateFrom, dateTo, minScore, maxScore, sortKey, sortDir])
 
-  // Distinct tests present in the loaded results, for the test filter dropdown.
+  // All of the tenant's tests, for the test filter dropdown — fetched
+  // independently of the (now testId-filtered) results query above, so
+  // selecting one test doesn't collapse the dropdown down to just itself.
   const testOptions = useMemo(() => {
-    const m = new Map<string, string>()
-    for (const s of (data?.sessions ?? [])) if (s.test?.id) m.set(s.test.id, s.test.title)
-    return Array.from(m.entries()).sort((a, b) => a[1].localeCompare(b[1]))
-  }, [data])
+    return (testsForFilter ?? []).map(t => [t.id, t.title] as [string, string]).sort((a, b) => a[1].localeCompare(b[1]))
+  }, [testsForFilter])
 
   function SortTh({ label, col }: { label: string; col: SortKey }) {
     return (
@@ -310,6 +328,16 @@ export function ResultsPage() {
           </Button>
         )}
       </div>
+
+      {/* Loud, not silent: if the server has more matching rows than we fetched,
+          say so — narrow with a test/status filter to pull the complete set for
+          just that slice instead of a truncated tenant-wide snapshot. */}
+      {data && data.total > (data.sessions?.length ?? 0) && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Showing the latest {data.sessions.length.toLocaleString()} of {data.total.toLocaleString()} matching results.
+          Narrow with a test or status filter to see the complete set for that slice.
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>

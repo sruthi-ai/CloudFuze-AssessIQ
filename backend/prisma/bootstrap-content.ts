@@ -16,6 +16,7 @@ import { INFRA_BANK_NAME, INFRA_QUESTIONS } from './create-infrastructure-assess
 import { SEO_BANK_NAME, SEO_QUESTIONS } from './create-marketing-seo-assessment'
 import { CONTENT_MIGRATION_BANK_NAME, CONTENT_MIGRATION_QUESTIONS } from './create-content-migration-assessment'
 import { MESSAGE_MIGRATION_BANK_NAME, MESSAGE_MIGRATION_QUESTIONS } from './create-message-migration-assessment'
+import { EMAIL_MIGRATION_BANK_NAME, EMAIL_MIGRATION_QUESTIONS } from './create-email-migration-assessment'
 import { main as ensureListeningPassagePool } from './add-listening-passage-pool'
 const prisma = new PrismaClient()
 
@@ -272,6 +273,13 @@ async function main() {
       sectionTitle: 'Message Migration Engineering', bankName: MESSAGE_MIGRATION_BANK_NAME, titlePrefix: 'Message Migration', questions: MESSAGE_MIGRATION_QUESTIONS,
     })
   } catch (e) { console.error('  ⚠ bootstrap step for "Message Migration Assessment" failed (non-fatal):', e) }
+
+  try {
+    await ensureSinglePoolTest({
+      title: 'Email Migration Assessment', domain: 'Email Migration Engineering', poolSize: 20, durationMin: 15,
+      sectionTitle: 'Email Migration Engineering', bankName: EMAIL_MIGRATION_BANK_NAME, titlePrefix: 'Email Migration', questions: EMAIL_MIGRATION_QUESTIONS,
+    })
+  } catch (e) { console.error('  ⚠ bootstrap step for "Email Migration Assessment" failed (non-fatal):', e) }
 
   try {
     console.log('  → Listening passage pool (Listen & Answer)...')

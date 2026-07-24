@@ -1,0 +1,55 @@
+name: Sync Assessment Content
+
+# Manual only — NOT wired into the automatic CI -> Deploy chain. These
+# create-*-assessment.ts scripts unconditionally delete and rebuild each
+# test's TestSection/TestQuestion rows on every run (even when nothing
+# changed), which could disrupt a candidate mid-assessment. Run this only
+# when you've actually pushed a content change and the code is already
+# live on the server (deploy.yml has already run for this commit).
+on:
+  workflow_dispatch:
+    inputs:
+      content_migration:
+        description: 'Content Migration Assessment'
+        type: boolean
+        default: true
+      message_migration:
+        description: 'Message Migration Assessment'
+        type: boolean
+        default: true
+      email_migration:
+        description: 'Email Migration Assessment'
+        type: boolean
+        default: true
+
+jobs:
+  sync-content:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Run selected content scripts over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          command_timeout: 10m
+          script: |
+            set -e
+            RUN_CONTENT="${{ inputs.content_migration }}"
+            RUN_MESSAGE="${{ inputs.message_migration }}"
+            RUN_EMAIL="${{ inputs.email_migration }}"
+
+            if [ "$RUN_CONTENT" = "true" ]; then
+              echo "== Content Migration Assessment =="
+              docker exec -w /app neutaraassessment-backend-1 npx tsx prisma/create-content-migration-assessment.ts
+            fi
+            if [ "$RUN_MESSAGE" = "true" ]; then
+              echo "== Message Migration Assessment =="
+              docker exec -w /app neutaraassessment-backend-1 npx tsx prisma/create-message-migration-assessment.ts
+            fi
+            if [ "$RUN_EMAIL" = "true" ]; then
+              echo "== Email Migration Assessment =="
+              docker exec -w /app neutaraassessment-backend-1 npx tsx prisma/create-email-migration-assessment.ts
+            fi

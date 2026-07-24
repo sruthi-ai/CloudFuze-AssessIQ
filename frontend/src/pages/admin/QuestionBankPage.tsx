@@ -101,6 +101,7 @@ function parseQuestionsCSV(text: string): { rows: CsvRow[]; errors: string[] } {
 export function QuestionBankPage() {
   const [search, setSearch] = useState('')
   const [filterType, setFilterType] = useState('')
+  const [bankFilter, setBankFilter] = useState('')  // '' = tenant's default bank
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [loadingEdit, setLoadingEdit] = useState(false)
@@ -117,13 +118,22 @@ export function QuestionBankPage() {
   const qc = useQueryClient()
 
   const { data, isLoading } = useQuery({
-    queryKey: ['questions', search, filterType],
+    queryKey: ['questions', search, filterType, bankFilter],
     queryFn: () => {
       const params = new URLSearchParams({ limit: '100' })
       if (search) params.set('search', search)
       if (filterType) params.set('type', filterType)
+      if (bankFilter) params.set('bankId', bankFilter)
       return api.get(`/questions?${params}`).then(r => r.data.data)
     },
+  })
+
+  // All of the tenant's banks — lets an admin browse a specific bank's full
+  // contents (e.g. all 50 Content Migration questions) instead of only ever
+  // seeing the default bank, which was previously the only option here.
+  const { data: banks } = useQuery({
+    queryKey: ['question-banks'],
+    queryFn: () => api.get('/questions/banks').then(r => r.data.data as { id: string; name: string; isDefault: boolean; _count: { questions: number } }[]),
   })
 
   const { register, handleSubmit, watch, reset, formState: { errors } } = useForm<QuestionFormValues>({
@@ -149,12 +159,16 @@ export function QuestionBankPage() {
         audioAssetId: audioAssetId ?? null,
         prepSeconds: isAudio ? prepSeconds : undefined,
         speakSeconds: isAudio ? (speakSeconds === '' ? null : parseInt(speakSeconds)) : undefined,
+        // New questions go into whichever bank is currently being browsed —
+        // editing an existing question never moves it between banks.
+        bankId: editId ? undefined : (bankFilter || undefined),
       }
       if (editId) return api.patch(`/questions/${editId}`, payload)
       return api.post('/questions', payload)
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['questions'] })
+      qc.invalidateQueries({ queryKey: ['question-banks'] })
       toast({ title: editId ? 'Question updated' : 'Question created' })
       closeForm()
     },
@@ -301,6 +315,18 @@ export function QuestionBankPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input className="pl-9" placeholder="Search questions..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
+        {banks && banks.length > 1 && (
+          <select
+            className="rounded-md border border-input px-3 py-2 text-sm bg-background max-w-64"
+            value={bankFilter}
+            onChange={e => setBankFilter(e.target.value)}
+            title="Filter by question bank"
+          >
+            {banks.map(b => (
+              <option key={b.id} value={b.isDefault ? '' : b.id}>{b.name} ({b._count.questions})</option>
+            ))}
+          </select>
+        )}
         <select
           className="rounded-md border border-input px-3 py-2 text-sm bg-background"
           value={filterType}

@@ -9,7 +9,7 @@ import {
   GripVertical, Loader2, Save, Eye, Pencil, X, Check,
   Users, BarChart2, Copy, RefreshCw, XCircle, Send,
   TrendingUp, CheckCircle, Clock, RotateCcw, Calendar, FlaskConical, Link2,
-  Sparkles, ChevronLeft, AlertCircle,
+  Sparkles, ChevronLeft, AlertCircle, FileSpreadsheet,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -63,6 +63,77 @@ const QUESTION_TYPE_LABELS: Record<string, string> = {
 }
 
 const ALL_TYPES = Object.keys(QUESTION_TYPE_LABELS)
+
+const OPTION_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F']
+
+// Every question currently attached to the test (across all sections, full
+// pools included — not just however many a section's pool-count would draw
+// per candidate), with correct answers, as a downloadable .xlsx.
+// exceljs is a large library (~1MB) used on this one action alone — loaded
+// on demand here instead of a top-level import so it doesn't bloat every
+// admin page's initial bundle.
+async function exportQuestionsToExcel(test: any) {
+  const { default: ExcelJS } = await import('exceljs')
+  const workbook = new ExcelJS.Workbook()
+  workbook.creator = 'AssessIQ'
+  workbook.created = new Date()
+
+  const sheet = workbook.addWorksheet('Questions')
+  const maxOptions = Math.max(4, ...((test.sections ?? []).flatMap((s: any) =>
+    s.testQuestions.map((tq: any) => tq.question.options?.length ?? 0)
+  )))
+
+  sheet.columns = [
+    { header: 'Section', key: 'section', width: 22 },
+    { header: '#', key: 'num', width: 5 },
+    { header: 'Type', key: 'type', width: 16 },
+    { header: 'Points', key: 'points', width: 8 },
+    { header: 'Question', key: 'question', width: 60 },
+    ...Array.from({ length: maxOptions }, (_, i) => ({ header: `Option ${OPTION_LETTERS[i]}`, key: `opt${i}`, width: 30 })),
+    { header: 'Correct Answer', key: 'correct', width: 30 },
+    { header: 'Explanation', key: 'explanation', width: 40 },
+  ]
+  sheet.getRow(1).font = { bold: true }
+
+  for (const section of test.sections ?? []) {
+    section.testQuestions.forEach((tq: any, i: number) => {
+      const q = tq.question
+      const options: { text: string; isCorrect: boolean }[] = q.options ?? []
+      const row: Record<string, any> = {
+        section: section.title,
+        num: i + 1,
+        type: QUESTION_TYPE_LABELS[q.type] ?? q.type,
+        points: tq.points ?? q.points,
+        question: q.body,
+        explanation: q.explanation ?? '',
+      }
+      options.forEach((o, oi) => { row[`opt${oi}`] = o.text })
+      if (options.length > 0) {
+        row.correct = options
+          .map((o, oi) => (o.isCorrect ? OPTION_LETTERS[oi] : null))
+          .filter(Boolean)
+          .join(', ')
+      } else {
+        // Open-ended types (Essay/Short Answer/Audio/Code/etc.) have no fixed
+        // options — the explanation column is the closest thing to a rubric.
+        row.correct = 'N/A (open-ended — see Explanation)'
+      }
+      sheet.addRow(row)
+    })
+  }
+
+  sheet.getColumn('question').alignment = { wrapText: true, vertical: 'top' }
+  sheet.getColumn('explanation').alignment = { wrapText: true, vertical: 'top' }
+
+  const buffer = await workbook.xlsx.writeBuffer()
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${test.title.replace(/[^\w\- ]/g, '')}-questions.xlsx`
+  a.click()
+  URL.revokeObjectURL(url)
+}
 
 // ─── Question Preview Modal ───────────────────────────────────────────────────
 
@@ -1042,6 +1113,7 @@ export function TestBuilderPage() {
   const [activeTab, setActiveTab] = useState<'settings' | 'questions' | 'candidates' | 'results'>('settings')
   const [showQuestionPicker, setShowQuestionPicker] = useState(false)
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null)
+  const [exportingExcel, setExportingExcel] = useState(false)
 
   // AI question generation
   const [showAIGen, setShowAIGen] = useState(false)
@@ -1120,6 +1192,7 @@ export function TestBuilderPage() {
   const [pickerSearch, setPickerSearch] = useState('')
   const [pickerTypeFilter, setPickerTypeFilter] = useState<string>('ALL')
   const [pickerTagFilter, setPickerTagFilter] = useState<string>('')
+  const [pickerBankId, setPickerBankId] = useState<string>('')  // '' = tenant's default bank
 
   // Preview modal
   const [previewQuestion, setPreviewQuestion] = useState<any | null>(null)
@@ -1137,10 +1210,32 @@ export function TestBuilderPage() {
   })
 
   const { data: questionsData } = useQuery({
-    queryKey: ['questions-picker'],
-    queryFn: () => api.get('/questions?limit=200').then(r => r.data.data),
+    queryKey: ['questions-picker', pickerBankId],
+    queryFn: () => {
+      const params = new URLSearchParams({ limit: '200' })
+      if (pickerBankId) params.set('bankId', pickerBankId)
+      return api.get(`/questions?${params.toString()}`).then(r => r.data.data)
+    },
     enabled: showQuestionPicker,
   })
+
+  // Every bank in the tenant, so the picker isn't stuck showing only the
+  // default bank — banks created by content scripts (e.g. "Content Migration
+  // Questions Bank") are otherwise invisible here.
+  const { data: banksData } = useQuery({
+    queryKey: ['question-banks'],
+    queryFn: () => api.get('/questions/banks').then(r => r.data.data as { id: string; name: string; isDefault: boolean; _count: { questions: number } }[]),
+    enabled: showQuestionPicker,
+  })
+
+  // Once banks load, default the picker to the tenant's default bank (matching
+  // the prior no-bankId behavior) rather than leaving the <select> desynced
+  // from an empty pickerBankId that matches none of its <option> values.
+  useEffect(() => {
+    if (banksData && banksData.length > 0 && !pickerBankId) {
+      setPickerBankId(banksData.find(b => b.isDefault)?.id ?? banksData[0].id)
+    }
+  }, [banksData, pickerBankId])
 
   // ── Form ──────────────────────────────────────────────────────────────────
 
@@ -1278,6 +1373,21 @@ export function TestBuilderPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['test', testId] })
       toast({ title: 'Question added' })
+    },
+    onError: err => toast({ title: 'Error', description: getErrorMessage(err), variant: 'destructive' }),
+  })
+
+  // Adds every question in a bank to the test in one call — the alternative to
+  // clicking "Add" N times, or writing a backend script to build the pool.
+  const bulkAddFromBankMutation = useMutation({
+    mutationFn: ({ bankId, sectionId }: { bankId: string; sectionId?: string }) =>
+      api.post(`/tests/${testId}/questions/bulk-from-bank`, { bankId, sectionId }).then(r => r.data.data as { added: number; alreadyPresent: number }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['test', testId] })
+      toast({
+        title: data.added > 0 ? `${data.added} question(s) added` : 'Nothing to add',
+        description: data.alreadyPresent > 0 ? `${data.alreadyPresent} were already in this test.` : undefined,
+      })
     },
     onError: err => toast({ title: 'Error', description: getErrorMessage(err), variant: 'destructive' }),
   })
@@ -1730,15 +1840,32 @@ export function TestBuilderPage() {
 
           {/* Tab action bar: Add Section + Publish/Unpublish */}
           <div className="flex items-center justify-between">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => addSectionMutation.mutate()}
-              disabled={addSectionMutation.isPending}
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Add Section
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => addSectionMutation.mutate()}
+                disabled={addSectionMutation.isPending}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add Section
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  setExportingExcel(true)
+                  try { await exportQuestionsToExcel(test) }
+                  catch (err) { toast({ title: 'Export failed', description: getErrorMessage(err), variant: 'destructive' }) }
+                  finally { setExportingExcel(false) }
+                }}
+                disabled={exportingExcel || !test.sections?.some((s: any) => s.testQuestions.length > 0)}
+                title="Export every question in this test (all sections, full pools) with correct answers as .xlsx"
+              >
+                {exportingExcel ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <FileSpreadsheet className="h-4 w-4 mr-2" />}
+                Export to Excel
+              </Button>
+            </div>
 
             {test.status === 'DRAFT' ? (
               <Button
@@ -1955,6 +2082,31 @@ export function TestBuilderPage() {
                   <X className="h-4 w-4" />
                 </Button>
               </div>
+
+              {/* Bank selector + bulk-add-all */}
+              {banksData && banksData.length > 1 && (
+                <div className="flex gap-2 mt-3 items-center">
+                  <select
+                    value={pickerBankId}
+                    onChange={e => setPickerBankId(e.target.value)}
+                    className="h-8 rounded-md border border-input bg-background px-2 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-ring"
+                  >
+                    {banksData.map(b => (
+                      <option key={b.id} value={b.id}>{b.name} ({b._count.questions})</option>
+                    ))}
+                  </select>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={bulkAddFromBankMutation.isPending || !pickerBankId}
+                    onClick={() => bulkAddFromBankMutation.mutate({ bankId: pickerBankId, sectionId: selectedSectionId ?? undefined })}
+                    title="Add every question in this bank to the test at once — combine with the section's pool-count setting for per-candidate randomization"
+                  >
+                    {bulkAddFromBankMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : null}
+                    Add all from bank
+                  </Button>
+                </div>
+              )}
 
               {/* Search + type filter */}
               <div className="flex gap-2 mt-3">

@@ -46,6 +46,11 @@ const addQuestionSchema = z.object({
   points: z.number().optional(),
 })
 
+const bulkAddFromBankSchema = z.object({
+  bankId: z.string(),
+  sectionId: z.string().optional(),
+})
+
 const createSectionSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
@@ -375,6 +380,50 @@ export async function testRoutes(server: FastifyInstance) {
       include: { question: { include: { options: true } } },
     })
     return sendSuccess(reply, tq, 201)
+  })
+
+  // POST /api/tests/:id/questions/bulk-from-bank — add every question in a bank
+  // to this test (optionally into one section) in a single action, instead of
+  // one at a time or via a one-off backend script. Combine with the section's
+  // existing pickCount to have the runtime randomly draw a subset per session.
+  server.post('/:id/questions/bulk-from-bank', { preHandler: canEdit }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const result = bulkAddFromBankSchema.safeParse(request.body)
+    if (!result.success) return sendError(reply, 400, 'Validation error', result.error.flatten())
+    const { bankId, sectionId } = result.data
+
+    const test = await prisma.test.findFirst({ where: { id, tenantId: request.user.tenantId } })
+    if (!test) return sendError(reply, 404, 'Test not found')
+
+    const bank = await prisma.questionBank.findFirst({ where: { id: bankId, tenantId: request.user.tenantId } })
+    if (!bank) return sendError(reply, 404, 'Question bank not found')
+
+    if (sectionId) {
+      const section = await prisma.testSection.findFirst({ where: { id: sectionId, testId: id } })
+      if (!section) return sendError(reply, 404, 'Section not found')
+    }
+
+    const [bankQuestions, existingLinks] = await Promise.all([
+      prisma.question.findMany({ where: { bankId, isArchived: false }, select: { id: true }, orderBy: { createdAt: 'asc' } }),
+      prisma.testQuestion.findMany({ where: { testId: id }, select: { questionId: true } }),
+    ])
+    const alreadyInTest = new Set(existingLinks.map(tq => tq.questionId))
+    const toAdd = bankQuestions.filter(q => !alreadyInTest.has(q.id))
+
+    if (toAdd.length === 0) {
+      return sendSuccess(reply, { added: 0, alreadyPresent: bankQuestions.length })
+    }
+
+    const startOrder = existingLinks.length
+    await prisma.testQuestion.createMany({
+      data: toAdd.map((q, i) => ({ testId: id, sectionId: sectionId ?? null, questionId: q.id, order: startOrder + i })),
+    })
+
+    logAudit({
+      tenantId: request.user.tenantId, userId: request.user.sub, action: 'QUESTIONS_BULK_ADDED',
+      entityType: 'test', entityId: id, metadata: { bankId, bankName: bank.name, added: toAdd.length },
+    })
+    return sendSuccess(reply, { added: toAdd.length, alreadyPresent: bankQuestions.length - toAdd.length }, 201)
   })
 
   // DELETE /api/tests/:id/questions/:tqId

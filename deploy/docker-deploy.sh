@@ -139,6 +139,15 @@ fi
 
 info "New backend is healthy."
 
+# ── Print the backend's startup log — migrations, seed, and content bootstrap
+# (Infra/SEO assessments, listening passage pool, etc.) all run inside the
+# container via entrypoint.sh and were previously invisible unless someone SSH'd
+# in and ran `docker logs`. Printing it here puts it directly in this deploy log,
+# so a bootstrap failure (or the "already exists — skipping" confirmation) is
+# visible without ever touching the server.
+section "Backend startup log (migrations / seed / content bootstrap)"
+docker logs "$BACKEND_CONTAINER" 2>&1 | sed -n '/Running database migrations/,/Starting AssessIQ backend/p' || true
+
 # ── Wait for the app to respond end-to-end through nginx (in the frontend container) ─
 for i in $(seq 1 30); do
     if curl -sf http://localhost:8088 &>/dev/null; then

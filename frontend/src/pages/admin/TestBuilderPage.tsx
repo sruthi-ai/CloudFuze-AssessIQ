@@ -9,7 +9,7 @@ import {
   GripVertical, Loader2, Save, Eye, Pencil, X, Check,
   Users, BarChart2, Copy, RefreshCw, XCircle, Send,
   TrendingUp, CheckCircle, Clock, RotateCcw, Calendar, FlaskConical, Link2,
-  Sparkles, ChevronLeft, AlertCircle, FileSpreadsheet,
+  Sparkles, ChevronLeft, AlertCircle, FileSpreadsheet, FileText,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -131,6 +131,90 @@ async function exportQuestionsToExcel(test: any) {
   const a = document.createElement('a')
   a.href = url
   a.download = `${test.title.replace(/[^\w\- ]/g, '')}-questions.xlsx`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+// Same full question set as the Excel export, laid out as a readable Word
+// document (question + options + correct answer marked) instead of a grid —
+// meant for reading/printing/sharing rather than spreadsheet manipulation.
+// docx is loaded on demand for the same bundle-size reason as exceljs above.
+async function exportQuestionsToWord(test: any) {
+  const { Document, Packer, Paragraph, TextRun, HeadingLevel } = await import('docx')
+
+  const children: InstanceType<typeof Paragraph>[] = [
+    new Paragraph({
+      text: test.title,
+      heading: HeadingLevel.TITLE,
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: `${test.duration} minutes · ${(test.sections ?? []).reduce((n: number, s: any) => n + s.testQuestions.length, 0)} questions`, italics: true, color: '666666' })],
+      spacing: { after: 300 },
+    }),
+  ]
+
+  for (const section of test.sections ?? []) {
+    children.push(new Paragraph({
+      text: section.title + (section.pickCount ? ` (random ${section.pickCount} of ${section.testQuestions.length} per candidate)` : ''),
+      heading: HeadingLevel.HEADING_1,
+      spacing: { before: 400, after: 200 },
+    }))
+
+    section.testQuestions.forEach((tq: any, i: number) => {
+      const q = tq.question
+      const options: { text: string; isCorrect: boolean }[] = q.options ?? []
+      const points = tq.points ?? q.points
+
+      children.push(new Paragraph({
+        children: [
+          new TextRun({ text: `Q${i + 1}. `, bold: true }),
+          new TextRun({ text: q.body, bold: true }),
+          new TextRun({ text: `  (${points} pt${points !== 1 ? 's' : ''})`, italics: true, color: '888888' }),
+        ],
+        spacing: { before: 200, after: 100 },
+      }))
+
+      if (options.length > 0) {
+        options.forEach((o, oi) => {
+          children.push(new Paragraph({
+            indent: { left: 400 },
+            children: [
+              new TextRun({ text: `${OPTION_LETTERS[oi]}. `, bold: o.isCorrect }),
+              new TextRun({ text: o.text, bold: o.isCorrect, color: o.isCorrect ? '15803d' : undefined }),
+              ...(o.isCorrect ? [new TextRun({ text: '  ✓ Correct', bold: true, color: '15803d' })] : []),
+            ],
+          }))
+        })
+      } else {
+        children.push(new Paragraph({
+          indent: { left: 400 },
+          children: [new TextRun({ text: 'Open-ended — no fixed options.', italics: true, color: '888888' })],
+        }))
+      }
+
+      if (q.explanation) {
+        children.push(new Paragraph({
+          indent: { left: 400 },
+          spacing: { before: 60 },
+          children: [
+            new TextRun({ text: 'Explanation: ', bold: true, italics: true }),
+            new TextRun({ text: q.explanation, italics: true }),
+          ],
+        }))
+      }
+    })
+  }
+
+  const doc = new Document({
+    sections: [{ properties: {}, children }],
+    styles: { default: { document: { run: { size: 22 } } } }, // 11pt
+  })
+
+  const blob = await Packer.toBlob(doc)
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${test.title.replace(/[^\w\- ]/g, '')}-questions.docx`
   a.click()
   URL.revokeObjectURL(url)
 }
@@ -1114,6 +1198,7 @@ export function TestBuilderPage() {
   const [showQuestionPicker, setShowQuestionPicker] = useState(false)
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null)
   const [exportingExcel, setExportingExcel] = useState(false)
+  const [exportingWord, setExportingWord] = useState(false)
 
   // AI question generation
   const [showAIGen, setShowAIGen] = useState(false)
@@ -1864,6 +1949,21 @@ export function TestBuilderPage() {
               >
                 {exportingExcel ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <FileSpreadsheet className="h-4 w-4 mr-2" />}
                 Export to Excel
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  setExportingWord(true)
+                  try { await exportQuestionsToWord(test) }
+                  catch (err) { toast({ title: 'Export failed', description: getErrorMessage(err), variant: 'destructive' }) }
+                  finally { setExportingWord(false) }
+                }}
+                disabled={exportingWord || !test.sections?.some((s: any) => s.testQuestions.length > 0)}
+                title="Export every question in this test as a readable Word document, with correct answers marked"
+              >
+                {exportingWord ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <FileText className="h-4 w-4 mr-2" />}
+                Export to Word
               </Button>
             </div>
 

@@ -17,6 +17,7 @@ import { SEO_BANK_NAME, SEO_QUESTIONS } from './create-marketing-seo-assessment'
 import { CONTENT_MIGRATION_BANK_NAME, CONTENT_MIGRATION_QUESTIONS } from './create-content-migration-assessment'
 import { MESSAGE_MIGRATION_BANK_NAME, MESSAGE_MIGRATION_QUESTIONS } from './create-message-migration-assessment'
 import { EMAIL_MIGRATION_BANK_NAME, EMAIL_MIGRATION_QUESTIONS } from './create-email-migration-assessment'
+import { main as buildOutboundAssessment } from './create-outbound-communication-assessment'
 import { main as ensureListeningPassagePool } from './add-listening-passage-pool'
 const prisma = new PrismaClient()
 
@@ -280,6 +281,23 @@ async function main() {
       sectionTitle: 'Email Migration Engineering', bankName: EMAIL_MIGRATION_BANK_NAME, titlePrefix: 'Email Migration', questions: EMAIL_MIGRATION_QUESTIONS,
     })
   } catch (e) { console.error('  ⚠ bootstrap step for "Email Migration Assessment" failed (non-fatal):', e) }
+
+  // Outbound - Communication Assessment has 4 heterogeneous sections (MCQ,
+  // audio-linked listening, JAM-style speaking, written essay) and generates
+  // its own audio via OpenAI TTS — its build script's own rebuild-on-rerun
+  // branch is destructive (wipes and recreates sections), so unlike
+  // ensureSinglePoolTest above, it's only ever invoked here on the very first
+  // run, when the test doesn't exist yet; once created, later deploys always
+  // skip it, exactly like every other ensure-step's contract.
+  try {
+    const existing = await prisma.test.findFirst({ where: { title: 'Outbound - Communication Assessment' } })
+    if (existing) {
+      console.log(`  ✓ "Outbound - Communication Assessment" already exists (status=${existing.status}) — leaving untouched`)
+    } else {
+      console.log('  → Outbound - Communication Assessment (first-time build, generates audio)...')
+      await buildOutboundAssessment()
+    }
+  } catch (e) { console.error('  ⚠ bootstrap step for "Outbound - Communication Assessment" failed (non-fatal):', e) }
 
   try {
     console.log('  → Listening passage pool (Listen & Answer)...')

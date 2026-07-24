@@ -234,7 +234,10 @@ export async function sessionRoutes(server: FastifyInstance) {
         test: {
           include: {
             sections: {
-              include: { testQuestions: { orderBy: { order: 'asc' } } },
+              include: {
+                // question.tags is only needed to resolve a stratified (pickStrata) draw
+                testQuestions: { include: { question: { select: { tags: true } } }, orderBy: { order: 'asc' } },
+              },
               orderBy: { order: 'asc' },
             },
           },
@@ -289,12 +292,25 @@ export async function sessionRoutes(server: FastifyInstance) {
 
     // Generate per-session question order for shuffling and/or pool randomization
     let questionOrder: Record<string, string[]> | null = null
-    const needsOrder = invitation.test.shuffleQuestions || invitation.test.sections.some(s => s.pickCount)
+    const needsOrder = invitation.test.shuffleQuestions || invitation.test.sections.some(s => s.pickCount || s.pickStrata)
     if (needsOrder) {
       questionOrder = {}
       for (const section of invitation.test.sections) {
         let ids = section.testQuestions.map(tq => tq.questionId)
-        if (section.pickCount && section.pickCount < ids.length) {
+        if (section.pickStrata && typeof section.pickStrata === 'object') {
+          // Stratified draw: pick a fixed count from each tagged category so every
+          // candidate gets the same mix (e.g. 6 process + 6 technical + 8 flow-driven)
+          // instead of pure random luck occasionally handing someone all-process.
+          const strata = section.pickStrata as Record<string, number>
+          const picked: string[] = []
+          for (const [tag, count] of Object.entries(strata)) {
+            const matching = section.testQuestions
+              .filter(tq => Array.isArray(tq.question?.tags) && (tq.question.tags as string[]).includes(tag))
+              .map(tq => tq.questionId)
+            picked.push(...fisherYates(matching).slice(0, count))
+          }
+          ids = fisherYates(picked)
+        } else if (section.pickCount && section.pickCount < ids.length) {
           if (section.pickGroupSize && section.pickGroupSize > 0 && ids.length % section.pickGroupSize === 0) {
             // Grouped pool: e.g. 5 Listening passages of 5 questions each — pick whole
             // group(s) at random so a session gets one coherent passage, not a mix.

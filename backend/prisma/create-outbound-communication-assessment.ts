@@ -170,7 +170,13 @@ export async function main() {
   }
 
   // ── Section 2 questions + audio: Listen & Answer — Customer Calls ─────────
-  const apiKey = process.env.OPENAI_API_KEY
+  // Same key resolution as aiGrading.ts: the tenant's UI-configured key
+  // (Settings page) takes priority over the server's raw env var — in
+  // production that's where the real key actually lives.
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { settings: true } })
+  const tenantSettings = (tenant?.settings as Record<string, unknown> | null) ?? {}
+  const tenantKey = typeof tenantSettings.openaiApiKey === 'string' ? tenantSettings.openaiApiKey.trim() : ''
+  const apiKey = tenantKey || process.env.OPENAI_API_KEY
   let client: OpenAI | null = null
 
   for (const passage of CUSTOMER_CALL_PASSAGES) {

@@ -100,7 +100,10 @@ async function generateAudio(client: OpenAI, name: string, script: string): Prom
 }
 
 export async function main() {
-  const testTitle = process.env.TEST_TITLE || 'Freshers Assessment 1'
+  // Default matches the actual production test title — "Freshers Assessment 1"
+  // only ever existed in local dev (an artifact of an early JSON import), which
+  // meant this step silently failed with "Test not found" on every real deploy.
+  const testTitle = process.env.TEST_TITLE || 'Communication Assessment'
   const sectionTitle = process.env.SECTION_TITLE || 'Listen & Answer'
 
   const test = await prisma.test.findFirst({ where: { title: testTitle } })
@@ -141,7 +144,13 @@ export async function main() {
   }
 
   // ── Step 2: create the 4 new passages (audio + 5 questions each), idempotently ──
-  const apiKey = process.env.OPENAI_API_KEY
+  // Same key resolution as aiGrading.ts: the tenant's UI-configured key
+  // (Settings page) takes priority over the server's raw env var — in
+  // production that's where the real key actually lives.
+  const tenant = await prisma.tenant.findUnique({ where: { id: test.tenantId }, select: { settings: true } })
+  const tenantSettings = (tenant?.settings as Record<string, unknown> | null) ?? {}
+  const tenantKey = typeof tenantSettings.openaiApiKey === 'string' ? tenantSettings.openaiApiKey.trim() : ''
+  const apiKey = tenantKey || process.env.OPENAI_API_KEY
   let client: OpenAI | null = null
   let nextOrder = existingLinks.length
 

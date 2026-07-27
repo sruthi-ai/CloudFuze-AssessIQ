@@ -23,6 +23,15 @@ function isCustomerServiceQuestion(tags: unknown): boolean {
   return Array.isArray(tags) && tags.includes(CUSTOMER_SERVICE_TAG)
 }
 
+// Opt-in tag: a question tagged with this uses the outbound-sales rubric
+// (rapport/tone, discovery & value fit, objection handling, closing
+// orientation) instead of the customer-service or default rubric — for
+// cold/warm sales-call and sales-email content, not support/complaint content.
+const SALES_TAG = 'sales-rubric'
+function isSalesQuestion(tags: unknown): boolean {
+  return Array.isArray(tags) && tags.includes(SALES_TAG)
+}
+
 // Trim an OpenAI/SDK error down to a short, admin-readable reason — no stack
 // trace, no PII. Surfaced all the way to the Results page so a grading failure
 // (bad key, no credits, rate-limited) is diagnosable without server log access.
@@ -93,7 +102,9 @@ export async function aiGradeSession(sessionId: string): Promise<{ graded: numbe
       try {
         const result = isCustomerServiceQuestion(q.tags)
           ? await gradeCustomerServiceSpeaking(q.title, q.body, answer.audioUrl, maxPoints, apiKey)
-          : await gradeSpeaking(q.title, q.body, answer.audioUrl, maxPoints, apiKey)
+          : isSalesQuestion(q.tags)
+            ? await gradeSalesSpeaking(q.title, q.body, answer.audioUrl, maxPoints, apiKey)
+            : await gradeSpeaking(q.title, q.body, answer.audioUrl, maxPoints, apiKey)
         await prisma.answer.update({
           where: { id: answer.id },
           data: {
@@ -130,7 +141,9 @@ export async function aiGradeSession(sessionId: string): Promise<{ graded: numbe
         ? q.type === 'ESSAY'
           ? isCustomerServiceQuestion(q.tags)
             ? await gradeCustomerServiceWritten(q.title, q.body, text, maxPoints, apiKey)
-            : await gradeEssay(q.title, q.body, text, maxPoints, apiKey)
+            : isSalesQuestion(q.tags)
+              ? await gradeSalesWritten(q.title, q.body, text, maxPoints, apiKey)
+              : await gradeEssay(q.title, q.body, text, maxPoints, apiKey)
           : await gradeShortAnswer(q.title, q.body, text, maxPoints, apiKey)
         : heuristicGrade(text, maxPoints)
 
@@ -322,6 +335,92 @@ async function gradeCustomerServiceWritten(
     aiRubricScores: {
       kind: 'customer_service_written',
       empathyTone, professionalism, clarity, resolutionOrientation, grammarStructure, overallBand, confidence,
+    },
+  }
+}
+
+// Written sales follow-up/proposal responses (e.g. a prospect follow-up email):
+// scored on how well it would actually move an outbound sales deal forward, not
+// on IELTS writing criteria. Grammar/structure is tracked as a secondary,
+// informational signal only — it does not drive pointsEarned.
+async function gradeSalesWritten(
+  title: string,
+  body: string,
+  response: string,
+  maxPoints: number,
+  apiKey: string
+): Promise<GradeResult> {
+  const client = new OpenAI({ apiKey })
+
+  const completion = await client.chat.completions.create({
+    model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+    temperature: 0.2,
+    messages: [
+      {
+        role: 'system',
+        content:
+          'You are an experienced outbound sales coach, reviewing a candidate\'s WRITTEN reply to a prospect ' +
+          '(e.g. a follow-up or proposal email) as part of a hiring assessment for an outbound sales role. Score ' +
+          'how well this reply would actually move a real deal forward — NOT how well-written it is in a generic ' +
+          'academic-writing sense. Score 0-9 on four PRIMARY dimensions: ' +
+          'Rapport & Tone (warm, human, confident without sounding scripted or pushy), ' +
+          'Discovery & Value Fit (ties the value offered to what THIS prospect specifically said they care about, ' +
+          'rather than a generic pitch), ' +
+          'Objection Handling (if the prospect raised any resistance — price, timing, a competitor — the reply ' +
+          'reframes it constructively instead of ignoring it, folding immediately, or getting defensive), and ' +
+          'Closing Orientation (ends with a concrete, low-friction next step or clear ask, rather than a vague ' +
+          '"let me know if you have questions"). ' +
+          'Also score a SECONDARY, informational-only dimension, grammarStructure (0-9), for basic written English ' +
+          'quality — this does NOT drive the primary score, it is recorded for context only. ' +
+          'Grade to a workplace standard, not a native-speaker-perfection standard: do not penalise minor grammar ' +
+          'slips or Indian-English phrasing if the message is clear, confident, and moves the deal forward. ' +
+          ANTI_INJECTION_SYSTEM_NOTE,
+      },
+      {
+        role: 'user',
+        content: `Sales scenario the candidate is responding to: ${title}\n${body}\n\n${wrapCandidateResponse(response)}`,
+      },
+    ],
+    response_format: {
+      type: 'json_schema',
+      json_schema: {
+        name: 'sales_written_grade',
+        strict: true,
+        schema: {
+          type: 'object',
+          properties: {
+            rapportTone: { type: 'number', description: '0-9 band score' },
+            discoveryValueFit: { type: 'number', description: '0-9 band score' },
+            objectionHandling: { type: 'number', description: '0-9 band score' },
+            closingOrientation: { type: 'number', description: '0-9 band score' },
+            grammarStructure: { type: 'number', description: '0-9 band score, informational only' },
+            feedback: { type: 'string', description: '2-3 sentences of constructive feedback' },
+            confidence: { type: 'number', description: '0.0-1.0, how confident you are in this grade' },
+          },
+          required: ['rapportTone', 'discoveryValueFit', 'objectionHandling', 'closingOrientation', 'grammarStructure', 'feedback', 'confidence'],
+          additionalProperties: false,
+        },
+      },
+    },
+  }, { timeout: REQUEST_TIMEOUT_MS })
+
+  const parsed = JSON.parse(completion.choices[0]?.message?.content ?? '{}')
+  const clamp9 = (n: unknown) => Math.min(9, Math.max(0, Number(n) || 0))
+  const rapportTone = clamp9(parsed.rapportTone)
+  const discoveryValueFit = clamp9(parsed.discoveryValueFit)
+  const objectionHandling = clamp9(parsed.objectionHandling)
+  const closingOrientation = clamp9(parsed.closingOrientation)
+  const grammarStructure = clamp9(parsed.grammarStructure)
+  const overallBand = Math.round(((rapportTone + discoveryValueFit + objectionHandling + closingOrientation) / 4) * 2) / 2
+  const confidence = Math.min(1, Math.max(0, Number(parsed.confidence) || 0.8))
+
+  return {
+    pointsEarned: Math.round((overallBand / 9) * maxPoints * 10) / 10,
+    feedback: String(parsed.feedback || 'Graded by AI.'),
+    confidence,
+    aiRubricScores: {
+      kind: 'sales_written',
+      rapportTone, discoveryValueFit, objectionHandling, closingOrientation, grammarStructure, overallBand, confidence,
     },
   }
 }
@@ -585,6 +684,110 @@ async function gradeCustomerServiceSpeaking(
     aiRubricScores: {
       kind: 'customer_service_speaking',
       empathyTone, professionalism, clarity, resolutionOrientation, fluencyCoherence, overallBand, confidence,
+    },
+  }
+}
+
+// Spoken sales-call responses (e.g. handling a cold-call scenario or objection):
+// transcribe, then score on how well it would actually move a real sales
+// conversation forward — rapport, discovery/value fit, objection handling,
+// closing orientation — not on generic speaking fluency. Fluency is still
+// tracked, but only as a secondary, informational signal.
+async function gradeSalesSpeaking(
+  title: string,
+  body: string,
+  audioUrl: string,
+  maxPoints: number,
+  apiKey: string
+): Promise<GradeResult> {
+  const client = new OpenAI({ apiKey })
+
+  const filePath = join(UPLOADS_DIR, audioUrl.replace(/^\/uploads\//, ''))
+  const transcription = await client.audio.transcriptions.create({
+    file: createReadStream(filePath) as any,
+    model: process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe',
+  }, { timeout: REQUEST_TIMEOUT_MS })
+  const transcript = (transcription as any).text ?? ''
+
+  if (!transcript.trim()) {
+    return {
+      pointsEarned: 0,
+      feedback: 'The recording could not be transcribed (no discernible speech).',
+      confidence: 0.5,
+      transcript: '',
+    }
+  }
+
+  const completion = await client.chat.completions.create({
+    model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+    temperature: 0.2,
+    messages: [
+      {
+        role: 'system',
+        content:
+          'You are an experienced outbound sales coach, evaluating a TRANSCRIPT of a candidate\'s spoken response ' +
+          'to a sales-call scenario (e.g. a cold call, a prospect objection, or a call about to be lost), as part ' +
+          'of a hiring assessment for an outbound sales role. Score how well this response would actually move a ' +
+          'real sales conversation forward with a real, possibly resistant prospect — NOT generic speaking fluency. ' +
+          'Score 0-9 on four PRIMARY dimensions: ' +
+          'Rapport & Tone (sounds warm, confident, and human under resistance, not scripted, pushy, or defensive), ' +
+          'Discovery & Value Fit (asks about or ties the pitch to what this specific prospect said they care about, ' +
+          'rather than reciting a generic pitch), ' +
+          'Objection Handling (reframes the prospect\'s pushback constructively instead of folding immediately, ' +
+          'arguing, or ignoring it), and ' +
+          'Closing Orientation (moves toward a concrete next step or commitment rather than trailing off vaguely). ' +
+          'Also score a SECONDARY, informational-only dimension, fluencyCoherence (0-9), for how fluently they ' +
+          'spoke — this does NOT drive the primary score, it is recorded for context only. ' +
+          'Grade to a workplace standard, not a native-speaker-perfection standard: do not penalise Indian-English ' +
+          'phrasing, minor grammar slips, or filler words if the response is confident and moves the deal forward. ' +
+          ANTI_INJECTION_SYSTEM_NOTE,
+      },
+      {
+        role: 'user',
+        content: `Sales scenario the candidate is responding to: ${title}\n${body}\n\n${wrapCandidateResponse(transcript)}`,
+      },
+    ],
+    response_format: {
+      type: 'json_schema',
+      json_schema: {
+        name: 'sales_speaking_grade',
+        strict: true,
+        schema: {
+          type: 'object',
+          properties: {
+            rapportTone: { type: 'number', description: '0-9 band score' },
+            discoveryValueFit: { type: 'number', description: '0-9 band score' },
+            objectionHandling: { type: 'number', description: '0-9 band score' },
+            closingOrientation: { type: 'number', description: '0-9 band score' },
+            fluencyCoherence: { type: 'number', description: '0-9 band score, informational only' },
+            feedback: { type: 'string', description: '2-3 sentences of constructive feedback' },
+            confidence: { type: 'number', description: '0.0-1.0, how confident you are in this grade' },
+          },
+          required: ['rapportTone', 'discoveryValueFit', 'objectionHandling', 'closingOrientation', 'fluencyCoherence', 'feedback', 'confidence'],
+          additionalProperties: false,
+        },
+      },
+    },
+  }, { timeout: REQUEST_TIMEOUT_MS })
+
+  const parsed = JSON.parse(completion.choices[0]?.message?.content ?? '{}')
+  const clamp9 = (n: unknown) => Math.min(9, Math.max(0, Number(n) || 0))
+  const rapportTone = clamp9(parsed.rapportTone)
+  const discoveryValueFit = clamp9(parsed.discoveryValueFit)
+  const objectionHandling = clamp9(parsed.objectionHandling)
+  const closingOrientation = clamp9(parsed.closingOrientation)
+  const fluencyCoherence = clamp9(parsed.fluencyCoherence)
+  const overallBand = Math.round(((rapportTone + discoveryValueFit + objectionHandling + closingOrientation) / 4) * 2) / 2
+  const confidence = Math.min(1, Math.max(0, Number(parsed.confidence) || 0.8))
+
+  return {
+    pointsEarned: Math.round((overallBand / 9) * maxPoints * 10) / 10,
+    feedback: String(parsed.feedback || 'Graded by AI.'),
+    confidence,
+    transcript,
+    aiRubricScores: {
+      kind: 'sales_speaking',
+      rapportTone, discoveryValueFit, objectionHandling, closingOrientation, fluencyCoherence, overallBand, confidence,
     },
   }
 }

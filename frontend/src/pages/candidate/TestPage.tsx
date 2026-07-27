@@ -277,9 +277,20 @@ export function TestPage() {
   const currentQ = questions[currentQIdx]
   const currentAnswer = currentQ ? (answers[currentQ.questionId] ?? emptyAnswer()) : emptyAnswer()
 
+  // A per-question audio asset only ever gets ONE listen widget per section, on the
+  // first question that carries it (e.g. 5 questions about one shared customer-call
+  // recording, pickGroupSize'd together) — every later question sharing that same
+  // asset id is treated as already heard and never shows its own Play-audio widget,
+  // so a candidate can never rack up more than that widget's strict play limit
+  // across the whole group.
+  const isRepeatQuestionAudio = !!currentQ?.question?.audioAsset && questions
+    .slice(0, currentQIdx)
+    .some((q: any) => q.question?.audioAsset?.id === currentQ.question.audioAsset.id)
+
   // The Listening passage gating THIS question's prep timer: a per-question audio
-  // asset if set, else the section-level one shared across all its questions.
-  const gatingAudioAsset = currentQ?.question?.audioAsset ?? currentSection?.audioAsset ?? null
+  // asset if set (and not already surfaced on an earlier question), else the
+  // section-level one shared across all its questions.
+  const gatingAudioAsset = (isRepeatQuestionAudio ? null : currentQ?.question?.audioAsset) ?? currentSection?.audioAsset ?? null
   // "Heard" only if there's nothing to gate on, or the clip's onEnded has actually
   // fired this page load. Deliberately does NOT trust server playsUsed>0 as a
   // "heard" proxy — that counter increments the instant Play is clicked, not when
@@ -734,7 +745,7 @@ export function TestPage() {
                   <p className="text-base font-medium leading-relaxed whitespace-pre-wrap">{currentQ.question.body}</p>
                 </div>
 
-                {currentQ.question.audioAsset && (
+                {currentQ.question.audioAsset && !isRepeatQuestionAudio && (
                   <AudioPrompt
                     key={currentQ.question.audioAsset.id}
                     audioAsset={currentQ.question.audioAsset}

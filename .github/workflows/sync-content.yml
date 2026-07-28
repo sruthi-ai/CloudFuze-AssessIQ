@@ -21,6 +21,10 @@ on:
         description: 'Email Migration Assessment'
         type: boolean
         default: true
+      migration_combined:
+        description: 'Migration Assessment (combined Content/Email/Message — run after those three)'
+        type: boolean
+        default: true
       outbound_communication:
         description: 'Outbound - Communication Assessment (regenerates sales-call audio via OpenAI)'
         type: boolean
@@ -44,6 +48,7 @@ jobs:
             RUN_CONTENT="${{ inputs.content_migration }}"
             RUN_MESSAGE="${{ inputs.message_migration }}"
             RUN_EMAIL="${{ inputs.email_migration }}"
+            RUN_COMBINED="${{ inputs.migration_combined }}"
             RUN_OUTBOUND="${{ inputs.outbound_communication }}"
 
             if [ "$RUN_CONTENT" = "true" ]; then
@@ -57,6 +62,10 @@ jobs:
             if [ "$RUN_EMAIL" = "true" ]; then
               echo "== Email Migration Assessment =="
               docker exec -w /app neutaraassessment-backend-1 npx tsx prisma/create-email-migration-assessment.ts
+            fi
+            if [ "$RUN_COMBINED" = "true" ]; then
+              echo "== Migration Assessment (combined) =="
+              docker exec -w /app neutaraassessment-backend-1 npx tsx prisma/create-migration-assessment.ts
             fi
             if [ "$RUN_OUTBOUND" = "true" ]; then
               echo "== Outbound - Communication Assessment =="

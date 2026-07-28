@@ -17,6 +17,7 @@ import { SEO_BANK_NAME, SEO_QUESTIONS } from './create-marketing-seo-assessment'
 import { CONTENT_MIGRATION_BANK_NAME, CONTENT_MIGRATION_QUESTIONS } from './create-content-migration-assessment'
 import { MESSAGE_MIGRATION_BANK_NAME, MESSAGE_MIGRATION_QUESTIONS } from './create-message-migration-assessment'
 import { EMAIL_MIGRATION_BANK_NAME, EMAIL_MIGRATION_QUESTIONS } from './create-email-migration-assessment'
+import { main as buildMigrationAssessment } from './create-migration-assessment'
 import { main as buildOutboundAssessment } from './create-outbound-communication-assessment'
 import { main as ensureListeningPassagePool } from './add-listening-passage-pool'
 const prisma = new PrismaClient()
@@ -281,6 +282,21 @@ async function main() {
       sectionTitle: 'Email Migration Engineering', bankName: EMAIL_MIGRATION_BANK_NAME, titlePrefix: 'Email Migration', questions: EMAIL_MIGRATION_QUESTIONS,
     })
   } catch (e) { console.error('  ⚠ bootstrap step for "Email Migration Assessment" failed (non-fatal):', e) }
+
+  // Migration Assessment combines the Content/Email/Message Migration banks
+  // into one 3-section test — it references those banks' existing questions
+  // rather than owning any content of its own, and its rebuild-on-rerun
+  // branch is destructive (wipes and recreates sections), so like Outbound
+  // below, it's only ever invoked here on the very first run.
+  try {
+    const existing = await prisma.test.findFirst({ where: { title: 'Migration Assessment' } })
+    if (existing) {
+      console.log(`  ✓ "Migration Assessment" already exists (status=${existing.status}) — leaving untouched`)
+    } else {
+      console.log('  → Migration Assessment (first-time build, combines Content/Email/Message banks)...')
+      await buildMigrationAssessment()
+    }
+  } catch (e) { console.error('  ⚠ bootstrap step for "Migration Assessment" failed (non-fatal):', e) }
 
   // Outbound - Communication Assessment has 4 heterogeneous sections (MCQ,
   // audio-linked listening, JAM-style speaking, written essay) and generates

@@ -60,7 +60,16 @@ export async function main() {
   const messageBank = await prisma.questionBank.findFirst({ where: { name: MESSAGE_MIGRATION_BANK_NAME, tenantId } })
   if (!messageBank) throw new Error(`"${MESSAGE_MIGRATION_BANK_NAME}" not found — run create-message-migration-assessment.ts first.`)
 
-  const instructions = `Migration Assessment — ${durationMin} minutes, 40 questions across 3 sections. Content Migration: 20 questions, 20 minutes. Email Migration: 10 questions, 10 minutes. Message Migration: 10 questions, 10 minutes. Each section draws the same process/technical/flow mix for every candidate. 1 mark each. Choose the best option.`
+  // Rendered as plain text with whitespace-pre-wrap on the candidate landing
+  // page (no markdown support) — real newlines and simple bullets are the
+  // only formatting that actually shows up, so this is written for that.
+  const instructions = `Migration Assessment — ${durationMin} minutes, 40 questions across 3 sections.
+
+• Content Migration — 20 questions, 20 minutes
+• Email Migration — 10 questions, 10 minutes
+• Message Migration — 10 questions, 10 minutes
+
+Each section draws the same process/technical/flow mix for every candidate — 1 mark each. Choose the best option.`
 
   let test = await prisma.test.findFirst({ where: { title: testTitle, tenantId } })
   if (!test) {

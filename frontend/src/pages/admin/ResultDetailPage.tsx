@@ -534,6 +534,35 @@ export function ResultDetailPage() {
         </Card>
       </div>
 
+      {/* Section scores — per-TestSection earned/total, for multi-section tests
+          (e.g. Migration Assessment's Content/Email/Message sections) so an
+          admin can eyeball whether a candidate did well in every section, not
+          just overall. sectionBreakdown is keyed by section id; there's no
+          per-section pass/fail threshold yet, only the raw score. */}
+      {session.score?.sectionBreakdown && session.test.sections.length > 1 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Section scores</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap items-stretch gap-3">
+              {session.test.sections.map((section: any) => {
+                const sb = session.score.sectionBreakdown[section.id]
+                if (!sb) return null
+                const pct = sb.total > 0 ? Math.round((sb.earned / sb.total) * 100) : null
+                return (
+                  <div key={section.id} className="flex-1 min-w-[140px] rounded-lg border p-3 text-center">
+                    <p className="text-2xl font-bold text-primary">{pct != null ? `${pct}%` : '—'}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{section.title}</p>
+                    <p className="text-[10px] text-muted-foreground mt-1">{sb.earned.toFixed(1)} / {sb.total} pts</p>
+                  </div>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Band report (IELTS/TOEFL-style per-skill bands) */}
       {session.skillBands?.skills?.length > 0 && (
         <Card>

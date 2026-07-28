@@ -56,6 +56,78 @@ export function TestsPage() {
   const tests = (data?.tests ?? []).filter((t: any) =>
     t.title.toLowerCase().includes(search.toLowerCase())
   )
+  const activeTests = tests.filter((t: any) => t.status !== 'ARCHIVED')
+  const archivedTests = tests.filter((t: any) => t.status === 'ARCHIVED')
+
+  const renderTestCard = (test: any) => (
+    <Card key={test.id} className="hover:border-primary/40 transition-colors">
+      <CardContent className="p-4">
+        <div className="flex items-start gap-4">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Link to={`/admin/tests/${test.id}`} className="font-semibold text-gray-900 hover:text-primary transition-colors">
+                {test.title}
+              </Link>
+              <Badge variant={statusVariant[test.status]}>{test.status}</Badge>
+              {test.domain && <Badge variant="outline">{test.domain}</Badge>}
+            </div>
+            {test.description && <p className="text-sm text-muted-foreground mt-1 line-clamp-1">{test.description}</p>}
+            <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+              <span>{formatDuration(test.duration)}</span>
+              <span>{test._count?.sections ?? 0} sections</span>
+              <span>{test._count?.invitations ?? 0} invited</span>
+              <span>{test._count?.sessions ?? 0} sessions</span>
+              <span>Created {formatDate(test.createdAt)}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button variant="outline" size="sm" asChild>
+              <Link to={`/admin/tests/${test.id}`}>
+                <Pencil className="h-3.5 w-3.5 mr-1" />
+                Edit
+              </Link>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={duplicateMutation.isPending}
+              onClick={() => duplicateMutation.mutate(test.id)}
+            >
+              {duplicateMutation.isPending && duplicateMutation.variables === test.id
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <Copy className="h-3.5 w-3.5" />}
+            </Button>
+            {test.status === 'DRAFT' && (
+              <Button size="sm" onClick={() => publishMutation.mutate({ id: test.id, status: 'PUBLISHED' })}>
+                <Send className="h-3.5 w-3.5 mr-1" />
+                Publish
+              </Button>
+            )}
+            {test.status === 'PUBLISHED' && (
+              <Button variant="outline" size="sm" onClick={() => publishMutation.mutate({ id: test.id, status: 'ARCHIVED' })}>
+                <Archive className="h-3.5 w-3.5 mr-1" />
+                Archive
+              </Button>
+            )}
+            {test.status === 'ARCHIVED' && (
+              <Button variant="outline" size="sm" onClick={() => publishMutation.mutate({ id: test.id, status: 'PUBLISHED' })}>
+                <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                Unarchive
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+              onClick={() => setDeleteTarget({ id: test.id, title: test.title })}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
 
   return (
     <div className="space-y-6">
@@ -87,77 +159,25 @@ export function TestsPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-3">
-          {tests.map((test: any) => (
-            <Card key={test.id} className="hover:border-primary/40 transition-colors">
-              <CardContent className="p-4">
-                <div className="flex items-start gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <Link to={`/admin/tests/${test.id}`} className="font-semibold text-gray-900 hover:text-primary transition-colors">
-                        {test.title}
-                      </Link>
-                      <Badge variant={statusVariant[test.status]}>{test.status}</Badge>
-                      {test.domain && <Badge variant="outline">{test.domain}</Badge>}
-                    </div>
-                    {test.description && <p className="text-sm text-muted-foreground mt-1 line-clamp-1">{test.description}</p>}
-                    <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                      <span>{formatDuration(test.duration)}</span>
-                      <span>{test._count?.sections ?? 0} sections</span>
-                      <span>{test._count?.invitations ?? 0} invited</span>
-                      <span>{test._count?.sessions ?? 0} sessions</span>
-                      <span>Created {formatDate(test.createdAt)}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Button variant="outline" size="sm" asChild>
-                      <Link to={`/admin/tests/${test.id}`}>
-                        <Pencil className="h-3.5 w-3.5 mr-1" />
-                        Edit
-                      </Link>
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={duplicateMutation.isPending}
-                      onClick={() => duplicateMutation.mutate(test.id)}
-                    >
-                      {duplicateMutation.isPending && duplicateMutation.variables === test.id
-                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        : <Copy className="h-3.5 w-3.5" />}
-                    </Button>
-                    {test.status === 'DRAFT' && (
-                      <Button size="sm" onClick={() => publishMutation.mutate({ id: test.id, status: 'PUBLISHED' })}>
-                        <Send className="h-3.5 w-3.5 mr-1" />
-                        Publish
-                      </Button>
-                    )}
-                    {test.status === 'PUBLISHED' && (
-                      <Button variant="outline" size="sm" onClick={() => publishMutation.mutate({ id: test.id, status: 'ARCHIVED' })}>
-                        <Archive className="h-3.5 w-3.5 mr-1" />
-                        Archive
-                      </Button>
-                    )}
-                    {test.status === 'ARCHIVED' && (
-                      <Button variant="outline" size="sm" onClick={() => publishMutation.mutate({ id: test.id, status: 'PUBLISHED' })}>
-                        <RotateCcw className="h-3.5 w-3.5 mr-1" />
-                        Unarchive
-                      </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                      onClick={() => setDeleteTarget({ id: test.id, title: test.title })}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        <>
+          {activeTests.length > 0 && (
+            <div className="grid gap-3">
+              {activeTests.map((test: any) => renderTestCard(test))}
+            </div>
+          )}
+
+          {archivedTests.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-semibold text-gray-700">Archived</h2>
+                <Badge variant="outline">{archivedTests.length}</Badge>
+              </div>
+              <div className="grid gap-3">
+                {archivedTests.map((test: any) => renderTestCard(test))}
+              </div>
+            </div>
+          )}
+        </>
       )}
       <Dialog open={!!deleteTarget} onOpenChange={open => { if (!open) setDeleteTarget(null) }}>
         <DialogContent>

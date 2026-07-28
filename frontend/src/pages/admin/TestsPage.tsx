@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import { Plus, Search, Pencil, Archive, Send, Copy, Loader2, Trash2 } from 'lucide-react'
+import { Plus, Search, Pencil, Archive, Send, Copy, Loader2, Trash2, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -136,6 +136,12 @@ export function TestsPage() {
                       <Button variant="outline" size="sm" onClick={() => publishMutation.mutate({ id: test.id, status: 'ARCHIVED' })}>
                         <Archive className="h-3.5 w-3.5 mr-1" />
                         Archive
+                      </Button>
+                    )}
+                    {test.status === 'ARCHIVED' && (
+                      <Button variant="outline" size="sm" onClick={() => publishMutation.mutate({ id: test.id, status: 'PUBLISHED' })}>
+                        <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                        Unarchive
                       </Button>
                     )}
                     <Button

@@ -18,6 +18,7 @@ import { CONTENT_MIGRATION_BANK_NAME, CONTENT_MIGRATION_QUESTIONS } from './crea
 import { MESSAGE_MIGRATION_BANK_NAME, MESSAGE_MIGRATION_QUESTIONS } from './create-message-migration-assessment'
 import { EMAIL_MIGRATION_BANK_NAME, EMAIL_MIGRATION_QUESTIONS } from './create-email-migration-assessment'
 import { main as buildMigrationAssessment } from './create-migration-assessment'
+import { main as buildMigrationFreshersAssessment } from './create-migration-assessment-freshers'
 import { main as buildOutboundAssessment } from './create-outbound-communication-assessment'
 import { main as ensureListeningPassagePool } from './add-listening-passage-pool'
 const prisma = new PrismaClient()
@@ -297,6 +298,20 @@ async function main() {
       await buildMigrationAssessment()
     }
   } catch (e) { console.error('  ⚠ bootstrap step for "Migration Assessment" failed (non-fatal):', e) }
+
+  // Migration Assessment (Freshers) is a fixed, client-supplied 40-question
+  // exam with 2 sections and no category stratification — its rebuild-on-
+  // rerun branch is destructive (wipes and recreates sections), so like the
+  // other combined/rich builds, it's only ever invoked here on first run.
+  try {
+    const existing = await prisma.test.findFirst({ where: { title: 'Migration Assessment (Freshers)' } })
+    if (existing) {
+      console.log(`  ✓ "Migration Assessment (Freshers)" already exists (status=${existing.status}) — leaving untouched`)
+    } else {
+      console.log('  → Migration Assessment (Freshers) (first-time build)...')
+      await buildMigrationFreshersAssessment()
+    }
+  } catch (e) { console.error('  ⚠ bootstrap step for "Migration Assessment (Freshers)" failed (non-fatal):', e) }
 
   // Outbound - Communication Assessment has 4 heterogeneous sections (MCQ,
   // audio-linked listening, JAM-style speaking, written essay) and generates

@@ -19,6 +19,7 @@ import { MESSAGE_MIGRATION_BANK_NAME, MESSAGE_MIGRATION_QUESTIONS } from './crea
 import { EMAIL_MIGRATION_BANK_NAME, EMAIL_MIGRATION_QUESTIONS } from './create-email-migration-assessment'
 import { main as buildMigrationAssessment } from './create-migration-assessment'
 import { main as buildMigrationFreshersAssessment } from './create-migration-assessment-freshers'
+import { main as buildContentMigrationSetB } from './create-content-migration-combination-set-b'
 import { main as buildOutboundAssessment } from './create-outbound-communication-assessment'
 import { main as ensureListeningPassagePool } from './add-listening-passage-pool'
 const prisma = new PrismaClient()
@@ -312,6 +313,21 @@ async function main() {
       await buildMigrationFreshersAssessment()
     }
   } catch (e) { console.error('  ⚠ bootstrap step for "Migration Assessment (Freshers)" failed (non-fatal):', e) }
+
+  // Content Migration - Combination Knowledge Assessment (Set B) is a fixed,
+  // client-supplied 50-question exam with 5 sections and no category
+  // stratification — its rebuild-on-rerun branch is destructive (wipes and
+  // recreates sections), so like the other combined/rich builds, it's only
+  // ever invoked here on the very first run.
+  try {
+    const existing = await prisma.test.findFirst({ where: { title: 'Content Migration - Combination Knowledge Assessment (Set B)' } })
+    if (existing) {
+      console.log(`  ✓ "Content Migration - Combination Knowledge Assessment (Set B)" already exists (status=${existing.status}) — leaving untouched`)
+    } else {
+      console.log('  → Content Migration - Combination Knowledge Assessment (Set B) (first-time build)...')
+      await buildContentMigrationSetB()
+    }
+  } catch (e) { console.error('  ⚠ bootstrap step for "Content Migration - Combination Knowledge Assessment (Set B)" failed (non-fatal):', e) }
 
   // Outbound - Communication Assessment has 4 heterogeneous sections (MCQ,
   // audio-linked listening, JAM-style speaking, written essay) and generates

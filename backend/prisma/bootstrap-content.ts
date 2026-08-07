@@ -20,6 +20,7 @@ import { EMAIL_MIGRATION_BANK_NAME, EMAIL_MIGRATION_QUESTIONS } from './create-e
 import { main as buildMigrationAssessment } from './create-migration-assessment'
 import { main as buildMigrationFreshersAssessment } from './create-migration-assessment-freshers'
 import { main as buildContentMigrationSetB } from './create-content-migration-combination-set-b'
+import { main as buildMigrationKtAssessment } from './create-migration-kt-assessment'
 import { main as buildOutboundAssessment } from './create-outbound-communication-assessment'
 import { main as ensureListeningPassagePool } from './add-listening-passage-pool'
 const prisma = new PrismaClient()
@@ -328,6 +329,21 @@ async function main() {
       await buildContentMigrationSetB()
     }
   } catch (e) { console.error('  ⚠ bootstrap step for "Content Migration - Combination Knowledge Assessment (Set B)" failed (non-fatal):', e) }
+
+  // Migration KT Knowledge Assessment is a fixed, KT-transcript-derived
+  // 40-question exam with 4 sections and no category stratification — its
+  // rebuild-on-rerun branch is destructive (wipes and recreates sections),
+  // so like the other combined/rich builds, it's only ever invoked here on
+  // the very first run.
+  try {
+    const existing = await prisma.test.findFirst({ where: { title: 'Migration KT Knowledge Assessment' } })
+    if (existing) {
+      console.log(`  ✓ "Migration KT Knowledge Assessment" already exists (status=${existing.status}) — leaving untouched`)
+    } else {
+      console.log('  → Migration KT Knowledge Assessment (first-time build)...')
+      await buildMigrationKtAssessment()
+    }
+  } catch (e) { console.error('  ⚠ bootstrap step for "Migration KT Knowledge Assessment" failed (non-fatal):', e) }
 
   // Outbound - Communication Assessment has 4 heterogeneous sections (MCQ,
   // audio-linked listening, JAM-style speaking, written essay) and generates

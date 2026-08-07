@@ -33,6 +33,10 @@ on:
         description: 'Content Migration - Combination Knowledge Assessment (Set B) — fixed 50-question exam'
         type: boolean
         default: true
+      migration_kt_assessment:
+        description: 'Migration KT Knowledge Assessment — fixed 40-question exam (from KT transcript)'
+        type: boolean
+        default: true
       outbound_communication:
         description: 'Outbound - Communication Assessment (regenerates sales-call audio via OpenAI)'
         type: boolean
@@ -59,6 +63,7 @@ jobs:
             RUN_COMBINED="${{ inputs.migration_combined }}"
             RUN_FRESHERS="${{ inputs.migration_freshers }}"
             RUN_SET_B="${{ inputs.content_migration_set_b }}"
+            RUN_KT="${{ inputs.migration_kt_assessment }}"
             RUN_OUTBOUND="${{ inputs.outbound_communication }}"
 
             if [ "$RUN_CONTENT" = "true" ]; then
@@ -84,6 +89,10 @@ jobs:
             if [ "$RUN_SET_B" = "true" ]; then
               echo "== Content Migration - Combination Knowledge Assessment (Set B) =="
               docker exec -w /app neutaraassessment-backend-1 npx tsx prisma/create-content-migration-combination-set-b.ts
+            fi
+            if [ "$RUN_KT" = "true" ]; then
+              echo "== Migration KT Knowledge Assessment =="
+              docker exec -w /app neutaraassessment-backend-1 npx tsx prisma/create-migration-kt-assessment.ts
             fi
             if [ "$RUN_OUTBOUND" = "true" ]; then
               echo "== Outbound - Communication Assessment =="
